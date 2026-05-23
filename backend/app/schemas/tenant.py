@@ -114,6 +114,43 @@ class TenantCreate(BaseModel):
         return s
 
 
+class TenantPlatformUpdate(BaseModel):
+    """Actualización de cuenta cliente desde panel de plataforma."""
+
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    slug: str | None = Field(default=None, max_length=80, pattern=r"^[a-z0-9-]+$")
+    legal_name: str | None = Field(default=None, min_length=1, max_length=200)
+    tax_id: str | None = Field(default=None, min_length=1, max_length=50)
+    billing_email: str | None = Field(default=None, min_length=3, max_length=255)
+    billing_phone: str | None = Field(default=None, min_length=9, max_length=30)
+    billing_address: str | None = None
+    billing_city: str | None = None
+    billing_postal_code: str | None = None
+    billing_province: str | None = None
+    billing_country: str | None = None
+    is_active: bool | None = None
+
+    @field_validator("slug", mode="before")
+    @classmethod
+    def normalize_slug_optional(cls, v: object) -> str | None:
+        if v is None or str(v).strip() == "":
+            return None
+        from app.services.slug import normalize_slug_text
+
+        s = normalize_slug_text(str(v))
+        return s if len(s) >= 2 else None
+
+    @field_validator("billing_phone", mode="before")
+    @classmethod
+    def normalize_phone_optional(cls, v: object) -> str | None:
+        if v is None or str(v).strip() == "":
+            return None
+        s = re.sub(r"[^\d+]", "", str(v).strip())
+        if len(s) < 9:
+            raise ValueError("Teléfono demasiado corto")
+        return s
+
+
 class TenantUpdate(BaseModel):
 
     name: str | None = None

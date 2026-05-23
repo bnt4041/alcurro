@@ -3,6 +3,7 @@ import Layout from "./components/Layout";
 import PlatformLayout from "./components/PlatformLayout";
 import ProtectedRoute, { PlatformProtectedRoute } from "./components/ProtectedRoute";
 import { AuthProvider } from "./context/AuthContext";
+import { ToastProvider } from "./context/ToastContext";
 import AccountPage from "./pages/AccountPage";
 import ClockInsPage from "./pages/ClockInsPage";
 import Dashboard from "./pages/Dashboard";
@@ -20,6 +21,7 @@ import ShiftsPage from "./pages/ShiftsPage";
 export default function App() {
   return (
     <AuthProvider>
+      <ToastProvider>
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
@@ -47,6 +49,7 @@ export default function App() {
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
       </BrowserRouter>
+      </ToastProvider>
     </AuthProvider>
   );
 }

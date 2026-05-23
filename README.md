@@ -12,7 +12,7 @@ docker exec hrm-ollama ollama pull llama3.2
 
 | Servicio | URL |
 |----------|-----|
-| **Panel** | http://localhost:5173/login |
+| **Panel** | http://localhost:5174/login |
 | **API** | http://localhost:8000/docs |
 
 ## Login

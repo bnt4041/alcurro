@@ -10,7 +10,7 @@ from app.models.rbac import PlatformUser
 from app.models.tenant import Tenant
 from app.schemas.rbac import PlatformLoginRequest, PlatformUserMe
 from app.schemas.auth import TokenResponse
-from app.schemas.tenant import TenantCreate, TenantRead
+from app.schemas.tenant import TenantCreate, TenantPlatformUpdate, TenantRead
 from app.models.organization import GroupTemplate
 from app.schemas.organization import GroupTemplateRead, GroupTemplateUpdate
 from app.services.org_service import (
@@ -18,7 +18,8 @@ from app.services.org_service import (
     ensure_group_templates,
     seed_tenant_organization,
 )
-from app.services.slug import resolve_tenant_slug
+from app.services.slug import resolve_tenant_slug, resolve_tenant_slug_update
+from app.services.tenant_delete import delete_tenant_permanent
 
 router = APIRouter(prefix="/platform", tags=["platform"])
 
@@ -57,8 +58,6 @@ def create_tenant_platform(
     session: Session = Depends(get_session),
     _: PlatformUser = Depends(get_platform_user),
 ) -> Tenant:
-    from app.models.tenant import Company
-
     slug = resolve_tenant_slug(session, data.name, data.slug)
     tenant = Tenant(
         slug=slug,
@@ -86,6 +85,77 @@ def create_tenant_platform(
     session.commit()
     session.refresh(tenant)
     return tenant
+
+
+@router.get("/tenants/{tenant_id}", response_model=TenantRead)
+def get_tenant_platform(
+    tenant_id: UUID,
+    session: Session = Depends(get_session),
+    _: PlatformUser = Depends(get_platform_user),
+) -> Tenant:
+    tenant = session.get(Tenant, tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Cuenta no encontrada")
+    return tenant
+
+
+@router.patch("/tenants/{tenant_id}", response_model=TenantRead)
+def update_tenant_platform(
+    tenant_id: UUID,
+    data: TenantPlatformUpdate,
+    session: Session = Depends(get_session),
+    _: PlatformUser = Depends(get_platform_user),
+) -> Tenant:
+    tenant = session.get(Tenant, tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Cuenta no encontrada")
+
+    payload = data.model_dump(exclude_unset=True)
+    new_slug = payload.pop("slug", None)
+    if new_slug is not None:
+        slug = resolve_tenant_slug_update(
+            session, tenant.id, payload.get("name") or tenant.name, new_slug
+        )
+        if slug != tenant.slug:
+            tenant.slug = slug
+            tenant.gowa_webhook_path = f"/webhook/whatsapp/{slug}"
+
+    for key, value in payload.items():
+        setattr(tenant, key, value)
+
+    session.add(tenant)
+    session.commit()
+    session.refresh(tenant)
+    return tenant
+
+
+@router.delete("/tenants/{tenant_id}", status_code=204)
+def delete_tenant_platform(
+    tenant_id: UUID,
+    session: Session = Depends(get_session),
+    _: PlatformUser = Depends(get_platform_user),
+    permanent: bool = False,
+) -> None:
+    tenant = session.get(Tenant, tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Cuenta no encontrada")
+
+    try:
+        if permanent:
+            delete_tenant_permanent(session, tenant_id)
+        else:
+            tenant.is_active = False
+            session.add(tenant)
+        session.commit()
+    except HTTPException:
+        session.rollback()
+        raise
+    except Exception as exc:
+        session.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="No se pudo eliminar la cuenta: tiene datos asociados",
+        ) from exc
 
 
 @router.get("/group-templates", response_model=list[GroupTemplateRead])
