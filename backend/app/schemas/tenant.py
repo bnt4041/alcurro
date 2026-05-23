@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field, field_validator
 
 
 
+from app.models.models import Role
 from app.models.tenant import GoWAStatus
 
 
@@ -228,7 +229,18 @@ class TenantRead(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class TenantUserRead(BaseModel):
+    """Usuario (empleado) de una cuenta cliente — vista plataforma."""
 
+    id: UUID
+    company_id: UUID
+    company_name: str
+    full_name: str
+    employee_code: str
+    phone: str
+    email: str | None
+    role: Role
+    is_active: bool
 
 
 class CompanyCreate(BaseModel):

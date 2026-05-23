@@ -1,4 +1,7 @@
 import { FormEvent } from "react";
+import type { Role } from "../api/types";
+import TenantBillingTab, { TenantBillingOverview } from "./TenantBillingTab";
+import { ROLE_LABELS } from "../lib/permissions";
 import { normalizeAccountCode } from "../lib/slug";
 
 export type TenantFormState = {
@@ -16,15 +19,32 @@ export type TenantFormState = {
   is_active: boolean;
 };
 
-export type AccountSheetTab = "general" | "billing" | "reports";
+export type AccountSheetTab = "general" | "billing" | "users" | "reports";
+
+export interface TenantUserRow {
+  id: string;
+  company_name: string;
+  full_name: string;
+  employee_code: string;
+  phone: string;
+  email: string | null;
+  role: Role;
+  is_active: boolean;
+}
 
 interface Props {
   open: boolean;
   mode: "create" | "edit";
   tab: AccountSheetTab;
+  tenantId: string | null;
   form: TenantFormState;
   accountCodeManual: boolean;
   saving: boolean;
+  users: TenantUserRow[];
+  usersLoading: boolean;
+  billing: TenantBillingOverview | null;
+  billingLoading: boolean;
+  onBillingReload: () => void;
   onTabChange: (tab: AccountSheetTab) => void;
   onClose: () => void;
   onSave: (e: FormEvent) => void;
@@ -41,6 +61,7 @@ interface Props {
 const TABS: { id: AccountSheetTab; label: string }[] = [
   { id: "general", label: "General" },
   { id: "billing", label: "Facturación" },
+  { id: "users", label: "Usuarios" },
   { id: "reports", label: "Reports" },
 ];
 
@@ -48,9 +69,15 @@ export default function TenantAccountSheet({
   open,
   mode,
   tab,
+  tenantId,
   form,
   accountCodeManual,
   saving,
+  users,
+  usersLoading,
+  billing,
+  billingLoading,
+  onBillingReload,
   onTabChange,
   onClose,
   onSave,
@@ -67,6 +94,7 @@ export default function TenantAccountSheet({
 
   const isEdit = mode === "edit";
   const title = isEdit ? form.name || "Cuenta cliente" : "Nueva cuenta";
+  const showFormHint = tab === "general" || tab === "billing";
 
   return (
     <div
@@ -80,53 +108,66 @@ export default function TenantAccountSheet({
         aria-modal="true"
         aria-labelledby="tenant-sheet-title"
       >
-        <header className="sheet-header">
-          <div className="sheet-header__top">
-            <h3 id="tenant-sheet-title">{title}</h3>
-            {isEdit && (
-              <span
-                className={`badge ${form.is_active ? "badge--ok" : "badge--muted"}`}
-              >
-                {form.is_active ? "Activa" : "Inactiva"}
-              </span>
+        <header className="sheet-header sheet-header--tabs">
+          <div className="sheet-header__intro">
+            <div className="sheet-header__top">
+              <h3 id="tenant-sheet-title">{title}</h3>
+              {isEdit && (
+                <span
+                  className={`badge ${form.is_active ? "badge--ok" : "badge--muted"}`}
+                >
+                  {form.is_active ? "Activa" : "Inactiva"}
+                </span>
+              )}
+            </div>
+            {isEdit && form.accountCode && (
+              <p className="muted small sheet-subtitle">
+                Código de acceso: <code>{form.accountCode}</code>
+              </p>
             )}
           </div>
-          {isEdit && form.accountCode && (
-            <p className="muted small sheet-subtitle">
-              Código de acceso: <code>{form.accountCode}</code>
-            </p>
-          )}
-          <nav className="tabs sheet-tabs" aria-label="Secciones de la cuenta">
+          <div
+            className="tabs sheet-tabs"
+            role="tablist"
+            aria-label="Secciones de la cuenta"
+          >
             {TABS.map((t) => (
               <button
                 key={t.id}
                 type="button"
+                role="tab"
+                aria-selected={tab === t.id}
                 className={tab === t.id ? "tab active" : "tab"}
                 onClick={() => onTabChange(t.id)}
               >
                 {t.label}
+                {t.id === "users" && isEdit && users.length > 0 && (
+                  <span className="tab-count">{users.length}</span>
+                )}
               </button>
             ))}
-          </nav>
+          </div>
         </header>
 
         <form
           id="tenant-sheet-form"
           className="sheet-body"
           onSubmit={onSave}
+          noValidate
         >
-          <p className="muted small sheet-hint">
-            Campos con <span className="required-mark">*</span> obligatorios.
-          </p>
+          {showFormHint && (
+            <p className="muted small sheet-hint">
+              Campos con <span className="required-mark">*</span> obligatorios.
+            </p>
+          )}
 
           {tab === "general" && (
-            <div className="form-grid">
+            <div className="sheet-tab-panel form-grid">
               <label>
                 <span>
                   Nombre comercial <span className="required-mark">*</span>
                 </span>
                 <input
-                  required
                   value={form.name}
                   onChange={(e) => onNameChange(e.target.value)}
                 />
@@ -136,7 +177,6 @@ export default function TenantAccountSheet({
                   Razón social <span className="required-mark">*</span>
                 </span>
                 <input
-                  required
                   value={form.legal_name}
                   onChange={(e) => onLegalNameChange(e.target.value)}
                 />
@@ -157,7 +197,6 @@ export default function TenantAccountSheet({
                 </span>
                 <input
                   readOnly={!isEdit && !accountCodeManual}
-                  required
                   value={form.accountCode}
                   onChange={(e) => {
                     onAccountCodeManual(true);
@@ -188,93 +227,156 @@ export default function TenantAccountSheet({
           )}
 
           {tab === "billing" && (
-            <div className="form-grid">
-              <label>
-                <span>
-                  CIF/NIF <span className="required-mark">*</span>
-                </span>
-                <input
-                  required
-                  value={form.tax_id}
-                  onChange={(e) => onFormPatch({ tax_id: e.target.value })}
+            <>
+              <div className="sheet-tab-panel form-grid billing-account-fields">
+                <p className="form-span-2 muted small billing-section-title">
+                  Datos del contrato (cuenta) — referencia por defecto para nuevas
+                  empresas.
+                </p>
+                <label>
+                  <span>
+                    CIF/NIF cuenta <span className="required-mark">*</span>
+                  </span>
+                  <input
+                    value={form.tax_id}
+                    onChange={(e) => onFormPatch({ tax_id: e.target.value })}
+                  />
+                </label>
+                <label>
+                  <span>
+                    Email facturación <span className="required-mark">*</span>
+                  </span>
+                  <input
+                    type="email"
+                    value={form.billing_email}
+                    onChange={(e) =>
+                      onFormPatch({ billing_email: e.target.value })
+                    }
+                  />
+                </label>
+                <label>
+                  <span>
+                    Teléfono <span className="required-mark">*</span>
+                  </span>
+                  <input
+                    type="tel"
+                    value={form.billing_phone}
+                    onChange={(e) =>
+                      onFormPatch({ billing_phone: e.target.value })
+                    }
+                  />
+                </label>
+                <label>
+                  País
+                  <input
+                    value={form.billing_country}
+                    onChange={(e) =>
+                      onFormPatch({ billing_country: e.target.value })
+                    }
+                  />
+                </label>
+                <label className="form-span-2">
+                  Dirección
+                  <input
+                    value={form.billing_address}
+                    onChange={(e) =>
+                      onFormPatch({ billing_address: e.target.value })
+                    }
+                  />
+                </label>
+                <label>
+                  Ciudad
+                  <input
+                    value={form.billing_city}
+                    onChange={(e) =>
+                      onFormPatch({ billing_city: e.target.value })
+                    }
+                  />
+                </label>
+                <label>
+                  CP
+                  <input
+                    value={form.billing_postal_code}
+                    onChange={(e) =>
+                      onFormPatch({ billing_postal_code: e.target.value })
+                    }
+                  />
+                </label>
+                <label>
+                  Provincia
+                  <input
+                    value={form.billing_province}
+                    onChange={(e) =>
+                      onFormPatch({ billing_province: e.target.value })
+                    }
+                  />
+                </label>
+              </div>
+              {isEdit && tenantId && (
+                <TenantBillingTab
+                  tenantId={tenantId}
+                  overview={billing}
+                  loading={billingLoading}
+                  onReload={onBillingReload}
                 />
-              </label>
-              <label>
-                <span>
-                  Email facturación <span className="required-mark">*</span>
-                </span>
-                <input
-                  type="email"
-                  required
-                  value={form.billing_email}
-                  onChange={(e) =>
-                    onFormPatch({ billing_email: e.target.value })
-                  }
-                />
-              </label>
-              <label>
-                <span>
-                  Teléfono <span className="required-mark">*</span>
-                </span>
-                <input
-                  type="tel"
-                  required
-                  value={form.billing_phone}
-                  onChange={(e) =>
-                    onFormPatch({ billing_phone: e.target.value })
-                  }
-                />
-              </label>
-              <label>
-                País
-                <input
-                  value={form.billing_country}
-                  onChange={(e) =>
-                    onFormPatch({ billing_country: e.target.value })
-                  }
-                />
-              </label>
-              <label className="form-span-2">
-                Dirección
-                <input
-                  value={form.billing_address}
-                  onChange={(e) =>
-                    onFormPatch({ billing_address: e.target.value })
-                  }
-                />
-              </label>
-              <label>
-                Ciudad
-                <input
-                  value={form.billing_city}
-                  onChange={(e) =>
-                    onFormPatch({ billing_city: e.target.value })
-                  }
-                />
-              </label>
-              <label>
-                CP
-                <input
-                  value={form.billing_postal_code}
-                  onChange={(e) =>
-                    onFormPatch({ billing_postal_code: e.target.value })
-                  }
-                />
-              </label>
-              <label>
-                Provincia
-                <input
-                  value={form.billing_province}
-                  onChange={(e) =>
-                    onFormPatch({ billing_province: e.target.value })
-                  }
-                />
-              </label>
+              )}
+            </>
+          )}
+
+          {tab === "users" && (
+            <div className="sheet-tab-panel" role="tabpanel">
+              {!isEdit || !tenantId ? (
+                <div className="sheet-placeholder">
+                  <p className="muted">
+                    Crea y guarda la cuenta para ver y gestionar los usuarios del
+                    cliente.
+                  </p>
+                </div>
+              ) : usersLoading ? (
+                <p className="muted">Cargando usuarios…</p>
+              ) : users.length === 0 ? (
+                <div className="sheet-placeholder">
+                  <p className="muted">
+                    Esta cuenta aún no tiene usuarios. Los empleados se dan de alta
+                    desde el panel del cliente (acceso con código{" "}
+                    <code>{form.accountCode}</code>).
+                  </p>
+                </div>
+              ) : (
+                <div className="table-wrap">
+                  <table className="sheet-users-table">
+                    <thead>
+                      <tr>
+                        <th>Usuario</th>
+                        <th>Nombre</th>
+                        <th>Teléfono</th>
+                        <th>Rol</th>
+                        <th>Empresa</th>
+                        <th>Estado</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {users.map((u) => (
+                        <tr key={u.id} className={!u.is_active ? "row-inactive" : ""}>
+                          <td>
+                            <code>{u.employee_code}</code>
+                          </td>
+                          <td>{u.full_name}</td>
+                          <td>{u.phone}</td>
+                          <td>{ROLE_LABELS[u.role] ?? u.role}</td>
+                          <td className="muted small">{u.company_name}</td>
+                          <td>{u.is_active ? "Activo" : "Inactivo"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           )}
 
           {tab === "reports" && (
-            <div className="sheet-placeholder">
+            <div className="sheet-tab-panel sheet-placeholder" role="tabpanel">
               <p className="muted">
                 Informes y métricas de la cuenta. Esta sección estará disponible
                 próximamente.

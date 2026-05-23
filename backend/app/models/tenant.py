@@ -57,6 +57,8 @@ class Tenant(SQLModel, table=True):
     ollama_base_url: str = Field(default="http://ollama:11434")
     ollama_model: str = Field(default="llama3.2")
 
+    stripe_customer_id: str | None = Field(default=None, max_length=120, index=True)
+
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -71,6 +73,17 @@ class Company(SQLModel, table=True):
     name: str = Field(max_length=200)
     tax_id: str | None = Field(default=None, max_length=50)
     is_active: bool = Field(default=True)
+
+    # Facturación propia de la empresa (cada empresa del tenant puede facturarse aparte)
+    legal_name: str | None = Field(default=None, max_length=200)
+    billing_email: str | None = Field(default=None, max_length=255)
+    billing_phone: str | None = Field(default=None, max_length=30)
+    billing_address: str | None = Field(default=None, max_length=300)
+    billing_city: str | None = Field(default=None, max_length=100)
+    billing_postal_code: str | None = Field(default=None, max_length=20)
+    billing_province: str | None = Field(default=None, max_length=100)
+    billing_country: str = Field(default="ES", max_length=2)
+
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
     tenant: Tenant | None = Relationship(back_populates="companies")

@@ -7,22 +7,37 @@ docker compose up -d --build
 docker exec hrm-backend python -m scripts.migrate_multitenant
 docker exec hrm-backend python -m scripts.migrate_rbac_billing
 docker exec hrm-backend python -m scripts.migrate_org_hierarchy
+docker exec hrm-backend python -m scripts.migrate_company_billing
+docker exec hrm-backend python -m scripts.migrate_pricing_catalog
+docker exec hrm-backend python -m scripts.migrate_stripe
 docker exec hrm-ollama ollama pull llama3.2
 ```
 
 | Servicio | URL |
 |----------|-----|
-| **Panel** | http://localhost:5174/login |
+| **Web pública** | http://localhost:5174/ |
+| **Alta cliente** | http://localhost:5174/registro |
+| **Admin plataforma** | http://localhost:5174/admin/login |
+| **Acceso cliente** | http://localhost:5174/acceso-cliente |
 | **API** | http://localhost:8000/docs |
 
 ## Login
 
-En `/login` elige pestaña **Plataforma** o **Cliente**:
+| URL | Quién | Demo |
+|-----|-------|------|
+| `/admin/login` | Administrador plataforma | `platform@hrm.local` / `platform123` |
+| `/acceso-cliente` | Tenant / responsables / empleados | cuenta `demo` · `ADM001` / `admin123` |
 
-| Pestaña | Quién | Demo |
-|---------|-------|------|
-| **Plataforma** | Tú (admin app) | `platform@hrm.local` / `platform123` |
-| **Cliente** | Tenant / responsables / empleados con panel | cuenta `demo` · `ADM001` / `admin123` |
+## Stripe (opcional)
+
+En `.env` o `docker-compose`:
+
+- `STRIPE_SECRET_KEY` — checkout y cobros
+- `STRIPE_WEBHOOK_SECRET` — eventos (`POST /api/webhooks/stripe`)
+- `STRIPE_PUBLISHABLE_KEY` — futuro uso en frontend
+- `PUBLIC_APP_URL` — URLs de retorno (p. ej. `http://localhost:5174`)
+
+Sin claves Stripe el alta en `/registro` crea la cuenta en periodo de prueba sin redirección al pago. En admin: **Cobros Stripe** (`/admin/cobros`).
 
 ## Jerarquía organizativa (monetización)
 

@@ -96,7 +96,9 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   }
   if (res.status === 401 && !path.includes("/auth/login")) {
     setToken(null);
-    window.location.href = "/login";
+    window.location.href = path.includes("/platform")
+      ? "/admin/login"
+      : "/acceso-cliente";
     throw new Error("Sesión expirada");
   }
   if (res.status === 204) return undefined as T;
@@ -125,7 +127,9 @@ export const api = {
     });
     if (res.status === 401) {
       setToken(null);
-      window.location.href = "/login";
+      window.location.href = path.includes("/platform")
+        ? "/admin/login"
+        : "/acceso-cliente";
       throw new Error("Sesión expirada");
     }
     if (!res.ok) {

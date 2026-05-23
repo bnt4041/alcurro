@@ -3,7 +3,9 @@ import { api } from "../api/client";
 import TenantAccountSheet, {
   AccountSheetTab,
   TenantFormState,
+  TenantUserRow,
 } from "../components/TenantAccountSheet";
+import { TenantBillingOverview } from "../components/TenantBillingTab";
 import PageHeader from "../components/PageHeader";
 import { useToast } from "../context/ToastContext";
 import {
@@ -79,8 +81,38 @@ export default function PlatformPage() {
   const [sheetTab, setSheetTab] = useState<AccountSheetTab>("general");
   const [accountCodeManual, setAccountCodeManual] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [users, setUsers] = useState<TenantUserRow[]>([]);
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [billing, setBilling] = useState<TenantBillingOverview | null>(null);
+  const [billingLoading, setBillingLoading] = useState(false);
 
   const sheetMode = editingId ? "edit" : "create";
+
+  const loadBilling = async (tenantId: string) => {
+    setBillingLoading(true);
+    try {
+      setBilling(
+        await api.get<TenantBillingOverview>(`/platform/tenants/${tenantId}/billing`)
+      );
+    } catch {
+      setBilling(null);
+    } finally {
+      setBillingLoading(false);
+    }
+  };
+
+  const loadUsers = async (tenantId: string) => {
+    setUsersLoading(true);
+    try {
+      setUsers(
+        await api.get<TenantUserRow[]>(`/platform/tenants/${tenantId}/users`)
+      );
+    } catch {
+      setUsers([]);
+    } finally {
+      setUsersLoading(false);
+    }
+  };
 
   const load = async () => {
     setTenants(await api.get<TenantRow[]>("/platform/tenants"));
@@ -111,7 +143,10 @@ export default function PlatformPage() {
     setForm(tenantToForm(t));
     setAccountCodeManual(true);
     setSheetTab("general");
+    setUsers([]);
     setSheetOpen(true);
+    void loadUsers(t.id);
+    void loadBilling(t.id);
   };
 
   const closeSheet = () => {
@@ -120,6 +155,15 @@ export default function PlatformPage() {
     setForm(emptyForm());
     setAccountCodeManual(false);
     setSheetTab("general");
+    setUsers([]);
+    setBilling(null);
+  };
+
+  const handleTabChange = (tab: AccountSheetTab) => {
+    setSheetTab(tab);
+    if (!editingId) return;
+    if (tab === "users") void loadUsers(editingId);
+    if (tab === "billing") void loadBilling(editingId);
   };
 
   const onNameChange = (name: string) => {
@@ -166,14 +210,33 @@ export default function PlatformPage() {
     };
   };
 
+  const validateForm = (): AccountSheetTab | null => {
+    if (!form.name.trim() || !form.legal_name.trim()) return "general";
+    const autoSlug = suggestAccountCode(form.name, form.legal_name);
+    const slug = normalizeAccountCode(form.accountCode || autoSlug);
+    if (!isValidAccountCode(slug)) return "general";
+    if (!form.tax_id.trim() || !form.billing_email.trim() || !form.billing_phone.trim()) {
+      return "billing";
+    }
+    return null;
+  };
+
   const save = async (e: FormEvent) => {
     e.preventDefault();
+    const invalidTab = validateForm();
+    if (invalidTab) {
+      setSheetTab(invalidTab);
+      toast.error("Completa los campos obligatorios en General y Facturación.");
+      return;
+    }
     setSaving(true);
     try {
       const base = buildPayload();
       if (editingId) {
         await api.patch(`/platform/tenants/${editingId}`, base);
         toast.success(`Cuenta «${base.name}» actualizada correctamente`);
+        void loadUsers(editingId);
+        void loadBilling(editingId);
       } else {
         const body: Record<string, unknown> = { ...base };
         if (!accountCodeManual && !form.accountCode.trim()) {
@@ -183,9 +246,13 @@ export default function PlatformPage() {
         toast.success(
           `Cuenta «${base.name}» creada. Código de acceso: ${created.slug}`
         );
+        setEditingId(created.id);
+        setForm(tenantToForm(created));
+        setAccountCodeManual(true);
+        setSheetTab("users");
+        void loadUsers(created.id);
       }
-      closeSheet();
-      load();
+      await load();
     } catch (err) {
       toast.error(String(err).replace(/^Error:\s*/i, ""));
     } finally {
@@ -319,10 +386,16 @@ export default function PlatformPage() {
         open={sheetOpen}
         mode={sheetMode}
         tab={sheetTab}
+        tenantId={editingId}
         form={form}
         accountCodeManual={accountCodeManual}
         saving={saving}
-        onTabChange={setSheetTab}
+        users={users}
+        usersLoading={usersLoading}
+        billing={billing}
+        billingLoading={billingLoading}
+        onBillingReload={() => editingId && loadBilling(editingId)}
+        onTabChange={handleTabChange}
         onClose={closeSheet}
         onSave={save}
         onNameChange={onNameChange}

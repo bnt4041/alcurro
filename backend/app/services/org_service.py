@@ -149,11 +149,17 @@ def seed_tenant_organization(
     company_name: str | None = None,
 ) -> tuple[Company, WorkCenter, Department]:
     """Crea empresa + centro + departamento por defecto para un tenant nuevo."""
+    from app.services.billing_service import (
+        copy_tenant_billing_to_company,
+        ensure_default_subscription,
+    )
+
     company = Company(
         tenant_id=tenant.id,
         name=company_name or tenant.name,
         tax_id=tenant.tax_id,
     )
+    copy_tenant_billing_to_company(tenant, company)
     session.add(company)
     session.flush()
 
@@ -172,7 +178,36 @@ def seed_tenant_organization(
     )
     session.add(dept)
     session.flush()
+    ensure_default_subscription(session, tenant, company)
     return company, wc, dept
+
+
+def seed_company_organization(
+    session: Session, company: Company
+) -> tuple[WorkCenter, Department]:
+    """Centro y departamento por defecto para una empresa nueva (sin crear otra empresa)."""
+    existing = session.exec(
+        select(WorkCenter).where(WorkCenter.company_id == company.id)
+    ).first()
+    if existing:
+        dept = session.exec(
+            select(Department).where(Department.work_center_id == existing.id)
+        ).first()
+        if dept:
+            return existing, dept
+
+    code = f"C-{str(company.id).replace('-', '')[:8].upper()}"
+    wc = WorkCenter(
+        company_id=company.id,
+        name="Centro principal",
+        code=code[:50],
+    )
+    session.add(wc)
+    session.flush()
+    dept = Department(work_center_id=wc.id, name="General", code="GEN")
+    session.add(dept)
+    session.flush()
+    return wc, dept
 
 
 def employee_ids_in_scope(

@@ -2,7 +2,12 @@ import { NavLink, Outlet } from "react-router-dom";
 import BrandLogo from "./BrandLogo";
 import { useAuth } from "../context/AuthContext";
 
-const nav = [{ to: "/", label: "Cuentas", end: true }];
+const nav = [
+  { to: "/admin", label: "Cuentas", end: true },
+  { to: "/admin/tarifas", label: "Tarifas", end: false },
+  { to: "/admin/descuentos", label: "Descuentos", end: false },
+  { to: "/admin/cobros", label: "Cobros Stripe", end: false },
+];
 
 export default function PlatformLayout() {
   const { platformUser, logout } = useAuth();

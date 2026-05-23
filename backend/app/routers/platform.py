@@ -1,7 +1,7 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 from app.core.platform_deps import get_platform_user
 from app.core.security import create_platform_token, hash_password, verify_password
@@ -10,7 +10,14 @@ from app.models.rbac import PlatformUser
 from app.models.tenant import Tenant
 from app.schemas.rbac import PlatformLoginRequest, PlatformUserMe
 from app.schemas.auth import TokenResponse
-from app.schemas.tenant import TenantCreate, TenantPlatformUpdate, TenantRead
+from app.models.models import Employee
+from app.models.tenant import Company
+from app.schemas.tenant import (
+    TenantCreate,
+    TenantPlatformUpdate,
+    TenantRead,
+    TenantUserRead,
+)
 from app.models.organization import GroupTemplate
 from app.schemas.organization import GroupTemplateRead, GroupTemplateUpdate
 from app.services.org_service import (
@@ -97,6 +104,48 @@ def get_tenant_platform(
     if not tenant:
         raise HTTPException(status_code=404, detail="Cuenta no encontrada")
     return tenant
+
+
+@router.get("/tenants/{tenant_id}/users", response_model=list[TenantUserRead])
+def list_tenant_users(
+    tenant_id: UUID,
+    session: Session = Depends(get_session),
+    _: PlatformUser = Depends(get_platform_user),
+) -> list[TenantUserRead]:
+    tenant = session.get(Tenant, tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Cuenta no encontrada")
+
+    companies = list(
+        session.exec(select(Company).where(Company.tenant_id == tenant_id)).all()
+    )
+    if not companies:
+        return []
+
+    by_id = {c.id: c for c in companies}
+    company_ids = list(by_id.keys())
+    employees = list(
+        session.exec(
+            select(Employee)
+            .where(col(Employee.company_id).in_(company_ids))
+            .order_by(Employee.full_name)
+        ).all()
+    )
+
+    return [
+        TenantUserRead(
+            id=e.id,
+            company_id=e.company_id,
+            company_name=by_id[e.company_id].name,
+            full_name=e.full_name,
+            employee_code=e.employee_code,
+            phone=e.phone,
+            email=e.email,
+            role=e.role,
+            is_active=e.is_active,
+        )
+        for e in employees
+    ]
 
 
 @router.patch("/tenants/{tenant_id}", response_model=TenantRead)

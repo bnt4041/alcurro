@@ -43,6 +43,10 @@ services:
       JWT_SECRET: ${JWT_SECRET:-change-me-in-production-hrm-jwt-secret}
       DOCKER_NETWORK: hrm-net
       PLATFORM_SETUP_KEY: ${PLATFORM_SETUP_KEY:-hrm-platform-setup}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY:-}
+      PUBLIC_APP_URL: ${PUBLIC_APP_URL:-http://localhost:5174}
     volumes:
       - ./backend:/app
       - uploads_data:/app/uploads

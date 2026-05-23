@@ -10,15 +10,25 @@ from app.routers import (
     leave_requests,
     organization,
     platform,
+    platform_billing,
+    platform_catalog,
+    platform_stripe,
+    public,
     settings,
     shifts,
+    stripe_webhook,
     tenants,
 )
 from app.schemas.tenant import TenantBrandingRead
 
 api_router = APIRouter(prefix="/api")
 api_router.include_router(auth.router)
+api_router.include_router(public.router)
+api_router.include_router(stripe_webhook.router)
 api_router.include_router(platform.router)
+api_router.include_router(platform_billing.router)
+api_router.include_router(platform_catalog.router)
+api_router.include_router(platform_stripe.router)
 api_router.add_api_route(
     "/tenants/public/{slug}/branding",
     tenants.public_branding,

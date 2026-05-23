@@ -8,6 +8,7 @@ from sqlmodel import Session, col, select
 from app.models.models import Employee, ShiftConfiguration
 from app.models.organization import Department, WorkCenter
 from app.models.rbac import UserGroup
+from app.models.billing import BillingMethod, StripePayment, Subscription
 from app.models.tenant import Company, Tenant
 
 
@@ -61,6 +62,19 @@ def delete_tenant_permanent(session: Session, tenant_id: UUID) -> None:
 
     for company in companies:
         _purge_company(session, company.id)
+
+    for pay in session.exec(
+        select(StripePayment).where(StripePayment.tenant_id == tenant_id)
+    ).all():
+        session.delete(pay)
+    for sub in session.exec(
+        select(Subscription).where(Subscription.tenant_id == tenant_id)
+    ).all():
+        session.delete(sub)
+    for method in session.exec(
+        select(BillingMethod).where(BillingMethod.tenant_id == tenant_id)
+    ).all():
+        session.delete(method)
 
     for group in session.exec(
         select(UserGroup).where(UserGroup.tenant_id == tenant_id)

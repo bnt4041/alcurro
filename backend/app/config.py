@@ -21,6 +21,10 @@ class Settings(BaseSettings):
     jwt_expire_hours: int = 12
     docker_network: str = "hrm-net"
     platform_setup_key: str = "hrm-platform-setup"
+    stripe_secret_key: str = ""
+    stripe_webhook_secret: str = ""
+    stripe_publishable_key: str = ""
+    public_app_url: str = "http://localhost:5174"
 
 
 @lru_cache

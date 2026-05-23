@@ -4,8 +4,8 @@ import BrandLogo from "../components/BrandLogo";
 import { useAuth } from "../context/AuthContext";
 import { applyAlcurroDefaults } from "../hooks/useBranding";
 
-/** Login principal: solo administradores de plataforma (sin tenant). */
-export default function LoginPage() {
+/** Login administradores de plataforma. */
+export default function AdminLoginPage() {
   const { platformUser, loginPlatform } = useAuth();
   const [email, setEmail] = useState("platform@hrm.local");
   const [password, setPassword] = useState("platform123");
@@ -64,8 +64,9 @@ export default function LoginPage() {
           {loading ? "Entrando…" : "Iniciar sesión"}
         </button>
         <p className="muted small login-footer-link">
-          ¿Eres cliente o empleado?{" "}
-          <Link to="/acceso-cliente">Acceso a tu cuenta</Link>
+          <Link to="/">Volver al inicio</Link>
+          {" · "}
+          <Link to="/acceso-cliente">Acceso cliente</Link>
         </p>
       </form>
     </div>

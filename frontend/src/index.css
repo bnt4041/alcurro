@@ -894,6 +894,34 @@ th {
   flex-shrink: 0;
 }
 
+.sheet-header--tabs {
+  padding: 1.25rem 0 0;
+}
+
+.sheet-header__intro {
+  padding: 0 1.5rem;
+}
+
+.tab-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  margin-left: 0.35rem;
+  padding: 0 0.35rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  border-radius: 999px;
+  background: var(--primary);
+  color: #fff;
+}
+
+.sheet-tabs .tab:not(.active) .tab-count {
+  background: #cbd5e1;
+  color: #475569;
+}
+
 .sheet-header__top {
   display: flex;
   align-items: center;
@@ -909,9 +937,78 @@ th {
   margin: 0.35rem 0 0;
 }
 
+/* Pestañas tipo tabs en ficha de cuenta */
 .sheet-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
   margin-top: 1rem;
   margin-bottom: 0;
+  padding: 0 1.5rem;
+  border-bottom: 2px solid var(--border);
+  background: #f8fafc;
+}
+
+.sheet-tabs .tab {
+  position: relative;
+  margin: 0;
+  padding: 0.75rem 1.15rem;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 500;
+  font-size: 0.9rem;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.sheet-tabs .tab:hover {
+  color: var(--brand-navy);
+  background: rgba(59, 130, 246, 0.06);
+}
+
+.sheet-tabs .tab.active {
+  color: var(--primary);
+  background: #fff;
+  border-bottom-color: var(--primary);
+  font-weight: 600;
+}
+
+.sheet-tab-panel {
+  animation: sheet-tab-in 0.2s ease-out;
+}
+
+@keyframes sheet-tab-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.sheet-users-table {
+  width: 100%;
+  font-size: 0.9rem;
+}
+
+.sheet-users-table th,
+.sheet-users-table td {
+  padding: 0.5rem 0.65rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+
+.sheet-users-table th {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--muted);
 }
 
 .sheet-hint {
@@ -968,6 +1065,122 @@ th {
 .table-foot-hint {
   padding: 0.65rem 1rem 0.85rem;
   margin: 0;
+}
+
+.billing-tab-intro {
+  margin: 0 0 1rem;
+}
+
+.billing-block {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.billing-block h4 {
+  margin: 0 0 0.35rem;
+  font-size: 0.95rem;
+}
+
+.billing-section-title {
+  margin: 0 0 0.5rem;
+}
+
+.billing-account-fields {
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.billing-method-list {
+  list-style: none;
+  margin: 0.5rem 0;
+  padding: 0;
+}
+
+.billing-method-list li {
+  padding: 0.35rem 0;
+}
+
+.billing-inline-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin-top: 0.65rem;
+}
+
+.billing-inline-form input,
+.billing-inline-form select {
+  flex: 1;
+  min-width: 140px;
+}
+
+.company-billing-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.company-billing-card {
+  padding: 1rem;
+}
+
+.company-billing-card__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin-bottom: 0.65rem;
+}
+
+.company-billing-card h5 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.subscription-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.5rem 0.65rem;
+  margin-bottom: 0.65rem;
+  background: #f0f9ff;
+  border-radius: 8px;
+}
+
+.sub-status-select {
+  max-width: 10rem;
+}
+
+.billing-dl {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 0.35rem 1rem;
+  margin: 0;
+}
+
+.billing-dl dt {
+  font-weight: 600;
+}
+
+.billing-dl dd {
+  margin: 0;
+}
+
+.subscription-editor {
+  margin-bottom: 0.75rem;
+  padding: 0.75rem;
+  background: #f8fafc;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+
+.subscription-fields {
+  margin-top: 0.65rem;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
 }
 
 tr.row-inactive {
@@ -1125,4 +1338,262 @@ code {
 .template-list li {
   padding: 0.75rem 0;
   border-bottom: 1px solid var(--border);
+}
+
+/* —— Marketing / web pública —— */
+.marketing {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+
+.marketing-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 2rem;
+  background: #fff;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.marketing-brand img {
+  max-width: 140px;
+}
+
+.marketing-nav {
+  display: flex;
+  gap: 1.25rem;
+  align-items: center;
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.marketing-nav a {
+  color: var(--text);
+}
+
+.marketing-nav-admin {
+  color: var(--muted) !important;
+  font-weight: 500;
+}
+
+.marketing-hero {
+  background: linear-gradient(135deg, #12263a 0%, #1a3350 55%, #0f4c3a 100%);
+  color: #fff;
+  padding: 4rem 2rem 5rem;
+}
+
+.marketing-hero__inner {
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.marketing-eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.8rem;
+  color: var(--brand-green);
+  font-weight: 700;
+  margin: 0 0 0.75rem;
+}
+
+.marketing-hero h1 {
+  font-size: clamp(2rem, 4vw, 2.75rem);
+  line-height: 1.15;
+  margin: 0 0 1rem;
+}
+
+.marketing-highlight {
+  color: var(--brand-green);
+}
+
+.marketing-lead {
+  font-size: 1.15rem;
+  opacity: 0.92;
+  margin: 0 0 2rem;
+  max-width: 560px;
+}
+
+.marketing-hero__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.btn-lg {
+  padding: 0.85rem 1.5rem;
+  font-size: 1rem;
+}
+
+.marketing-features,
+.marketing-pricing,
+.marketing-cta {
+  padding: 3.5rem 2rem;
+}
+
+.marketing-section-inner {
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.marketing-section-lead {
+  color: var(--muted);
+  margin: -0.5rem 0 2rem;
+}
+
+.marketing-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1.25rem;
+}
+
+.marketing-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+  box-shadow: var(--shadow);
+}
+
+.marketing-card h3 {
+  margin: 0 0 0.5rem;
+}
+
+.pricing-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1.5rem;
+}
+
+.pricing-card {
+  background: var(--card);
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.5rem;
+  box-shadow: var(--shadow);
+}
+
+.pricing-card h3 {
+  margin: 0 0 0.5rem;
+}
+
+.pricing-card__price {
+  font-size: 1.5rem;
+  margin: 0.75rem 0 0.25rem;
+}
+
+.pricing-card__users {
+  margin: 1rem 0;
+  font-size: 0.9rem;
+}
+
+.marketing-cta {
+  background: #fff;
+  border-top: 1px solid var(--border);
+}
+
+.marketing-cta__inner {
+  text-align: center;
+}
+
+.marketing-footer {
+  margin-top: auto;
+  padding: 1.5rem 2rem;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.85rem;
+  border-top: 1px solid var(--border);
+}
+
+.signup-page {
+  padding: 2rem;
+  flex: 1;
+}
+
+.signup-page__inner {
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.signup-form fieldset {
+  border: none;
+  margin: 0 0 1.5rem;
+  padding: 0;
+}
+
+.signup-form legend {
+  font-weight: 700;
+  font-size: 1rem;
+  margin-bottom: 0.75rem;
+  color: var(--text);
+}
+
+.signup-terms {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 1rem 0;
+  font-size: 0.9rem;
+}
+
+.signup-actions {
+  display: flex;
+  gap: 1rem;
+  justify-content: flex-end;
+  margin-top: 1rem;
+}
+
+.signup-success {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 50vh;
+}
+
+.signup-success .card {
+  padding: 2rem;
+  text-align: center;
+}
+
+.stripe-status.ok {
+  border-left: 4px solid var(--ok);
+}
+
+.stripe-status.warn {
+  border-left: 4px solid var(--warn);
+}
+
+.stripe-status-list {
+  margin: 0.5rem 0 0;
+  padding-left: 1.25rem;
+}
+
+.badge-succeeded {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.badge-failed {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.badge-pending {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+@media (max-width: 640px) {
+  .marketing-header {
+    flex-direction: column;
+    gap: 1rem;
+    align-items: flex-start;
+  }
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
 }
