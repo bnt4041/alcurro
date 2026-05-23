@@ -1,0 +1,89 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: hrm-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-hrm}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hrm_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-hrm}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-hrm} -d ${POSTGRES_DB:-hrm}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - hrm-net
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: hrm-ollama
+    volumes:
+      - ollama_data:/root/.ollama
+    ports:
+      - "11434:11434"
+    networks:
+      - hrm-net
+
+  # goWA: un contenedor por tenant (provisionado desde el panel o API)
+  # docker exec hrm-backend python -m scripts.migrate_multitenant
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: hrm-backend
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-hrm}:${POSTGRES_PASSWORD:-hrm_secret}@db:5432/${POSTGRES_DB:-hrm}
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2}
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production-hrm-jwt-secret}
+      DOCKER_NETWORK: hrm-net
+      PLATFORM_SETUP_KEY: ${PLATFORM_SETUP_KEY:-hrm-platform-setup}
+    volumes:
+      - ./backend:/app
+      - uploads_data:/app/uploads
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+    networks:
+      - hrm-net
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: hrm-frontend
+    environment:
+      VITE_API_BASE_URL: http://localhost:8000
+      VITE_API_PROXY: http://backend:8000
+    volumes:
+      - ./frontend:/app
+      - frontend_node_modules:/app/node_modules
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+    networks:
+      - hrm-net
+    command: sh -c "bun install && exec bun run dev -- --host 0.0.0.0"
+
+volumes:
+  postgres_data:
+  ollama_data:
+  uploads_data:
+  frontend_node_modules:
+
+networks:
+  hrm-net:
+    name: hrm-net
+    driver: bridge

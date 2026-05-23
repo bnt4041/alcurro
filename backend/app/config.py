@@ -1,0 +1,28 @@
+from functools import lru_cache
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    database_url: str = (
+        "postgresql+psycopg://hrm:hrm_secret@localhost:5432/hrm"
+    )
+    ollama_base_url: str = "http://localhost:11434"
+    ollama_model: str = "llama3.2"
+    gowa_send_url: str = "http://localhost:3000/send/message"
+    gowa_basic_auth: str = "admin:admin"
+    jwt_secret: str = "change-me-in-production-hrm-jwt-secret"
+    jwt_expire_hours: int = 12
+    docker_network: str = "hrm-net"
+    platform_setup_key: str = "hrm-platform-setup"
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()

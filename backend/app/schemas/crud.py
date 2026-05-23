@@ -1,0 +1,201 @@
+from datetime import date, datetime, time
+from typing import Any
+from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from app.models.models import (
+    ClockInType,
+    LeaveStatus,
+    Role,
+    ShiftPatternType,
+)
+
+
+class EmployeeCreate(BaseModel):
+    phone: str
+    email: str | None = None
+    full_name: str
+    employee_code: str
+    department_id: UUID | None = None
+    role: Role = Role.EMPLOYEE
+    supervisor_id: UUID | None = None
+    vacation_days_balance: float = 22.0
+    is_active: bool = True
+    password: str | None = None
+
+
+class EmployeeUpdate(BaseModel):
+    phone: str | None = None
+    email: str | None = None
+    full_name: str | None = None
+    employee_code: str | None = None
+    department_id: UUID | None = None
+    role: Role | None = None
+    supervisor_id: UUID | None = None
+    vacation_days_balance: float | None = None
+    is_active: bool | None = None
+    password: str | None = None
+
+
+class EmployeeRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    company_id: UUID
+    department_id: UUID | None = None
+    phone: str
+    email: str | None = None
+    full_name: str
+    employee_code: str
+    role: Role
+    supervisor_id: UUID | None = None
+    vacation_days_balance: float
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class ClockInCreate(BaseModel):
+    employee_id: UUID
+    record_type: ClockInType
+    latitude: float | None = None
+    longitude: float | None = None
+    source: str = "panel"
+    notes: str | None = None
+
+
+class ClockInRead(ClockInCreate):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    recorded_at: datetime
+    whatsapp_message_id: str | None = None
+
+
+class LeaveRequestCreate(BaseModel):
+    employee_id: UUID
+    start_date: date
+    end_date: date
+    days_requested: float = Field(ge=0.5)
+    status: LeaveStatus = LeaveStatus.PENDING
+    reason: str | None = None
+    supervisor_id: UUID | None = None
+
+
+class LeaveRequestUpdate(BaseModel):
+    start_date: date | None = None
+    end_date: date | None = None
+    days_requested: float | None = None
+    status: LeaveStatus | None = None
+    reason: str | None = None
+    supervisor_id: UUID | None = None
+    review_notes: str | None = None
+
+
+class LeaveRequestRead(LeaveRequestCreate):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    reviewed_at: datetime | None = None
+    review_notes: str | None = None
+    created_at: datetime
+    raw_message: str | None = None
+
+
+class ShiftConfigurationCreate(BaseModel):
+    name: str
+    pattern_type: ShiftPatternType
+    description: str | None = None
+    weekly_hours: float | None = None
+    pattern_definition: dict[str, Any] = Field(default_factory=dict)
+    default_start_time: time | None = None
+    default_end_time: time | None = None
+    is_active: bool = True
+
+
+class ShiftConfigurationUpdate(BaseModel):
+    name: str | None = None
+    pattern_type: ShiftPatternType | None = None
+    description: str | None = None
+    weekly_hours: float | None = None
+    pattern_definition: dict[str, Any] | None = None
+    default_start_time: time | None = None
+    default_end_time: time | None = None
+    is_active: bool | None = None
+
+
+class ShiftConfigurationRead(ShiftConfigurationCreate):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    created_at: datetime
+
+
+class ShiftAssignmentCreate(BaseModel):
+    employee_id: UUID
+    shift_configuration_id: UUID
+    valid_from: date
+    valid_to: date | None = None
+    calendar_overrides: dict[str, Any] = Field(default_factory=dict)
+
+
+class ShiftAssignmentUpdate(BaseModel):
+    employee_id: UUID | None = None
+    shift_configuration_id: UUID | None = None
+    valid_from: date | None = None
+    valid_to: date | None = None
+    calendar_overrides: dict[str, Any] | None = None
+
+
+class ShiftAssignmentRead(ShiftAssignmentCreate):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    created_at: datetime
+
+
+class DocumentDeliveryCreate(BaseModel):
+    employee_id: UUID
+    file_name: str
+    document_type: str
+    requires_acknowledgment: bool = True
+
+
+class DocumentDeliveryUpdate(BaseModel):
+    document_type: str | None = None
+    requires_acknowledgment: bool | None = None
+    sent_at: datetime | None = None
+
+
+class DocumentDeliveryRead(DocumentDeliveryCreate):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    file_path: str
+    sent_at: datetime | None = None
+    acknowledged_at: datetime | None = None
+    acknowledgment_text: str | None = None
+    created_at: datetime
+
+
+class SystemSettingsRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    gowa_send_url: str
+    gowa_basic_auth: str
+    gowa_webhook_url: str
+    gowa_ui_url: str
+    ollama_base_url: str
+    ollama_model: str
+    company_name: str
+    updated_at: datetime
+
+
+class SystemSettingsUpdate(BaseModel):
+    gowa_send_url: str | None = None
+    gowa_basic_auth: str | None = None
+    gowa_webhook_url: str | None = None
+    gowa_ui_url: str | None = None
+    ollama_base_url: str | None = None
+    ollama_model: str | None = None
+    company_name: str | None = None
+
+
+class ConnectionTestResult(BaseModel):
+    ok: bool
+    message: str
+    detail: str | None = None
