@@ -6,6 +6,8 @@ from typing import Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import Column, JSON, UniqueConstraint
+from sqlalchemy.dialects.postgresql import ENUM as PgENUM
+from sqlalchemy.types import TypeDecorator
 from sqlmodel import Field, Relationship, SQLModel
 
 
@@ -21,9 +23,66 @@ class Role(StrEnum):
     ADMIN = "admin"
 
 
+_PG_ROLE_ENUM = PgENUM(
+    "EMPLOYEE",
+    "SUPERVISOR",
+    "ADMIN",
+    "LABOR_INSPECTOR",
+    "tenant_admin",
+    "manager",
+    name="role",
+    create_type=False,
+)
+
+
+class RoleType(TypeDecorator):
+    """PostgreSQL enum `role`: etiquetas legacy en MAYÚSCULAS + tenant_admin/manager."""
+
+    impl = _PG_ROLE_ENUM
+    cache_ok = True
+
+    _TO_DB: dict[str, str] = {
+        "employee": "EMPLOYEE",
+        "supervisor": "SUPERVISOR",
+        "admin": "ADMIN",
+        "labor_inspector": "LABOR_INSPECTOR",
+        "tenant_admin": "tenant_admin",
+        "manager": "manager",
+    }
+    _FROM_DB: dict[str, Role] = {
+        "EMPLOYEE": Role.EMPLOYEE,
+        "SUPERVISOR": Role.SUPERVISOR,
+        "ADMIN": Role.ADMIN,
+        "LABOR_INSPECTOR": Role.LABOR_INSPECTOR,
+        "tenant_admin": Role.TENANT_ADMIN,
+        "manager": Role.MANAGER,
+    }
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return None
+        raw = value.value if isinstance(value, Role) else str(value)
+        return self._TO_DB.get(raw, raw)
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return None
+        if value in self._FROM_DB:
+            return self._FROM_DB[value]
+        try:
+            return Role(value)
+        except ValueError:
+            return Role.EMPLOYEE
+
+
 class ClockInType(StrEnum):
     ENTRADA = "entrada"
     SALIDA = "salida"
+
+
+class BreakType(StrEnum):
+    INICIO = "inicio_parada"
+    FIN = "fin_parada"
 
 
 class LeaveStatus(StrEnum):
@@ -48,6 +107,9 @@ class Employee(SQLModel, table=True):
     __table_args__ = (
         UniqueConstraint("company_id", "employee_code", name="uq_employee_code_company"),
         UniqueConstraint("company_id", "phone", name="uq_employee_phone_company"),
+        UniqueConstraint(
+            "company_id", "id_document", name="uq_employee_id_document_company"
+        ),
     )
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
@@ -58,16 +120,31 @@ class Employee(SQLModel, table=True):
     phone: str = Field(index=True, max_length=20)
     email: str | None = Field(default=None, max_length=255)
     full_name: str = Field(max_length=200)
+    id_document: str | None = Field(default=None, max_length=20, index=True)
     employee_code: str = Field(index=True, max_length=50)
-    role: Role = Field(default=Role.EMPLOYEE)
+    role: Role = Field(
+        default=Role.EMPLOYEE,
+        sa_column=Column(RoleType, nullable=False),
+    )
     supervisor_id: UUID | None = Field(default=None, foreign_key="employees.id")
     vacation_days_balance: float = Field(default=22.0, ge=0)
     is_active: bool = Field(default=True)
     password_hash: str | None = Field(default=None, max_length=255)
+    shift_configuration_id: UUID | None = Field(
+        default=None, foreign_key="shift_configurations.id", index=True
+    )
+    work_start_time: time | None = Field(default=None)
+    work_end_time: time | None = Field(default=None)
+    work_days: list[int] = Field(
+        default_factory=lambda: [0, 1, 2, 3, 4],
+        sa_column=Column(JSON, nullable=False),
+        description="Días laborables 0=lunes … 6=domingo",
+    )
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
     clock_ins: list["ClockIn"] = Relationship(back_populates="employee")
+    work_breaks: list["WorkBreak"] = Relationship(back_populates="employee")
     leave_requests: list["LeaveRequest"] = Relationship(
         back_populates="employee",
         sa_relationship_kwargs={"foreign_keys": "LeaveRequest.employee_id"},
@@ -99,6 +176,22 @@ class ClockIn(SQLModel, table=True):
     whatsapp_message_id: str | None = Field(default=None, max_length=100)
 
     employee: Employee | None = Relationship(back_populates="clock_ins")
+
+
+class WorkBreak(SQLModel, table=True):
+    """Paradas / descansos durante la jornada (inalterables, sin borrado)."""
+
+    __tablename__ = "work_breaks"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    employee_id: UUID = Field(foreign_key="employees.id", index=True)
+    record_type: BreakType
+    recorded_at: datetime = Field(default_factory=datetime.utcnow)
+    source: str = Field(default="panel", max_length=50)
+    notes: str | None = Field(default=None, max_length=500)
+    whatsapp_message_id: str | None = Field(default=None, max_length=100)
+
+    employee: Employee | None = Relationship(back_populates="work_breaks")
 
 
 class LeaveRequest(SQLModel, table=True):

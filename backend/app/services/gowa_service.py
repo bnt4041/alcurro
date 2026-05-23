@@ -3,27 +3,32 @@ import base64
 import httpx
 from sqlmodel import Session
 
-from app.models.tenant import Tenant
 from app.schemas.whatsapp import format_phone_for_gowa
+from app.services.settings_service import SettingsService
 
 
 class GoWAService:
-    """Cliente HTTP hacia goWA POST /send/message del tenant."""
+    """Cliente HTTP hacia la instancia goWA compartida de plataforma."""
 
-    def __init__(self, tenant: Tenant) -> None:
-        self._send_url = tenant.gowa_send_url or f"http://{tenant.gowa_host}:3000/send/message"
-        self._basic_auth = tenant.gowa_basic_auth
+    def __init__(self, session: Session) -> None:
+        self._session = session
+        settings = SettingsService(session).get_or_create()
+        self._send_url = settings.gowa_send_url
+        self._basic_auth = settings.gowa_basic_auth
+        self._device_id = settings.gowa_device_id
 
     def _headers(self) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}
         if self._basic_auth and ":" in self._basic_auth:
             token = base64.b64encode(self._basic_auth.encode()).decode()
             headers["Authorization"] = f"Basic {token}"
+        if self._device_id:
+            headers["X-Device-Id"] = self._device_id
         return headers
 
     async def send_text(self, phone: str, text: str) -> dict:
         if not self._send_url:
-            raise RuntimeError("goWA no provisionado para este tenant")
+            raise RuntimeError("WhatsApp no configurado en la plataforma")
         payload = {
             "phone": format_phone_for_gowa(phone),
             "message": text,

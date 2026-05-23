@@ -15,10 +15,16 @@ from app.services.pricing_service import (
     get_active_discount_by_code,
     sync_subscription_pricing,
 )
+from app.services.legal_service import seed_default_legal_documents
 from app.services.rbac_service import assign_role_default_group, ensure_system_groups
 from app.services.slug import resolve_tenant_slug
-from app.services.stripe_service import create_checkout_session, stripe_configured
 from app.config import get_settings
+from app.services.stripe_service import create_checkout_session
+from app.services.stripe_simulation import (
+    create_simulation_checkout_token,
+    stripe_simulation_enabled,
+    use_real_stripe,
+)
 
 
 def register_tenant(session: Session, data: PublicSignupRequest) -> PublicSignupResponse:
@@ -53,6 +59,7 @@ def register_tenant(session: Session, data: PublicSignupRequest) -> PublicSignup
     session.add(company)
     clone_groups_for_tenant(session, tenant.id)
     ensure_system_groups(session, tenant.id)
+    seed_default_legal_documents(session, tenant.id)
 
     admin = Employee(
         company_id=company.id,
@@ -84,8 +91,10 @@ def register_tenant(session: Session, data: PublicSignupRequest) -> PublicSignup
 
     settings = get_settings()
     base = settings.public_app_url.rstrip("/")
-    checkout_url = None
-    if stripe_configured():
+    checkout_url: str | None = None
+    simulation = stripe_simulation_enabled()
+
+    if use_real_stripe():
         checkout_url = create_checkout_session(
             session,
             tenant,
@@ -95,6 +104,9 @@ def register_tenant(session: Session, data: PublicSignupRequest) -> PublicSignup
             success_url=f"{base}/registro/ok?session_id={{CHECKOUT_SESSION_ID}}",
             cancel_url=f"{base}/registro?cancelled=1",
         )
+    elif simulation:
+        token = create_simulation_checkout_token(session, sub)
+        checkout_url = f"{base}/registro/pago-simulado?token={token}"
 
     session.commit()
 
@@ -103,6 +115,7 @@ def register_tenant(session: Session, data: PublicSignupRequest) -> PublicSignup
         tenant_slug=tenant.slug,
         company_name=tenant.name,
         checkout_url=checkout_url,
-        stripe_enabled=stripe_configured(),
+        stripe_enabled=use_real_stripe(),
+        simulation_mode=simulation and not use_real_stripe(),
         admin_login_hint=f"Accede en {base}/acceso-cliente con cuenta «{tenant.slug}» y usuario ADM001",
     )

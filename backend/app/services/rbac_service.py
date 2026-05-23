@@ -6,12 +6,19 @@ from app.core.permissions import (
     INSPECTOR_PERMS,
     MANAGER_PERMS,
     TENANT_ADMIN_PERMS,
-    Perm,
 )
 from app.models.models import Employee, Role
 from app.models.rbac import EmployeeGroup, UserGroup
-from app.models.tenant import Tenant
 
+EMPLOYEE_PANEL_PERMS = frozenset(
+    {
+        "clock_ins.read",
+        "leave.read",
+        "leave.write",
+        "documents.read",
+        "legal.read",
+    }
+)
 
 SYSTEM_GROUPS: list[tuple[str, str, frozenset[str]]] = [
     (
@@ -28,6 +35,11 @@ SYSTEM_GROUPS: list[tuple[str, str, frozenset[str]]] = [
         "Inspector de Trabajo",
         "Solo lectura en todos los módulos",
         INSPECTOR_PERMS,
+    ),
+    (
+        "Empleados con panel",
+        "Consulta de fichajes y vacaciones propias",
+        EMPLOYEE_PANEL_PERMS,
     ),
 ]
 
@@ -74,6 +86,8 @@ def assign_role_default_group(
         target_name = "Responsables"
     elif role == Role.LABOR_INSPECTOR:
         target_name = "Inspector de Trabajo"
+    elif role == Role.EMPLOYEE:
+        target_name = "Empleados con panel"
     if not target_name:
         return
     group = groups[target_name]

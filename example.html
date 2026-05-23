@@ -1,0 +1,484 @@
+<!DOCTYPE html><html class="light" lang="es"><head>
+    <meta charset="utf-8">
+    <meta content="width=device-width, initial-scale=1.0" name="viewport">
+    <title>Al Curro - RRHH a la velocidad de un WhatsApp</title>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com" rel="preconnect">
+    <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Montserrat:wght@600;700;800;900&amp;display=swap" rel="stylesheet">
+    <!-- Material Symbols -->
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <script id="tailwind-config">
+          tailwind.config = {
+            darkMode: "class",
+            theme: {
+              extend: {
+                "colors": {
+                    "on-secondary": "#ffffff",
+                    "secondary-fixed": "#ffd9e4",
+                    "tertiary": "#006c49",
+                    "on-background": "#191c1d",
+                    "secondary-fixed-dim": "#ffb0cd",
+                    "error-container": "#ffdad6",
+                    "on-primary-container": "#fffbff",
+                    "on-secondary-fixed-variant": "#8c0053",
+                    "surface-dim": "#d9dadb",
+                    "inverse-surface": "#2e3132",
+                    "primary-fixed": "#e1e0ff",
+                    "secondary": "#b4136d",
+                    "on-surface": "#191c1d",
+                    "on-tertiary-fixed": "#002113",
+                    "surface-container": "#edeeef",
+                    "surface-container-highest": "#e1e3e4",
+                    "inverse-on-surface": "#f0f1f2",
+                    "surface-bright": "#f8f9fa",
+                    "tertiary-fixed": "#6ffbbe",
+                    "surface": "#f8f9fa",
+                    "surface-container-low": "#f3f4f5",
+                    "on-secondary-fixed": "#3e0022",
+                    "on-tertiary-container": "#000703",
+                    "error": "#ba1a1a",
+                    "inverse-primary": "#c0c1ff",
+                    "on-surface-variant": "#464554",
+                    "on-error-container": "#93000a",
+                    "on-secondary-container": "#600037",
+                    "on-tertiary": "#ffffff",
+                    "on-tertiary-fixed-variant": "#005236",
+                    "background": "#f8f9fa",
+                    "primary": "#4648d4",
+                    "on-error": "#ffffff",
+                    "tertiary-fixed-dim": "#4edea3",
+                    "outline-variant": "#c7c4d7",
+                    "surface-tint": "#494bd6",
+                    "secondary-container": "#fd56a7",
+                    "surface-variant": "#e1e3e4",
+                    "outline": "#767586",
+                    "surface-container-high": "#e7e8e9",
+                    "tertiary-container": "#00885d",
+                    "primary-container": "#6063ee",
+                    "primary-fixed-dim": "#c0c1ff",
+                    "surface-container-lowest": "#ffffff",
+                    "on-primary-fixed": "#07006c",
+                    "on-primary-fixed-variant": "#2f2ebe",
+                    "on-primary": "#ffffff"
+                },
+                "borderRadius": {
+                    "DEFAULT": "0.25rem",
+                    "lg": "0.5rem",
+                    "xl": "0.75rem",
+                    "full": "9999px"
+                },
+                "spacing": {
+                    "gutter": "20px",
+                    "container-padding": "24px",
+                    "section-margin": "48px",
+                    "unit": "8px",
+                    "bento-gap": "16px"
+                },
+                "fontFamily": {
+                    "body-md": ["Inter"],
+                    "headline-lg": ["Montserrat"],
+                    "headline-md": ["Montserrat"],
+                    "headline-lg-mobile": ["Montserrat"],
+                    "display-lg": ["Montserrat"],
+                    "body-lg": ["Inter"],
+                    "label-md": ["Inter"],
+                    "label-sm": ["Inter"]
+                },
+                "fontSize": {
+                    "body-md": ["16px", {"lineHeight": "1.6", "fontWeight": "400"}],
+                    "headline-lg": ["32px", {"lineHeight": "1.2", "fontWeight": "700"}],
+                    "headline-md": ["24px", {"lineHeight": "1.3", "fontWeight": "600"}],
+                    "headline-lg-mobile": ["24px", {"lineHeight": "1.2", "fontWeight": "700"}],
+                    "display-lg": ["48px", {"lineHeight": "1.1", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                    "body-lg": ["18px", {"lineHeight": "1.6", "fontWeight": "400"}],
+                    "label-md": ["14px", {"lineHeight": "1.4", "letterSpacing": "0.01em", "fontWeight": "600"}],
+                    "label-sm": ["12px", {"lineHeight": "1.4", "fontWeight": "500"}]
+                }
+              },
+            },
+          }
+        </script>
+    <style>
+          .rainbow-crest {
+            background: linear-gradient(135deg, #00BCD4 0%, #4648D4 35%, #B4136D 70%, #FD56A7 100%);
+          }
+          .rainbow-border {
+            position: relative;
+            border-radius: 1rem;
+            background: #ffffff;
+          }
+          .rainbow-border::before {
+            content: "";
+            position: absolute;
+            top: -2px; left: -2px; right: -2px; bottom: -2px;
+            background: linear-gradient(135deg, #00BCD4, #4648D4, #B4136D, #FD56A7);
+            border-radius: 1.1rem;
+            z-index: -1;
+          }
+          .glass-card {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(226, 232, 240, 0.5);
+          }
+          .whatsapp-bubble-user {
+            background: #E7FED3;
+            border-radius: 16px 16px 4px 16px;
+            box-shadow: 0 1px 1px rgba(0,0,0,0.1);
+          }
+          .whatsapp-bubble-bot {
+            background: #FFFFFF;
+            border-radius: 16px 16px 16px 4px;
+            box-shadow: 0 1px 1px rgba(0,0,0,0.1);
+          }
+          .rainbow-shadow {
+            box-shadow: 0 10px 40px -10px rgba(70, 72, 212, 0.3);
+          }
+          .bento-hover:hover {
+            border-image: linear-gradient(135deg, #00BCD4, #B4136D) 1;
+            transition: all 0.3s ease;
+          }
+        </style>
+    </head>
+    <body class="bg-surface font-body-md text-on-surface">
+    <!-- TopNavBar -->
+    <nav class="fixed top-0 w-full z-50 bg-surface/70 dark:bg-surface-container-lowest/70 backdrop-blur-md border-b border-outline-variant/30 shadow-sm">
+    <div class="max-w-7xl mx-auto px-gutter flex justify-between items-center h-20">
+    <div class="font-display-lg text-[28px] font-black bg-clip-text text-transparent bg-gradient-to-r from-primary via-secondary to-tertiary"><img src="https://lh3.googleusercontent.com/aida-public/AB6AXuBDHPFT7OPZ0ynlvpQ0mRj4iEA8Wk5Ztta4hFEd-jupvVp8kcPyBevh0u8zaFRXpwAm6egoJQTipKe4sUjrAB49P9Az7LnuumkLyzLS1CvAVGEzmd577l0NBPOgfCxVBvSTAXr06qOCXwi2IhFq8mBM5pc-WN99qGyxxRC2mqX9pgbbzN-tll093aDLYT_WTq7Oz97Nrypivcu9z73tGv-bA9NeeySsUjPcwyXrjFgX1R79aFBD9FHyhbZSbcoLHC4a3XRIHsXR2CY" alt="Al Curro Logo" class="h-12 w-auto object-contain"></div>
+    <div class="hidden md:flex gap-8 items-center">
+    <a class="font-label-md text-label-md text-primary dark:text-primary-fixed border-b-2 border-primary relative after:absolute after:bottom-0 after:left-0 after:w-full after:h-[2px] after:bg-gradient-to-r after:from-primary after:via-secondary after:to-tertiary" href="#">Features</a>
+    <a class="font-label-md text-label-md text-on-surface-variant dark:text-surface-variant hover:text-primary transition-colors" href="#">Pricing</a>
+    </div>
+    <div class="flex items-center gap-4">
+    <button class="font-label-md text-label-md px-4 py-2 text-primary hover:opacity-90 transition-all">Login</button>
+    <button class="rainbow-crest px-6 py-2.5 rounded-full font-label-md text-label-md text-white rainbow-shadow hover:scale-[1.02] transition-all">Get Started</button>
+    </div>
+    </div>
+    </nav>
+    <main class="pt-20">
+    <!-- Hero Section -->
+    <section class="max-w-7xl mx-auto px-gutter py-section-margin grid grid-cols-1 md:grid-cols-2 items-center gap-16">
+    <div class="flex flex-col gap-6">
+    <h1 class="font-display-lg text-display-lg leading-tight">
+                        RRHH a la velocidad de un <span class="bg-clip-text text-transparent bg-gradient-to-r from-primary to-secondary">WhatsApp</span>
+    </h1>
+    <p class="font-body-lg text-body-lg text-on-surface-variant max-w-lg">
+                        Gestiona fichajes, vacaciones y turnos complejos desde el chat que ya usas. Sin descargas en cada móvil, sin complicaciones.
+                    </p>
+    <div class="pt-4">
+    <button class="rainbow-crest px-10 py-5 rounded-full font-headline-md text-headline-md text-white rainbow-shadow hover:scale-[1.05] duration-200 flex items-center gap-3">
+                            Empezar ahora
+                            <span class="material-symbols-outlined" data-icon="arrow_forward">arrow_forward</span>
+    </button>
+    <p class="font-label-sm text-label-sm text-on-surface-variant mt-4 opacity-70">Empieza gratis. Sin tarjeta de crédito.</p>
+    </div>
+    </div>
+    <div class="relative flex justify-center">
+    <!-- Smartphone Mockup -->
+    <div class="relative w-[320px] h-[640px] bg-black rounded-[3rem] p-3 shadow-2xl border-4 border-slate-800">
+    <div class="absolute top-0 left-1/2 -translate-x-1/2 w-32 h-6 bg-black rounded-b-2xl z-10"></div>
+    <div class="w-full h-full bg-[#E5DDD5] rounded-[2.2rem] overflow-hidden flex flex-col">
+    <!-- Chat Header -->
+    <div class="bg-[#075E54] p-4 flex items-center gap-3 text-white">
+    <div class="w-8 h-8 rounded-full bg-slate-300 overflow-hidden">
+    <img class="w-full h-full object-cover" data-alt="A small, professional profile avatar of a friendly AI assistant with a subtle digital glow, styled for a minimalist corporate UI. The avatar is circular and features soft, high-key lighting consistent with a clean light-mode aesthetic." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDKRWgdmnSSSX2YUW6wGyDwrM0eaM3p3wQz-NHSQ21TgPDmncUdfEEzd1ZGDO6k6LmFHpZWc18MoWCrkRkNn9vjhq4UPPUY3Vu-BYJWa4Z2PxhAZNibqgeOFWIc7pfE_f-49h7rhoFMyrkdNN8EdDinJRGkHwo2JuZn42XzJD-OnF7z8HmEpkz7zEnGm3IWdsr1Amiw7ZR3qhTQi_1GQbsaiz9d4ifYKYNy1y8e_T0JIlbcddkIbFvElBoSmfNxCE9CwxICpWNWQOI">
+    </div>
+    <div>
+    <p class="text-sm font-bold">Al Curro Bot</p>
+    <p class="text-[10px] opacity-80">En línea</p>
+    </div>
+    </div>
+    <!-- Chat Body -->
+    <div class="flex-1 p-4 flex flex-col gap-4">
+    <div class="self-end whatsapp-bubble-user p-3 max-w-[80%] text-sm">
+                                    Ficho entrada
+                                    <div class="text-[9px] text-right opacity-60 mt-1">10:00</div>
+    </div>
+    <div class="self-start whatsapp-bubble-bot p-1 max-w-[85%] text-sm overflow-hidden">
+    <div class="p-2 pb-0">
+    <p class="font-bold text-primary">¡Fichaje realizado!</p>
+    <p class="text-[12px] opacity-70">Entrada: 10:01 AM</p>
+    </div>
+    <div class="mt-2 relative h-24 w-full">
+    <img class="w-full h-full object-cover" data-alt="A stylized minimalist digital map showing a city grid with clean vector lines and a single vibrant location pin. The map uses a light-mode color palette with soft greys and white, while the pin is highlighted with a rainbow gradient glow. The overall atmosphere is professional, tech-focused, and high-fidelity." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDiFAM-45P25xcFmTDXCio3UEPBp1H1r4Dqw_B_-hH4XUOf7mVHzwsXqy7fmbV-R3pM33zj2yZJ-HU8sI8WPAHDzGtH-De5XLffPqDg9IpSDtvjafyYmPozYRdl3xM4zEkWNi1abyB26tuysmforsEjwZ6A0vFxsO_abZg9BkHEqxXVyEhqK83tu2hUWhpHDqy6a5RVdqfAQoLCh7TSBav5unEXoVUFM5Xa7ZMGcoXdgl5UP_rQ0RdowS9ux3xyd77X2_uwKKENr5A">
+    <div class="absolute inset-0 flex items-center justify-center">
+    <span class="material-symbols-outlined text-secondary text-3xl" data-icon="location_on" data-weight="fill">location_on</span>
+    </div>
+    </div>
+    <div class="p-2">
+    <button class="w-full border border-primary/20 rounded-lg py-1 text-primary font-bold text-[11px] bg-primary/5">Ver detalles</button>
+    </div>
+    </div>
+    </div>
+    </div>
+    </div>
+    <!-- Background decorative elements -->
+    <div class="absolute -z-10 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-primary/10 blur-[100px] rounded-full"></div>
+    </div>
+    </section>
+    <!-- Comparison Section -->
+    <section class="bg-surface-container-low py-section-margin">
+    <div class="max-w-7xl mx-auto px-gutter">
+    <div class="text-center mb-16">
+    <h2 class="font-headline-lg text-headline-lg mb-4">La ventaja de la simplicidad</h2>
+    <p class="text-on-surface-variant max-w-2xl mx-auto">Elimina la fricción. Si tus empleados saben usar WhatsApp, ya saben usar Al Curro.</p>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-bento-gap items-stretch">
+    <!-- Old Way -->
+    <div class="glass-card rounded-xl p-10 border-slate-200 opacity-80 flex flex-col">
+    <div class="flex items-center gap-3 mb-6 text-on-surface-variant">
+    <span class="material-symbols-outlined" data-icon="cancel">cancel</span>
+    <span class="font-headline-md text-headline-md">App genérica</span>
+    </div>
+    <div class="flex-1 flex flex-col gap-4">
+    <div class="p-4 bg-slate-100 rounded-lg flex items-center gap-3 text-slate-400">
+    <span class="material-symbols-outlined" data-icon="download">download</span>
+    <span class="">Descargar app (45MB)</span>
+    </div>
+    <div class="p-4 bg-slate-100 rounded-lg flex items-center gap-3 text-slate-400">
+    <span class="material-symbols-outlined" data-icon="lock_reset">lock_reset</span>
+    <span class="">Contraseña olvidada</span>
+    </div>
+    <div class="p-4 bg-slate-100 rounded-lg border-2 border-error/20 flex items-center gap-3 text-error">
+    <span class="material-symbols-outlined" data-icon="report">report</span>
+    <span class="">Error de inicio de sesión</span>
+    </div>
+    </div>
+    <p class="mt-8 text-sm italic text-on-surface-variant">Resultado: Fichajes manuales al final del mes y errores de nómina.</p>
+    </div>
+    <!-- Al Curro Way -->
+    <div class="rainbow-border p-10 flex flex-col shadow-xl">
+    <div class="flex items-center gap-3 mb-6 text-primary">
+    <span class="material-symbols-outlined" data-icon="check_circle">check_circle</span>
+    <span class="font-headline-md text-headline-md">Al Curro</span>
+    </div>
+    <div class="flex-1 flex flex-col gap-4 justify-center">
+    <div class="self-start whatsapp-bubble-bot p-4 w-full shadow-lg flex items-center justify-between">
+    <div class="flex items-center gap-4">
+    <div class="w-10 h-10 rounded-full rainbow-crest flex items-center justify-center text-white">
+    <span class="material-symbols-outlined" data-icon="chat">chat</span>
+    </div>
+    <div>
+    <p class="font-bold">Escribe "Ficho"</p>
+    <p class="text-xs opacity-60">Listo en 1 segundo</p>
+    </div>
+    </div>
+    <span class="material-symbols-outlined text-primary text-3xl" data-icon="touch_app">touch_app</span>
+    </div>
+    <div class="mt-6 flex justify-center">
+    <span class="material-symbols-outlined text-6xl text-primary animate-bounce" data-icon="expand_more">expand_more</span>
+    </div>
+    </div>
+    <p class="mt-8 text-sm font-bold text-primary">Resultado: 100% de cumplimiento sin esfuerzo del empleado.</p>
+    </div>
+    </div>
+    </div>
+    </section>
+    <!-- Bento Grid Features -->
+    <section class="max-w-7xl mx-auto px-gutter py-section-margin">
+    <h2 class="font-headline-lg text-headline-lg text-center mb-16">Potencia real en un entorno familiar</h2>
+    <div class="grid grid-cols-1 md:grid-cols-4 md:grid-rows-2 gap-bento-gap">
+    <!-- Fichajes -->
+    <div class="md:col-span-2 glass-card rounded-xl p-8 bento-hover">
+    <div class="flex justify-between items-start mb-6">
+    <div>
+    <h3 class="font-headline-md text-headline-md mb-2">Fichajes</h3>
+    <p class="text-on-surface-variant">Control horario total con validez legal.</p>
+    </div>
+    <span class="px-3 py-1 rounded-full bg-tertiary-fixed text-on-tertiary-fixed text-[10px] font-bold flex items-center gap-1">
+    <span class="material-symbols-outlined text-xs" data-icon="location_on">location_on</span>
+                                GEOLOCALIZACIÓN
+                            </span>
+    </div>
+    <div class="rounded-lg overflow-hidden h-40 relative group">
+    <img class="w-full h-full object-cover" data-alt="A clean, high-resolution minimalist city map background with soft pastels and light greys. The image features a prominent, glowing interactive UI pin at its center, representing a clock-in location. The style is modern, professional, and incorporates the Prism Flow design language with soft shadows and high-key lighting." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDXdS6t-IDL1OgS__iQXJ_EQZ1FtZZp3SGLQ4UxokuhfohD5KyKaPFsY4-FHvbi42RQYh72dwpw360hu9U6qss2jgLwfcgMRkiSRcPA3XE0xpwG3xJnw0CFOnVtFqv3bY-SE5DiIfNsU1RhbGiee2WZnaUsi0j7AckDbmrijim6ZVuebhCjQfCgC3LH05exrKPR2n9nIhvcIDabHNQ4gludGdq9SZROB-lJori17GAAxeGphdOZl4lOUilnJYDJfzcftqWPUd_uRIs">
+    <div class="absolute inset-0 bg-gradient-to-t from-white/80 to-transparent flex items-end p-4">
+    <div class="flex items-center gap-2 text-xs font-bold text-primary">
+    <span class="material-symbols-outlined text-sm" data-icon="history">history</span>
+                                    10:02 AM - Oficina Central
+                                </div>
+    </div>
+    </div>
+    </div>
+    <!-- IA Badge -->
+    <div class="md:col-span-2 glass-card rounded-xl p-8 bento-hover bg-primary-fixed/5 border-primary/20">
+    <div class="flex items-center gap-2 mb-4">
+    <span class="px-2 py-0.5 rounded bg-primary text-white text-[10px] font-bold">OLLAMA IA</span>
+    <h3 class="font-headline-md text-headline-md">IA Local &amp; Privada</h3>
+    </div>
+    <p class="text-on-surface-variant mb-6 text-sm">Entiende el lenguaje natural de tus empleados. Procesado en servidores locales para máxima privacidad.</p>
+    <div class="flex flex-col gap-2">
+    <div class="whatsapp-bubble-user p-3 self-end text-sm max-w-[80%]">
+                                Me voy de vacaciones del 5 al 12 de mayo
+                            </div>
+    <div class="whatsapp-bubble-bot p-3 self-start text-sm border-l-4 border-primary">
+    <div class="flex items-center gap-2 text-primary font-bold mb-1">
+    <span class="material-symbols-outlined text-sm" data-icon="smart_toy">smart_toy</span>
+                                    Procesando...
+                                </div>
+                                Solicitud creada: 7 días de vacaciones detectados.
+                            </div>
+    </div>
+    </div>
+    <!-- Vacaciones -->
+    <div class="md:col-span-2 glass-card rounded-xl p-8 bento-hover">
+    <h3 class="font-headline-md text-headline-md mb-2">Vacaciones</h3>
+    <p class="text-on-surface-variant mb-6">Flujos de aprobación automáticos.</p>
+    <div class="space-y-3">
+    <div class="flex items-center gap-3 p-3 bg-surface rounded-lg border border-outline-variant/30">
+    <div class="w-8 h-8 rounded-full bg-secondary-fixed text-secondary flex items-center justify-center">
+    <span class="material-symbols-outlined text-sm" data-icon="person">person</span>
+    </div>
+    <div class="flex-1 text-xs">
+    <p class="font-bold">Juan Pérez</p>
+    <p class="opacity-60">Solicitó 3 días</p>
+    </div>
+    <span class="px-2 py-1 rounded bg-yellow-100 text-yellow-800 text-[9px] font-bold">PENDIENTE</span>
+    </div>
+    <div class="flex items-center justify-center text-outline">
+    <span class="material-symbols-outlined" data-icon="arrow_downward">arrow_downward</span>
+    </div>
+    <div class="flex items-center gap-3 p-3 bg-tertiary/5 rounded-lg border border-tertiary/20">
+    <div class="w-8 h-8 rounded-full bg-tertiary-fixed text-tertiary flex items-center justify-center">
+    <span class="material-symbols-outlined text-sm" data-icon="verified_user">verified_user</span>
+    </div>
+    <div class="flex-1 text-xs">
+    <p class="font-bold">Manager</p>
+    <p class="opacity-60">Aprobado vía WhatsApp</p>
+    </div>
+    <span class="px-2 py-1 rounded bg-tertiary text-white text-[9px] font-bold">OK</span>
+    </div>
+    </div>
+    </div>
+    <!-- Turnos -->
+    <div class="md:col-span-2 glass-card rounded-xl p-8 bento-hover">
+    <h3 class="font-headline-md text-headline-md mb-2">Turnos Complejos</h3>
+    <p class="text-on-surface-variant mb-4">Rotativos, nocturnos o partidos sin líos.</p>
+    <div class="grid grid-cols-7 gap-1">
+    <div class="h-12 bg-primary/10 rounded flex items-center justify-center text-[10px] font-bold">L</div>
+    <div class="h-12 bg-primary text-white rounded flex items-center justify-center text-[10px] font-bold shadow-lg">M</div>
+    <div class="h-12 bg-primary text-white rounded flex items-center justify-center text-[10px] font-bold shadow-lg">X</div>
+    <div class="h-12 bg-secondary text-white rounded flex items-center justify-center text-[10px] font-bold shadow-lg">J</div>
+    <div class="h-12 bg-primary/10 rounded flex items-center justify-center text-[10px] font-bold">V</div>
+    <div class="h-12 bg-slate-100 rounded flex items-center justify-center text-[10px] font-bold">S</div>
+    <div class="h-12 bg-slate-100 rounded flex items-center justify-center text-[10px] font-bold">D</div>
+    </div>
+    <div class="mt-4 p-2 bg-surface rounded text-[10px] flex items-center gap-2 border-l-4 border-secondary">
+    <span class="material-symbols-outlined text-sm" data-icon="info">info</span>
+                            Cambio de turno detectado el Jueves (Nocturno).
+                        </div>
+    </div>
+    </div>
+    </section>
+    <!-- Pricing Section -->
+    <section class="bg-surface-container-low py-section-margin">
+    <div class="max-w-7xl mx-auto px-gutter">
+    <div class="text-center mb-16">
+    <h2 class="font-headline-lg text-headline-lg mb-4">Planes para cada empresa</h2>
+    <p class="text-on-surface-variant">Escalabilidad sin sorpresas.</p>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-bento-gap items-end">
+    <!-- Basic -->
+    <div class="glass-card rounded-xl p-8 flex flex-col h-fit">
+    <p class="font-label-md text-label-md text-on-surface-variant mb-2">Básica / Micro</p>
+    <div class="flex items-baseline gap-1 mb-6">
+    <span class="text-4xl font-bold">29€</span>
+    <span class="text-on-surface-variant text-sm">/mes</span>
+    </div>
+    <ul class="space-y-4 mb-8 text-sm flex-1">
+    <li class="flex items-center gap-2"><span class="material-symbols-outlined text-primary" data-icon="check">check</span> Hasta 10 empleados</li>
+    <li class="flex items-center gap-2"><span class="material-symbols-outlined text-primary" data-icon="check">check</span> Fichajes por WhatsApp</li>
+    <li class="flex items-center gap-2"><span class="material-symbols-outlined text-primary" data-icon="check">check</span> Geolocalización básica</li>
+    </ul>
+    <button class="w-full py-3 rounded-lg border border-outline font-bold hover:bg-surface-container transition-colors">Seleccionar</button>
+    </div>
+    <!-- Pyme Grow -->
+    <div class="rainbow-border p-8 flex flex-col scale-105 shadow-2xl relative z-10 bg-white">
+    <div class="absolute -top-4 left-1/2 -translate-x-1/2 rainbow-crest text-white text-[10px] font-bold px-4 py-1 rounded-full">RECOMENDADO</div>
+    <p class="font-label-md text-label-md text-primary mb-2">Pyme Grow</p>
+    <div class="flex items-baseline gap-1 mb-6">
+    <span class="text-5xl font-extrabold">69€</span>
+    <span class="text-on-surface-variant text-sm">/mes</span>
+    </div>
+    <ul class="space-y-4 mb-8 text-sm flex-1">
+    <li class="flex items-center gap-2 font-bold"><span class="material-symbols-outlined text-secondary" data-icon="check">check</span> Hasta 50 empleados</li>
+    <li class="flex items-center gap-2 font-bold"><span class="material-symbols-outlined text-secondary" data-icon="check">check</span> Gestión de Vacaciones</li>
+    <li class="flex items-center gap-2 font-bold"><span class="material-symbols-outlined text-secondary" data-icon="check">check</span> IA para mensajes naturales</li>
+    <li class="flex items-center gap-2"><span class="material-symbols-outlined text-secondary" data-icon="check">check</span> Informes exportables Excel/PDF</li>
+    </ul>
+    <button class="w-full py-4 rounded-lg rainbow-crest text-white font-bold rainbow-shadow hover:scale-[1.02] transition-transform">Probar 14 días gratis</button>
+    </div>
+    <!-- Pyme Pro -->
+    <div class="glass-card rounded-xl p-8 flex flex-col h-fit">
+    <p class="font-label-md text-label-md text-on-surface-variant mb-2">Pyme Pro</p>
+    <div class="flex items-baseline gap-1 mb-6">
+    <span class="text-4xl font-bold">149€</span>
+    <span class="text-on-surface-variant text-sm">/mes</span>
+    </div>
+    <ul class="space-y-4 mb-8 text-sm flex-1">
+    <li class="flex items-center gap-2"><span class="material-symbols-outlined text-primary" data-icon="check">check</span> Ilimitados empleados</li>
+    <li class="flex items-center gap-2"><span class="material-symbols-outlined text-primary" data-icon="check">check</span> Turnos rotativos complejos</li>
+    <li class="flex items-center gap-2"><span class="material-symbols-outlined text-primary" data-icon="check">check</span> Integración vía API</li>
+    <li class="flex items-center gap-2"><span class="material-symbols-outlined text-primary" data-icon="check">check</span> Soporte prioritario 24/7</li>
+    </ul>
+    <button class="w-full py-3 rounded-lg border border-outline font-bold hover:bg-surface-container transition-colors">Contactar ventas</button>
+    </div>
+    </div>
+    <p class="text-center mt-12 text-sm text-on-surface-variant italic">
+    <span class="material-symbols-outlined text-sm align-middle mr-1" data-icon="verified">verified</span>
+                        Nota: Incluye las 1.000 conversaciones gratuitas de WhatsApp al mes según la política de Meta Business.
+                    </p>
+    </div>
+    </section>
+    <!-- Final CTA -->
+    <section class="max-w-7xl mx-auto px-gutter py-24 text-center">
+    <div class="rainbow-border p-12 bg-white flex flex-col items-center max-w-4xl mx-auto">
+    <h2 class="font-display-lg text-headline-lg md:text-display-lg mb-6">¿Listo para el cambio?</h2>
+    <p class="text-body-lg text-on-surface-variant mb-10 max-w-xl">
+                        Tus empleados te lo agradecerán. Menos fricción significa más productividad y un mejor ambiente laboral.
+                    </p>
+    <div class="flex flex-col sm:flex-row gap-4">
+    <button class="rainbow-crest px-10 py-5 rounded-full font-headline-md text-headline-md text-white rainbow-shadow hover:scale-[1.05] duration-200">
+                            Empezar ahora
+                        </button>
+    <button class="glass-card px-10 py-5 rounded-full font-headline-md text-headline-md text-on-surface border-2 border-outline/20 hover:bg-slate-50 transition-colors">
+                            Ver Demo Video
+                        </button>
+    </div>
+    </div>
+    </section>
+    </main>
+    <!-- Footer -->
+    <footer class="bg-surface-container-lowest dark:bg-surface-dim w-full py-section-margin border-t border-outline-variant/20">
+    <div class="max-w-7xl mx-auto px-gutter flex flex-col md:flex-row justify-between items-center gap-bento-gap">
+    <div class="flex flex-col items-center md:items-start">
+    <img src="https://lh3.googleusercontent.com/aida-public/AB6AXuBDHPFT7OPZ0ynlvpQ0mRj4iEA8Wk5Ztta4hFEd-jupvVp8kcPyBevh0u8zaFRXpwAm6egoJQTipKe4sUjrAB49P9Az7LnuumkLyzLS1CvAVGEzmd577l0NBPOgfCxVBvSTAXr06qOCXwi2IhFq8mBM5pc-WN99qGyxxRC2mqX9pgbbzN-tll093aDLYT_WTq7Oz97Nrypivcu9z73tGv-bA9NeeySsUjPcwyXrjFgX1R79aFBD9FHyhbZSbcoLHC4a3XRIHsXR2CY" alt="Al Curro Logo" class="h-10 w-auto object-contain mb-4">
+    <p class="font-body-md text-body-md text-on-surface-variant dark:text-surface-variant">© 2024 Al Curro. Frictionless HR via WhatsApp.</p>
+    </div>
+    <div class="flex gap-8">
+    <a class="font-label-sm text-label-sm text-on-surface-variant dark:text-surface-variant hover:text-secondary transition-colors" href="#">Privacy Policy</a>
+    <a class="font-label-sm text-label-sm text-on-surface-variant dark:text-surface-variant hover:text-secondary transition-colors" href="#">Terms of Service</a>
+    <a class="font-label-sm text-label-sm text-on-surface-variant dark:text-surface-variant hover:text-secondary transition-colors" href="#">Contact</a>
+    <a class="font-label-sm text-label-sm text-on-surface-variant dark:text-surface-variant hover:text-secondary transition-colors" href="#">Status</a>
+    </div>
+    </div>
+    </footer>
+    <script>
+            // Micro-interaction for hover effects on glass cards
+            document.querySelectorAll('.glass-card').forEach(card => {
+                card.addEventListener('mousemove', (e) => {
+                    const { left, top, width, height } = card.getBoundingClientRect();
+                    const x = (e.clientX - left) / width;
+                    const y = (e.clientY - top) / height;
+                    
+                    card.style.setProperty('--mouse-x', x);
+                    card.style.setProperty('--mouse-y', y);
+                });
+            });
+        </script>
+    
+    
+    </body></html>

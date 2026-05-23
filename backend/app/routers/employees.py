@@ -4,7 +4,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 
-from app.core.org_context import OrgContext, get_org_context
+from app.core.org_context import OrgContext, get_org_context, resolve_department_chain
 from app.core.permissions import Permission, require_permission
 from app.core.security import hash_password
 from app.database import get_session
@@ -12,7 +12,8 @@ from app.models.models import Employee, Role
 from app.routers.crud_helpers import get_or_404
 from app.routers.search_helpers import ilike_filter
 from app.schemas.crud import EmployeeCreate, EmployeeRead, EmployeeUpdate
-from app.core.org_context import resolve_department_chain
+from app.services.code_generator import next_employee_code
+from app.services.id_document import validate_id_document
 from app.services.org_service import employee_ids_in_scope
 from app.services.rbac_service import assign_role_default_group
 
@@ -51,6 +52,7 @@ def list_employees(
     filt = ilike_filter(
         Employee.full_name,
         Employee.employee_code,
+        Employee.id_document,
         Employee.phone,
         Employee.email,
         term=q,
@@ -96,14 +98,35 @@ def create_employee(
         raise HTTPException(status_code=400, detail="Departamento no válido") from None
     if company.tenant_id != ctx.tenant.id:
         raise HTTPException(status_code=403, detail="Departamento fuera de la cuenta")
+
+    try:
+        id_document = validate_id_document(data.id_document)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    employee_code = (data.employee_code or "").strip() or next_employee_code(
+        session, company.id
+    )
+
     if session.exec(
         select(Employee).where(
             Employee.company_id == company.id,
-            Employee.employee_code == data.employee_code,
+            Employee.employee_code == employee_code,
         )
     ).first():
         raise HTTPException(status_code=409, detail="Código de empleado duplicado")
-    payload = data.model_dump(exclude={"password"})
+
+    if session.exec(
+        select(Employee).where(
+            Employee.company_id == company.id,
+            Employee.id_document == id_document,
+        )
+    ).first():
+        raise HTTPException(status_code=409, detail="DNI/NIE ya registrado en la empresa")
+
+    payload = data.model_dump(exclude={"password", "employee_code"})
+    payload["employee_code"] = employee_code
+    payload["id_document"] = id_document
     payload["company_id"] = company.id
     payload["department_id"] = dept_id
     row = Employee.model_validate(payload)
@@ -136,6 +159,22 @@ def update_employee(
     if row.id not in _scope_ids(ctx, session):
         raise HTTPException(status_code=404, detail="Empleado no encontrado")
     updates = data.model_dump(exclude_unset=True, exclude={"password"})
+    if "id_document" in updates and updates["id_document"] is not None:
+        try:
+            updates["id_document"] = validate_id_document(updates["id_document"])
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        dup = session.exec(
+            select(Employee).where(
+                Employee.company_id == row.company_id,
+                Employee.id_document == updates["id_document"],
+                Employee.id != row.id,
+            )
+        ).first()
+        if dup:
+            raise HTTPException(
+                status_code=409, detail="DNI/NIE ya registrado en la empresa"
+            )
     if "department_id" in updates and updates["department_id"]:
         try:
             _d, _w, company = resolve_department_chain(

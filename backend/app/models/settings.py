@@ -13,6 +13,7 @@ class SystemSettings(SQLModel, table=True):
     gowa_basic_auth: str = Field(default="admin:admin")
     gowa_webhook_url: str = Field(default="http://backend:8000/webhook/whatsapp")
     gowa_ui_url: str = Field(default="http://localhost:3000")
+    gowa_device_id: str | None = Field(default=None, max_length=80)
     ollama_base_url: str = Field(default="http://ollama:11434")
     ollama_model: str = Field(default="llama3.2")
     company_name: str = Field(default="Mi Empresa")

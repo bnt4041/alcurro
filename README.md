@@ -10,6 +10,7 @@ docker exec hrm-backend python -m scripts.migrate_org_hierarchy
 docker exec hrm-backend python -m scripts.migrate_company_billing
 docker exec hrm-backend python -m scripts.migrate_pricing_catalog
 docker exec hrm-backend python -m scripts.migrate_stripe
+docker exec hrm-backend python -m scripts.migrate_employee_constraints
 docker exec hrm-ollama ollama pull llama3.2
 ```
 
@@ -37,7 +38,9 @@ En `.env` o `docker-compose`:
 - `STRIPE_PUBLISHABLE_KEY` — futuro uso en frontend
 - `PUBLIC_APP_URL` — URLs de retorno (p. ej. `http://localhost:5174`)
 
-Sin claves Stripe el alta en `/registro` crea la cuenta en periodo de prueba sin redirección al pago. En admin: **Cobros Stripe** (`/admin/cobros`).
+**Modo simulación** (por defecto `STRIPE_SIMULATION_MODE=true`): el alta en `/registro` redirige a `/registro/pago-simulado`, registra un cobro ficticio, activa la suscripción y crea el contenedor Docker `hrm-gowa-{slug}`. En admin: **Cobros Stripe** (`/admin/cobros`) puedes simular cobro+goWA para una cuenta existente por UUID.
+
+Cuando contrates Stripe: define las claves y pon `STRIPE_SIMULATION_MODE=false`.
 
 ## Jerarquía organizativa (monetización)
 

@@ -94,7 +94,7 @@ async def send_via_whatsapp(
         f"Responde *Recibido* o *Acepto* para confirmar recepción."
     )
     try:
-        await GoWAService(tenant).send_text(employee.phone, msg)
+        await GoWAService(session).send_text(employee.phone, msg)
         row.sent_at = datetime.utcnow()
         session.add(row)
         session.commit()

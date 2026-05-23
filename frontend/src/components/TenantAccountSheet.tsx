@@ -1,8 +1,11 @@
 import { FormEvent } from "react";
 import type { Role } from "../api/types";
+import InvoiceHistoryTable from "./InvoiceHistoryTable";
+import SubscriptionSummaryCard from "./SubscriptionSummaryCard";
 import TenantBillingTab, { TenantBillingOverview } from "./TenantBillingTab";
 import { ROLE_LABELS } from "../lib/permissions";
 import { normalizeAccountCode } from "../lib/slug";
+import type { InvoiceRow, SubscriptionSummary } from "../lib/subscription";
 
 export type TenantFormState = {
   accountCode: string;
@@ -19,7 +22,7 @@ export type TenantFormState = {
   is_active: boolean;
 };
 
-export type AccountSheetTab = "general" | "billing" | "users" | "reports";
+export type AccountSheetTab = "general" | "billing" | "users";
 
 export interface TenantUserRow {
   id: string;
@@ -44,6 +47,9 @@ interface Props {
   usersLoading: boolean;
   billing: TenantBillingOverview | null;
   billingLoading: boolean;
+  invoices: InvoiceRow[];
+  invoicesLoading: boolean;
+  subscription: SubscriptionSummary | null;
   onBillingReload: () => void;
   onTabChange: (tab: AccountSheetTab) => void;
   onClose: () => void;
@@ -62,7 +68,6 @@ const TABS: { id: AccountSheetTab; label: string }[] = [
   { id: "general", label: "General" },
   { id: "billing", label: "Facturación" },
   { id: "users", label: "Usuarios" },
-  { id: "reports", label: "Reports" },
 ];
 
 export default function TenantAccountSheet({
@@ -77,6 +82,9 @@ export default function TenantAccountSheet({
   usersLoading,
   billing,
   billingLoading,
+  invoices,
+  invoicesLoading,
+  subscription,
   onBillingReload,
   onTabChange,
   onClose,
@@ -228,6 +236,19 @@ export default function TenantAccountSheet({
 
           {tab === "billing" && (
             <>
+              {isEdit && (
+                <div className="sheet-tab-panel billing-overview-block">
+                  <h4 className="billing-section-title">Suscripción y tarifa</h4>
+                  <SubscriptionSummaryCard
+                    subscription={subscription}
+                    loading={billingLoading && !subscription}
+                  />
+                  <h4 className="billing-section-title" style={{ marginTop: "1.25rem" }}>
+                    Histórico de facturas
+                  </h4>
+                  <InvoiceHistoryTable invoices={invoices} loading={invoicesLoading} />
+                </div>
+              )}
               <div className="sheet-tab-panel form-grid billing-account-fields">
                 <p className="form-span-2 muted small billing-section-title">
                   Datos del contrato (cuenta) — referencia por defecto para nuevas
@@ -375,14 +396,6 @@ export default function TenantAccountSheet({
             </div>
           )}
 
-          {tab === "reports" && (
-            <div className="sheet-tab-panel sheet-placeholder" role="tabpanel">
-              <p className="muted">
-                Informes y métricas de la cuenta. Esta sección estará disponible
-                próximamente.
-              </p>
-            </div>
-          )}
         </form>
 
         <footer className="sheet-footer">

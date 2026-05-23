@@ -13,6 +13,8 @@ export type Perm =
   | "shifts.write"
   | "documents.read"
   | "documents.write"
+  | "legal.read"
+  | "legal.write"
   | "settings.read"
   | "settings.write"
   | "tenant.read"
@@ -55,6 +57,11 @@ const MODULE_COARSE: Record<string, Record<Coarse, Perm[]>> = {
     read: ["documents.read"],
     write: ["documents.write"],
     admin: ["documents.write"],
+  },
+  legal: {
+    read: ["legal.read"],
+    write: ["legal.write"],
+    admin: ["legal.write"],
   },
   settings: {
     read: ["settings.read"],
@@ -139,6 +146,8 @@ export const PERM_LABELS: Record<Perm, string> = {
   "shifts.write": "Gestionar turnos",
   "documents.read": "Ver documentos",
   "documents.write": "Gestionar documentos",
+  "legal.read": "Ver textos legales",
+  "legal.write": "Gestionar textos legales",
   "settings.read": "Ver configuración",
   "settings.write": "Editar configuración",
   "tenant.read": "Ver cuenta",
@@ -152,5 +161,5 @@ export const PERM_LABELS: Record<Perm, string> = {
   "departments.write": "Gestionar departamentos",
   "groups.read": "Ver grupos",
   "groups.write": "Gestionar grupos",
-  "gowa.manage": "WhatsApp (goWA)",
+  "gowa.manage": "Gestionar WhatsApp",
 };

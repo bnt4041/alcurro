@@ -11,11 +11,16 @@ from app.models.billing import PricingPlan, StripePayment
 from app.models.rbac import PlatformUser
 from app.models.tenant import Tenant
 from app.schemas.stripe_admin import (
+    SimulateTenantPaymentResult,
     StripePaymentRead,
     StripePlatformStatus,
     StripeSyncPlanResult,
 )
 from app.services.stripe_service import stripe_configured, sync_plan_to_stripe
+from app.services.stripe_simulation import (
+    simulate_payment_for_tenant,
+    stripe_simulation_enabled,
+)
 
 router = APIRouter(prefix="/platform/stripe", tags=["platform-stripe"])
 
@@ -27,10 +32,32 @@ def stripe_status(
     settings = get_settings()
     return StripePlatformStatus(
         configured=stripe_configured(),
+        simulation_mode=stripe_simulation_enabled(),
         publishable_key_set=bool(settings.stripe_publishable_key.strip()),
         webhook_secret_set=bool(settings.stripe_webhook_secret.strip()),
         public_app_url=settings.public_app_url,
     )
+
+
+@router.post(
+    "/simulate-tenant/{tenant_id}",
+    response_model=SimulateTenantPaymentResult,
+)
+def admin_simulate_tenant_payment(
+    tenant_id: UUID,
+    session: Session = Depends(get_session),
+    _: PlatformUser = Depends(get_platform_user),
+) -> SimulateTenantPaymentResult:
+    if not stripe_simulation_enabled():
+        raise HTTPException(
+            status_code=503,
+            detail="Modo simulación desactivado (STRIPE_SIMULATION_MODE=false)",
+        )
+    try:
+        result = simulate_payment_for_tenant(session, tenant_id)
+        return SimulateTenantPaymentResult(**result)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/payments", response_model=list[StripePaymentRead])

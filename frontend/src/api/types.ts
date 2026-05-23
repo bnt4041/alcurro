@@ -8,6 +8,7 @@ export type Role =
 
 export type UserScope = "tenant" | "platform";
 export type ClockInType = "entrada" | "salida";
+export type BreakType = "inicio_parada" | "fin_parada";
 export type LeaveStatus = "pending" | "approved" | "rejected" | "cancelled";
 export type ShiftPatternType =
   | "rigid"
@@ -21,11 +22,16 @@ export interface Employee {
   phone: string;
   email: string | null;
   full_name: string;
+  id_document: string | null;
   employee_code: string;
   role: Role;
   supervisor_id: string | null;
   vacation_days_balance: number;
   is_active: boolean;
+  shift_configuration_id: string | null;
+  work_start_time: string | null;
+  work_end_time: string | null;
+  work_days: number[];
   created_at: string;
   updated_at: string;
 }

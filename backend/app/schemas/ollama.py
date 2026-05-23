@@ -7,8 +7,9 @@ from pydantic import BaseModel, Field
 class OllamaIntentResponse(BaseModel):
     intent: str = Field(
         description=(
-            "fichar_entrada | fichar_salida | solicitar_vacaciones | "
-            "consultar_saldo_vacaciones | confirmar_documento | desconocido"
+            "fichar_entrada | fichar_salida | inicio_parada | fin_parada | "
+            "solicitar_vacaciones | consultar_saldo_vacaciones | confirmar_documento | "
+            "desconocido"
         )
     )
     entities: dict[str, Any] = Field(default_factory=dict)

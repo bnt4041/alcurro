@@ -19,6 +19,8 @@ class Perm(StrEnum):
     EMPLOYEES_DELETE = "employees.delete"
     CLOCK_INS_READ = "clock_ins.read"
     CLOCK_INS_WRITE = "clock_ins.write"
+    LEGAL_READ = "legal.read"
+    LEGAL_WRITE = "legal.write"
     LEAVE_READ = "leave.read"
     LEAVE_WRITE = "leave.write"
     LEAVE_APPROVE = "leave.approve"
@@ -56,6 +58,8 @@ PERM_LABELS: dict[str, str] = {
     Perm.EMPLOYEES_DELETE: "Eliminar empleados",
     Perm.CLOCK_INS_READ: "Ver fichajes",
     Perm.CLOCK_INS_WRITE: "Registrar fichajes",
+    Perm.LEGAL_READ: "Ver textos legales",
+    Perm.LEGAL_WRITE: "Gestionar textos legales",
     Perm.LEAVE_READ: "Ver vacaciones",
     Perm.LEAVE_WRITE: "Gestionar vacaciones",
     Perm.LEAVE_APPROVE: "Aprobar vacaciones",
@@ -91,6 +95,11 @@ MODULE_PERMS: dict[str, dict[Permission, frozenset[str]]] = {
         Permission.READ: frozenset({Perm.CLOCK_INS_READ}),
         Permission.WRITE: frozenset({Perm.CLOCK_INS_WRITE}),
         Permission.ADMIN: frozenset({Perm.CLOCK_INS_WRITE}),
+    },
+    "legal": {
+        Permission.READ: frozenset({Perm.LEGAL_READ}),
+        Permission.WRITE: frozenset({Perm.LEGAL_WRITE}),
+        Permission.ADMIN: frozenset({Perm.LEGAL_WRITE}),
     },
     "leave": {
         Permission.READ: frozenset({Perm.LEAVE_READ}),
@@ -154,6 +163,8 @@ MANAGER_PERMS: frozenset[str] = frozenset(
         Perm.LEAVE_APPROVE,
         Perm.SHIFTS_READ,
         Perm.SHIFTS_WRITE,
+        Perm.LEGAL_READ,
+        Perm.LEGAL_WRITE,
         Perm.DOCUMENTS_READ,
         Perm.DOCUMENTS_WRITE,
         Perm.TENANT_READ,

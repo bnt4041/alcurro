@@ -19,7 +19,10 @@ from app.schemas.tenant import (
     TenantUserRead,
 )
 from app.models.organization import GroupTemplate
+from app.schemas.billing import InvoiceRead, TenantListItemRead
 from app.schemas.organization import GroupTemplateRead, GroupTemplateUpdate
+from app.services.billing_read import subscription_to_summary, tenant_account_billing
+from app.services.billing_service import get_primary_subscription
 from app.services.org_service import (
     clone_groups_for_tenant,
     ensure_group_templates,
@@ -51,12 +54,45 @@ def platform_me(user: PlatformUser = Depends(get_platform_user)) -> PlatformUser
     )
 
 
-@router.get("/tenants", response_model=list[TenantRead])
+@router.get("/tenants", response_model=list[TenantListItemRead])
 def list_tenants(
     session: Session = Depends(get_session),
     _: PlatformUser = Depends(get_platform_user),
-) -> list[Tenant]:
-    return list(session.exec(select(Tenant).order_by(Tenant.name)).all())
+) -> list[TenantListItemRead]:
+    tenants = list(session.exec(select(Tenant).order_by(Tenant.name)).all())
+    result: list[TenantListItemRead] = []
+    for tenant in tenants:
+        sub, company = get_primary_subscription(session, tenant.id)
+        result.append(
+            TenantListItemRead(
+                id=tenant.id,
+                slug=tenant.slug,
+                name=tenant.name,
+                legal_name=tenant.legal_name,
+                tax_id=tenant.tax_id,
+                billing_email=tenant.billing_email,
+                billing_phone=tenant.billing_phone,
+                is_active=tenant.is_active,
+                created_at=tenant.created_at,
+                subscription=subscription_to_summary(sub, company),
+            )
+        )
+    session.commit()
+    return result
+
+
+@router.get("/tenants/{tenant_id}/invoices", response_model=list[InvoiceRead])
+def list_tenant_invoices_platform(
+    tenant_id: UUID,
+    session: Session = Depends(get_session),
+    _: PlatformUser = Depends(get_platform_user),
+    limit: int = 50,
+) -> list[InvoiceRead]:
+    if not session.get(Tenant, tenant_id):
+        raise HTTPException(status_code=404, detail="Cuenta no encontrada")
+    data = tenant_account_billing(session, tenant_id)
+    session.commit()
+    return data["invoices"][: min(limit, 200)]
 
 
 @router.post("/tenants", response_model=TenantRead, status_code=201)

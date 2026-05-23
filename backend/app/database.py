@@ -14,6 +14,8 @@ from app.models.billing import (  # noqa: F401
 from app.models.tenant import Company, Tenant  # noqa: F401
 from app.models.organization import Department, GroupTemplate, WorkCenter  # noqa: F401
 from app.models.rbac import EmployeeGroup, PlatformUser, UserGroup  # noqa: F401
+from app.models.legal import LegalAcceptance, LegalDocument  # noqa: F401
+from app.models.models import Employee  # noqa: F401
 
 settings = get_settings()
 engine = create_engine(settings.database_url, echo=False)

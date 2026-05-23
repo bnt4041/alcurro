@@ -88,6 +88,7 @@ DEFAULT_GROUP_TEMPLATES: list[tuple[str, str, frozenset[str], bool]] = [
                 "leave.read",
                 "leave.write",
                 "documents.read",
+                "legal.read",
             }
         ),
         True,

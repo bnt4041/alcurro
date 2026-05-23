@@ -2,11 +2,12 @@ from uuid import UUID
 
 from sqlmodel import Session
 
-from app.models.models import ClockInType, Employee
+from app.models.models import BreakType, ClockInType, Employee
 from app.models.tenant import Tenant
 from app.schemas.ollama import OllamaIntentResponse
 from app.schemas.whatsapp import GoWAMessage, GoWAWebhookPayload
 from app.services.clock_service import ClockService
+from app.services.break_service import BreakService
 from app.services.gowa_service import GoWAService
 from app.services.leave_service import LeaveService
 from app.services.ollama_service import OllamaService
@@ -20,12 +21,13 @@ class WebhookService:
             raise ValueError("Tenant no encontrado")
         self._tenant = tenant
         self._clock = ClockService(session, tenant_id=tenant_id)
+        self._breaks = BreakService(session)
         self._leave = LeaveService(session)
         self._ollama = OllamaService(
             base_url=tenant.ollama_base_url,
             model=tenant.ollama_model,
         )
-        self._gowa = GoWAService(tenant)
+        self._gowa = GoWAService(session)
 
     async def process(self, payload: GoWAWebhookPayload) -> dict:
         if not payload.should_process():
@@ -152,6 +154,28 @@ class WebhookService:
                     f"{record.recorded_at.strftime('%H:%M:%S')} (hora servidor)."
                 )
 
+            case "inicio_parada":
+                record = self._breaks.register_break(
+                    employee_id=employee.id,
+                    record_type=BreakType.INICIO,
+                    whatsapp_message_id=message_id,
+                )
+                return (
+                    f"INICIO DE PARADA registrado a las "
+                    f"{record.recorded_at.strftime('%H:%M:%S')} (hora servidor)."
+                )
+
+            case "fin_parada":
+                record = self._breaks.register_break(
+                    employee_id=employee.id,
+                    record_type=BreakType.FIN,
+                    whatsapp_message_id=message_id,
+                )
+                return (
+                    f"FIN DE PARADA registrado a las "
+                    f"{record.recorded_at.strftime('%H:%M:%S')} (hora servidor)."
+                )
+
             case "solicitar_vacaciones":
                 _, msg = self._leave.create_request(employee, intent, raw_text)
                 return msg
@@ -165,5 +189,6 @@ class WebhookService:
             case _:
                 return (
                     "No he entendido tu solicitud. Puedes: fichar entrada/salida, "
-                    "solicitar vacaciones, consultar saldo o compartir ubicación para fichar."
+                    "iniciar o finalizar parada, solicitar vacaciones, consultar saldo "
+                    "o compartir ubicación para fichar."
                 )

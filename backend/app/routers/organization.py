@@ -17,6 +17,7 @@ from app.schemas.organization import (
     WorkCenterCreate,
     WorkCenterRead,
 )
+from app.services.code_generator import next_department_code, next_work_center_code
 
 router = APIRouter(prefix="/org", tags=["organization"])
 
@@ -81,14 +82,16 @@ def create_work_center(
     session: Session = Depends(get_session),
     _: object = Depends(require_permission(Permission.WRITE, "work_centers")),
 ) -> WorkCenter:
+    code = (data.code or "").strip() or next_work_center_code(session, ctx.company.id)
     if session.exec(
         select(WorkCenter).where(
             WorkCenter.company_id == ctx.company.id,
-            WorkCenter.code == data.code,
+            WorkCenter.code == code,
         )
     ).first():
         raise HTTPException(status_code=409, detail="Código de centro duplicado")
-    row = WorkCenter(company_id=ctx.company.id, **data.model_dump())
+    payload = data.model_dump(exclude={"code"})
+    row = WorkCenter(company_id=ctx.company.id, code=code, **payload)
     session.add(row)
     session.commit()
     session.refresh(row)
@@ -130,17 +133,18 @@ def create_department(
     wc = session.get(WorkCenter, wc_id)
     if not wc or wc.company_id != ctx.company.id:
         raise HTTPException(status_code=404, detail="Centro no encontrado")
+    code = (data.code or "").strip() or next_department_code(session, wc_id)
     if session.exec(
         select(Department).where(
             Department.work_center_id == wc_id,
-            Department.code == data.code,
+            Department.code == code,
         )
     ).first():
         raise HTTPException(status_code=409, detail="Código de departamento duplicado")
     row = Department(
         work_center_id=wc_id,
         name=data.name,
-        code=data.code,
+        code=code,
     )
     session.add(row)
     session.commit()

@@ -1,8 +1,12 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { api } from "../api/client";
+import type { ConnectionTest, SystemSettings } from "../api/types";
+import InvoiceHistoryTable from "../components/InvoiceHistoryTable";
+import PageHeader from "../components/PageHeader";
+import SubscriptionSummaryCard from "../components/SubscriptionSummaryCard";
 import { useAuth } from "../context/AuthContext";
 import { canModule, hasPerm } from "../lib/permissions";
-import PageHeader from "../components/PageHeader";
+import type { InvoiceRow, SubscriptionSummary } from "../lib/subscription";
 
 interface TenantInfo {
   id: string;
@@ -17,14 +21,6 @@ interface TenantInfo {
   billing_postal_code: string | null;
   billing_province: string | null;
   billing_country: string;
-  logo_url: string | null;
-  primary_color: string;
-  secondary_color: string;
-  accent_color: string;
-  gowa_port: number | null;
-  gowa_ui_url: string;
-  gowa_status: string;
-  gowa_error: string | null;
 }
 
 interface Company {
@@ -33,38 +29,69 @@ interface Company {
   tax_id: string | null;
 }
 
+interface BillingSummaryResponse {
+  subscription: SubscriptionSummary | null;
+  invoices: InvoiceRow[];
+}
+
 export default function AccountPage() {
   const { user } = useAuth();
   const [tenant, setTenant] = useState<TenantInfo | null>(null);
+  const [billingSummary, setBillingSummary] = useState<BillingSummaryResponse | null>(
+    null
+  );
+  const [billingLoading, setBillingLoading] = useState(true);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [msg, setMsg] = useState("");
   const [newCompany, setNewCompany] = useState({ name: "", tax_id: "" });
 
+  const [ollama, setOllama] = useState<SystemSettings | null>(null);
+  const [ollamaTest, setOllamaTest] = useState<ConnectionTest | null>(null);
+  const [ollamaSaving, setOllamaSaving] = useState(false);
+
+  const canTenant = user && canModule(user.permissions, "read", "tenant");
+  const canBilling = user && hasPerm(user.permissions, "tenant.billing");
+  const canSettings = user && canModule(user.permissions, "write", "settings");
+
   const load = useCallback(async () => {
-    setTenant(await api.get<TenantInfo>("/tenants/current"));
-    setCompanies(await api.get<Company[]>("/tenants/current/companies"));
+    setBillingLoading(true);
+    try {
+      setTenant(await api.get<TenantInfo>("/tenants/current"));
+      setCompanies(await api.get<Company[]>("/tenants/current/companies"));
+      setBillingSummary(
+        await api.get<BillingSummaryResponse>("/tenants/current/billing-summary")
+      );
+    } finally {
+      setBillingLoading(false);
+    }
   }, []);
 
   useEffect(() => {
     load();
   }, [load]);
 
-  const saveBranding = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!tenant) return;
-    await api.patch("/tenants/current/branding", tenant);
-    setMsg("Personalización guardada");
-  };
+  useEffect(() => {
+    if (!canSettings) return;
+    api.get<SystemSettings>("/settings").then(setOllama).catch(() => {});
+  }, [canSettings]);
 
-  const provisionGowa = async () => {
-    setMsg("Provisionando goWA…");
-    const t = await api.post<TenantInfo>("/tenants/current/provision-gowa", {});
-    setTenant(t);
-    setMsg(
-      t.gowa_status === "running"
-        ? `WhatsApp listo en ${t.gowa_ui_url}`
-        : `Error: ${t.gowa_error ?? t.gowa_status}`
-    );
+  const saveOllama = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!ollama) return;
+    setOllamaSaving(true);
+    try {
+      const updated = await api.put<SystemSettings>("/settings", {
+        company_name: ollama.company_name,
+        ollama_base_url: ollama.ollama_base_url,
+        ollama_model: ollama.ollama_model,
+      });
+      setOllama(updated);
+      setMsg("Integración Ollama guardada");
+    } catch (err) {
+      setMsg(String(err).replace(/^Error:\s*/i, ""));
+    } finally {
+      setOllamaSaving(false);
+    }
   };
 
   const addCompany = async (e: FormEvent) => {
@@ -75,10 +102,6 @@ export default function AccountPage() {
     setMsg("Empresa creada");
   };
 
-  const canTenant = user && canModule(user.permissions, "read", "tenant");
-  const canBilling = user && hasPerm(user.permissions, "tenant.billing");
-  const canGowa = user && hasPerm(user.permissions, "gowa.manage");
-
   if (!canTenant) {
     return <p className="muted">No tienes permiso para gestionar la cuenta.</p>;
   }
@@ -86,61 +109,18 @@ export default function AccountPage() {
   return (
     <>
       <PageHeader
-        title="Cuenta y white-label"
-        subtitle={`Tenant: ${user.tenant_name} (${user.tenant_slug})`}
+        title="Cuenta"
+        subtitle={`${user.tenant_name} · código ${user.tenant_slug}`}
       />
       {msg && <div className="alert alert-info">{msg}</div>}
 
-      {tenant && (
-        <form onSubmit={saveBranding} className="card settings-section">
-          <h3>Personalización (zona blanca)</h3>
-          <div className="form-grid">
-            <label>
-              Logo URL
-              <input
-                value={tenant.logo_url ?? ""}
-                onChange={(e) =>
-                  setTenant({ ...tenant, logo_url: e.target.value || null })
-                }
-                placeholder="https://…/logo.png"
-              />
-            </label>
-            <label>
-              Color primario
-              <input
-                type="color"
-                value={tenant.primary_color}
-                onChange={(e) =>
-                  setTenant({ ...tenant, primary_color: e.target.value })
-                }
-              />
-            </label>
-            <label>
-              Color sidebar
-              <input
-                type="color"
-                value={tenant.secondary_color}
-                onChange={(e) =>
-                  setTenant({ ...tenant, secondary_color: e.target.value })
-                }
-              />
-            </label>
-            <label>
-              Color acento
-              <input
-                type="color"
-                value={tenant.accent_color}
-                onChange={(e) =>
-                  setTenant({ ...tenant, accent_color: e.target.value })
-                }
-              />
-            </label>
-          </div>
-          <button type="submit" className="btn btn-primary">
-            Guardar colores y logo
-          </button>
-        </form>
-      )}
+      <section className="card settings-section">
+        <h3>Suscripción y tarifa</h3>
+        <SubscriptionSummaryCard
+          subscription={billingSummary?.subscription ?? null}
+          loading={billingLoading}
+        />
+      </section>
 
       {canBilling && tenant && (
         <form
@@ -162,7 +142,9 @@ export default function AccountPage() {
           className="card settings-section"
         >
           <h3>Datos de facturación</h3>
-          <p className="muted small">Campos mínimos para emitir facturas de la cuenta.</p>
+          <p className="muted small">
+            Información fiscal y de contacto para las facturas de tu cuenta.
+          </p>
           <div className="form-grid">
             <label>
               Razón social
@@ -258,33 +240,58 @@ export default function AccountPage() {
         </form>
       )}
 
-      {canGowa && (
       <section className="card settings-section">
-        <h3>WhatsApp dedicado (goWA)</h3>
-        <p className="muted small">
-          Cada cuenta obtiene su propio contenedor Docker y puerto para vincular un
-          móvil.
-        </p>
-        {tenant && (
-          <>
-            <p>
-              Estado: <strong>{tenant.gowa_status}</strong>
-              {tenant.gowa_port && ` · puerto ${tenant.gowa_port}`}
-            </p>
-            {tenant.gowa_ui_url && (
-              <p>
-                Panel QR:{" "}
-                <a href={tenant.gowa_ui_url} target="_blank" rel="noreferrer">
-                  {tenant.gowa_ui_url}
-                </a>
-              </p>
-            )}
-            <button type="button" className="btn btn-primary" onClick={provisionGowa}>
-              Crear / reiniciar contenedor goWA
-            </button>
-          </>
-        )}
+        <h3>Histórico de facturas</h3>
+        <InvoiceHistoryTable
+          invoices={billingSummary?.invoices ?? []}
+          loading={billingLoading}
+        />
       </section>
+
+      {canSettings && ollama && (
+        <form onSubmit={saveOllama} className="card settings-section">
+          <h3>Integración Ollama (IA local)</h3>
+          <p className="muted small">Configuración técnica del asistente por WhatsApp.</p>
+          <div className="form-grid">
+            <label>
+              URL base
+              <input
+                value={ollama.ollama_base_url}
+                onChange={(e) =>
+                  setOllama({ ...ollama, ollama_base_url: e.target.value })
+                }
+              />
+            </label>
+            <label>
+              Modelo
+              <input
+                value={ollama.ollama_model}
+                onChange={(e) => setOllama({ ...ollama, ollama_model: e.target.value })}
+              />
+            </label>
+          </div>
+          <div className="test-row">
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() =>
+                api
+                  .post<ConnectionTest>("/settings/test/ollama", {})
+                  .then(setOllamaTest)
+              }
+            >
+              Probar Ollama
+            </button>
+            {ollamaTest && (
+              <span className={ollamaTest.ok ? "test-ok" : "test-fail"}>
+                {ollamaTest.message}
+              </span>
+            )}
+          </div>
+          <button type="submit" className="btn btn-primary" disabled={ollamaSaving}>
+            {ollamaSaving ? "Guardando…" : "Guardar Ollama"}
+          </button>
+        </form>
       )}
 
       <section className="card settings-section">

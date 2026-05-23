@@ -8,6 +8,7 @@ from app.core.permissions import Permission, require_permission
 from app.core.tenant_context import TenantContext, get_tenant_context
 from app.database import get_session
 from app.models.tenant import Company, Tenant
+from app.schemas.billing import TenantAccountBillingRead
 from app.schemas.tenant import (
     CompanyCreate,
     CompanyRead,
@@ -16,13 +17,15 @@ from app.schemas.tenant import (
     TenantCreate,
     TenantRead,
     TenantUpdate,
+    TenantWhatsAppStatusRead,
 )
+from app.services.billing_read import tenant_account_billing
+from app.services.gowa_client import get_shared_whatsapp_session
 from app.services.org_service import (
     clone_groups_for_tenant,
     ensure_group_templates,
     seed_tenant_organization,
 )
-from app.services.gowa_provisioner import provision_gowa, stop_gowa
 
 router = APIRouter(prefix="/tenants", tags=["tenants"])
 
@@ -77,6 +80,17 @@ def update_current_billing(
     return tenant
 
 
+@router.get("/current/billing-summary", response_model=TenantAccountBillingRead)
+def current_billing_summary(
+    ctx: TenantContext = Depends(get_tenant_context),
+    session: Session = Depends(get_session),
+    _: object = Depends(require_permission(Permission.READ, "tenant")),
+) -> TenantAccountBillingRead:
+    data = tenant_account_billing(session, ctx.tenant.id)
+    session.commit()
+    return TenantAccountBillingRead(**data)
+
+
 @router.get("/current/companies", response_model=list[CompanyRead])
 def list_companies(
     ctx: TenantContext = Depends(get_tenant_context),
@@ -103,22 +117,32 @@ def create_company(
     return row
 
 
-@router.post("/current/provision-gowa", response_model=TenantRead)
-def provision_current_gowa(
-    ctx: TenantContext = Depends(get_tenant_context),
+@router.get("/current/whatsapp/status", response_model=TenantWhatsAppStatusRead)
+async def tenant_whatsapp_status(
     session: Session = Depends(get_session),
-    _: object = Depends(require_permission(Permission.ADMIN, "tenant")),
-) -> Tenant:
-    return provision_gowa(session, ctx.tenant.id)
-
-
-@router.post("/current/stop-gowa", response_model=TenantRead)
-def stop_current_gowa(
-    ctx: TenantContext = Depends(get_tenant_context),
-    session: Session = Depends(get_session),
-    _: object = Depends(require_permission(Permission.ADMIN, "tenant")),
-) -> Tenant:
-    return stop_gowa(session, ctx.tenant.id)
+    _: object = Depends(require_permission(Permission.READ, "tenant")),
+) -> TenantWhatsAppStatusRead:
+    """Estado del WhatsApp compartido de alcurro (solo lectura para cuentas cliente)."""
+    data = await get_shared_whatsapp_session(session)
+    linked = data.get("connected", False)
+    configured = data.get("configured", False)
+    if linked:
+        msg = (
+            "WhatsApp de alcurro está activo. Tus empleados pueden fichar "
+            "desde su móvil si tienen el teléfono registrado."
+        )
+    elif configured:
+        msg = (
+            "WhatsApp de alcurro pendiente de vincular. "
+            "El administrador de la plataforma debe escanear el código QR."
+        )
+    else:
+        msg = "WhatsApp de alcurro aún no está configurado en la plataforma."
+    return TenantWhatsAppStatusRead(
+        connected=linked,
+        configured=configured,
+        message=msg,
+    )
 
 
 # --- Plataforma: crear nuevas cuentas tenant (solo super-admin del tenant demo) ---
@@ -158,6 +182,9 @@ def create_tenant(
     ensure_group_templates(session)
     seed_tenant_organization(session, tenant, data.name)
     clone_groups_for_tenant(session, tenant.id)
+    from app.services.legal_service import seed_default_legal_documents
+
+    seed_default_legal_documents(session, tenant.id)
     session.commit()
     session.refresh(tenant)
     return tenant

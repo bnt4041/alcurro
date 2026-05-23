@@ -229,6 +229,26 @@ class TenantRead(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class TenantWhatsAppStatusRead(BaseModel):
+    """Estado del WhatsApp compartido (vista cliente, sin QR ni credenciales)."""
+
+    connected: bool = False
+    configured: bool = False
+    message: str | None = None
+
+
+class WhatsAppSessionRead(BaseModel):
+    """Estado de vinculación WhatsApp (QR servido por el backend, sin Basic Auth en el navegador)."""
+
+    gowa_status: GoWAStatus
+    gowa_error: str | None = None
+    gowa_port: int | None = None
+    connected: bool = False
+    qr_image: str | None = None
+    qr_expires_in: int | None = None
+    message: str | None = None
+
+
 class TenantUserRead(BaseModel):
     """Usuario (empleado) de una cuenta cliente — vista plataforma."""
 

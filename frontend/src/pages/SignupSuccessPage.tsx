@@ -32,10 +32,18 @@ export default function SignupSuccessPage() {
             Tu código de cuenta es: <code>{state.slug}</code>
           </p>
         )}
+        <div className="simulate-gowa card-inner">
+          <h3>WhatsApp</h3>
+          <p className="muted small">
+            El fichaje por WhatsApp usa la línea compartida de alcurro. No necesitas
+            vincular un número propio: solo asegúrate de que los empleados tengan su
+            teléfono registrado en la ficha.
+          </p>
+        </div>
         {state.hint && <p className="muted">{state.hint}</p>}
         <div className="signup-actions">
-          <Link to="/acceso-cliente" className="btn btn-primary">
-            Ir al acceso cliente
+          <Link to="/acceso" className="btn btn-primary">
+            Iniciar sesión
           </Link>
           <Link to="/" className="btn btn-secondary">
             Inicio

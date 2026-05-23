@@ -10,13 +10,15 @@ from app.schemas.ollama import OllamaIntentResponse
 SYSTEM_PROMPT = """Eres un clasificador de intenciones para un sistema HRM español por WhatsApp.
 Analiza el mensaje del empleado y responde ÚNICAMENTE con un JSON válido (sin markdown):
 {
-  "intent": "<una de: fichar_entrada, fichar_salida, solicitar_vacaciones, consultar_saldo_vacaciones, confirmar_documento, desconocido>",
+  "intent": "<una de: fichar_entrada, fichar_salida, inicio_parada, fin_parada, solicitar_vacaciones, consultar_saldo_vacaciones, confirmar_documento, desconocido>",
   "entities": { "fecha_inicio": "YYYY-MM-DD", "fecha_fin": "YYYY-MM-DD", "motivo": "..." },
   "confidence": 0.0-1.0
 }
 Reglas:
 - "entrada", "fiché", "empiezo", "llego" -> fichar_entrada
 - "salida", "termino", "me voy" -> fichar_salida
+- "parada", "descanso", "pausa", "empiezo parada" -> inicio_parada
+- "vuelvo", "fin parada", "termino parada", "acabo parada" -> fin_parada
 - vacaciones, días libres, permiso -> solicitar_vacaciones (extrae fechas si las hay)
 - saldo vacaciones, cuántos días tengo -> consultar_saldo_vacaciones
 - "recibido", "acepto", "confirmo" documento/nómina -> confirmar_documento
@@ -68,6 +70,16 @@ class OllamaService:
             return OllamaIntentResponse(intent="fichar_entrada", confidence=0.7)
         if any(w in t for w in ("salida", "termino", "me voy")):
             return OllamaIntentResponse(intent="fichar_salida", confidence=0.7)
+        if any(
+            w in t
+            for w in ("inicio parada", "empiezo parada", "empiezo descanso", "pausa")
+        ) or (("parada" in t or "descanso" in t) and "fin" not in t and "termin" not in t):
+            return OllamaIntentResponse(intent="inicio_parada", confidence=0.65)
+        if any(
+            w in t
+            for w in ("fin parada", "termino parada", "acabo parada", "vuelvo del descanso")
+        ):
+            return OllamaIntentResponse(intent="fin_parada", confidence=0.65)
         if any(w in t for w in ("vacaciones", "días libres", "dia libre", "permiso")):
             return OllamaIntentResponse(intent="solicitar_vacaciones", confidence=0.6)
         if "saldo" in t or "cuántos días" in t or "cuantos dias" in t:

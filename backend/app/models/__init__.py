@@ -1,4 +1,5 @@
 from app.models.models import (
+    BreakType,
     ClockIn,
     ClockInType,
     DocumentDelivery,
@@ -9,6 +10,7 @@ from app.models.models import (
     ShiftAssignment,
     ShiftConfiguration,
     ShiftPatternType,
+    WorkBreak,
 )
 
 __all__ = [
@@ -16,6 +18,8 @@ __all__ = [
     "Employee",
     "ClockIn",
     "ClockInType",
+    "WorkBreak",
+    "BreakType",
     "LeaveRequest",
     "LeaveStatus",
     "ShiftConfiguration",

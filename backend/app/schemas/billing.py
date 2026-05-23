@@ -135,3 +135,55 @@ class TenantBillingOverview(BaseModel):
     billing_country: str
     account_billing_methods: list[BillingMethodRead]
     companies: list[CompanyBillingRead]
+
+
+class SubscriptionSummaryRead(BaseModel):
+    id: UUID
+    plan_name: str
+    plan_code: str
+    status: SubscriptionStatus
+    amount_cents: int
+    currency: str
+    billing_cycle: str
+    company_name: str | None = None
+    current_period_start: date | None = None
+    current_period_end: date | None = None
+
+    model_config = {"from_attributes": True}
+
+
+class InvoiceRead(BaseModel):
+    id: UUID
+    amount_cents: int
+    currency: str
+    status: str
+    description: str | None
+    stripe_invoice_id: str | None
+    paid_at: datetime | None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class TenantAccountBillingRead(BaseModel):
+    """Resumen de facturación para el panel del cliente (solo lectura)."""
+
+    subscription: SubscriptionSummaryRead | None
+    invoices: list[InvoiceRead]
+
+
+class TenantListItemRead(BaseModel):
+    """Cuenta cliente con resumen de suscripción para el listado de plataforma."""
+
+    id: UUID
+    slug: str
+    name: str
+    legal_name: str | None
+    tax_id: str | None
+    billing_email: str | None
+    billing_phone: str | None
+    is_active: bool
+    created_at: datetime
+    subscription: SubscriptionSummaryRead | None = None
+
+    model_config = {"from_attributes": True}

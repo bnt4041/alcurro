@@ -51,6 +51,7 @@ class Tenant(SQLModel, table=True):
     gowa_ui_url: str = Field(default="")
     gowa_basic_auth: str = Field(default="admin:admin", max_length=100)
     gowa_webhook_path: str = Field(default="", max_length=200)
+    gowa_device_id: str | None = Field(default=None, max_length=80)
     gowa_status: GoWAStatus = Field(default=GoWAStatus.PENDING)
     gowa_error: str | None = Field(default=None, max_length=500)
 

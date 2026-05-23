@@ -28,8 +28,25 @@ services:
     networks:
       - hrm-net
 
-  # goWA: un contenedor por tenant (provisionado desde el panel o API)
-  # docker exec hrm-backend python -m scripts.migrate_multitenant
+  # WhatsApp compartido (goWA) — una sola línea para todas las cuentas
+  gowa:
+    image: ghcr.io/aldinokemal/go-whatsapp-web-multidevice:latest
+    container_name: hrm-gowa
+    restart: unless-stopped
+    command: ["rest", "--port=3000"]
+    environment:
+      WHATSAPP_WEBHOOK: http://backend:8000/webhook/whatsapp
+      WHATSAPP_WEBHOOK_EVENTS: message
+      APP_PORT: "3000"
+      APP_BASIC_AUTH: ${GOWA_BASIC_AUTH:-admin:admin}
+      APP_OS: Chrome
+      APP_ACCOUNT_VALIDATION: "false"
+    volumes:
+      - gowa_data:/app/storages
+    ports:
+      - "3000:3000"
+    networks:
+      - hrm-net
 
   backend:
     build:
@@ -46,6 +63,7 @@ services:
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
       STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY:-}
+      STRIPE_SIMULATION_MODE: ${STRIPE_SIMULATION_MODE:-true}
       PUBLIC_APP_URL: ${PUBLIC_APP_URL:-http://localhost:5174}
     volumes:
       - ./backend:/app
@@ -57,6 +75,8 @@ services:
       db:
         condition: service_healthy
       ollama:
+        condition: service_started
+      gowa:
         condition: service_started
     networks:
       - hrm-net
@@ -84,6 +104,7 @@ services:
 volumes:
   postgres_data:
   ollama_data:
+  gowa_data:
   uploads_data:
   frontend_node_modules:
 

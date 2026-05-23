@@ -9,6 +9,7 @@ from app.models.models import (
     LeaveStatus,
     Role,
     ShiftPatternType,
+    BreakType,
 )
 
 
@@ -16,26 +17,35 @@ class EmployeeCreate(BaseModel):
     phone: str
     email: str | None = None
     full_name: str
-    employee_code: str
+    id_document: str
+    employee_code: str | None = None
     department_id: UUID | None = None
     role: Role = Role.EMPLOYEE
     supervisor_id: UUID | None = None
     vacation_days_balance: float = 22.0
     is_active: bool = True
     password: str | None = None
+    shift_configuration_id: UUID | None = None
+    work_start_time: time | None = None
+    work_end_time: time | None = None
+    work_days: list[int] = Field(default_factory=lambda: [0, 1, 2, 3, 4])
 
 
 class EmployeeUpdate(BaseModel):
     phone: str | None = None
     email: str | None = None
     full_name: str | None = None
-    employee_code: str | None = None
+    id_document: str | None = None
     department_id: UUID | None = None
     role: Role | None = None
     supervisor_id: UUID | None = None
     vacation_days_balance: float | None = None
     is_active: bool | None = None
     password: str | None = None
+    shift_configuration_id: UUID | None = None
+    work_start_time: time | None = None
+    work_end_time: time | None = None
+    work_days: list[int] | None = None
 
 
 class EmployeeRead(BaseModel):
@@ -46,11 +56,16 @@ class EmployeeRead(BaseModel):
     phone: str
     email: str | None = None
     full_name: str
+    id_document: str | None = None
     employee_code: str
     role: Role
     supervisor_id: UUID | None = None
     vacation_days_balance: float
     is_active: bool
+    shift_configuration_id: UUID | None = None
+    work_start_time: time | None = None
+    work_end_time: time | None = None
+    work_days: list[int] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 
@@ -69,6 +84,47 @@ class ClockInRead(ClockInCreate):
     id: UUID
     recorded_at: datetime
     whatsapp_message_id: str | None = None
+
+
+class BreakCreate(BaseModel):
+    employee_id: UUID
+    record_type: BreakType
+    notes: str | None = None
+
+
+class BreakRead(BreakCreate):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    recorded_at: datetime
+    source: str
+    whatsapp_message_id: str | None = None
+
+
+class BreakSummaryRow(BaseModel):
+    employee_id: UUID
+    employee_name: str
+    employee_code: str
+    company_id: UUID
+    total_minutes: int
+    total_hours: float
+    break_starts: int
+    break_ends: int
+    open_breaks: int
+
+
+class BreakCompanySummary(BaseModel):
+    company_id: UUID
+    company_name: str
+    total_minutes: int
+    total_hours: float
+    employee_count: int
+
+
+class BreakSummaryResponse(BaseModel):
+    rows: list[BreakSummaryRow]
+    by_company: list[BreakCompanySummary]
+    period_from: date | None = None
+    period_to: date | None = None
 
 
 class LeaveRequestCreate(BaseModel):

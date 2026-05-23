@@ -6,18 +6,19 @@ import OrgSelector from "./OrgSelector";
 import { useAuth } from "../context/AuthContext";
 import { applyBranding, getStoredTenantSlug } from "../hooks/useBranding";
 import { canModule, ROLE_LABELS } from "../lib/permissions";
+import LegalAcceptanceModal from "./LegalAcceptanceModal";
 
 const nav = [
   { to: "/app", label: "Inicio", always: true as const },
   { to: "/app/organizacion", label: "Organización", module: "companies" as const },
   { to: "/app/empleados", label: "Empleados", module: "employees" as const },
   { to: "/app/fichajes", label: "Fichajes", module: "clock_ins" as const },
+  { to: "/app/paradas", label: "Paradas", module: "clock_ins" as const },
   { to: "/app/vacaciones", label: "Vacaciones", module: "leave" as const },
   { to: "/app/turnos", label: "Turnos", module: "shifts" as const },
   { to: "/app/documentos", label: "Documentos", module: "documents" as const },
   { to: "/app/grupos", label: "Grupos", module: "groups" as const },
   { to: "/app/cuenta", label: "Cuenta", module: "tenant" as const, write: true },
-  { to: "/app/configuracion", label: "Sistema", module: "settings" as const, write: true },
 ];
 
 export default function Layout() {
@@ -81,6 +82,7 @@ export default function Layout() {
         </button>
       </aside>
       <main className="main">
+        <LegalAcceptanceModal />
         {user.role === "labor_inspector" && (
           <div className="alert alert-info">
             Modo solo lectura — Inspector de Trabajo

@@ -11,9 +11,19 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class UnifiedLoginRequest(BaseModel):
+    login: str
+    password: str
+
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
+
+
+class UnifiedLoginResponse(TokenResponse):
+    scope: str
+    tenant_slug: str | None = None
 
 
 class UserMe(BaseModel):

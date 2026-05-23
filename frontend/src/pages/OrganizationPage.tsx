@@ -26,8 +26,8 @@ interface OrgTreeCompany {
 export default function OrganizationPage() {
   const { user } = useAuth();
   const [tree, setTree] = useState<OrgTreeCompany[]>([]);
-  const [wcForm, setWcForm] = useState({ name: "", code: "" });
-  const [deptForm, setDeptForm] = useState({ name: "", code: "", work_center_id: "" });
+  const [wcForm, setWcForm] = useState({ name: "" });
+  const [deptForm, setDeptForm] = useState({ name: "", work_center_id: "" });
   const [msg, setMsg] = useState("");
 
   const load = () => api.get<OrgTreeCompany[]>("/org/tree").then(setTree);
@@ -41,17 +41,17 @@ export default function OrganizationPage() {
 
   const addWc = async (e: FormEvent) => {
     e.preventDefault();
-    await api.post("/org/work-centers", wcForm);
-    setWcForm({ name: "", code: "" });
-    setMsg("Centro creado");
+    const created = await api.post<{ code: string }>("/org/work-centers", wcForm);
+    setWcForm({ name: "" });
+    setMsg(`Centro creado (código ${created.code})`);
     load();
   };
 
   const addDept = async (e: FormEvent) => {
     e.preventDefault();
-    await api.post("/org/departments", deptForm);
-    setDeptForm({ name: "", code: "", work_center_id: "" });
-    setMsg("Departamento creado");
+    const created = await api.post<{ code: string }>("/org/departments", deptForm);
+    setDeptForm({ name: "", work_center_id: "" });
+    setMsg(`Departamento creado (código ${created.code})`);
     load();
   };
 
@@ -66,6 +66,9 @@ export default function OrganizationPage() {
       {canWc && (
         <section className="card settings-section">
           <h3>Nuevo centro de trabajo</h3>
+          <p className="muted small">
+            El código se asigna automáticamente (p. ej. CEN-001, CEN-002…).
+          </p>
           <form onSubmit={addWc} className="form-grid">
             <label>
               Nombre
@@ -73,14 +76,6 @@ export default function OrganizationPage() {
                 required
                 value={wcForm.name}
                 onChange={(e) => setWcForm({ ...wcForm, name: e.target.value })}
-              />
-            </label>
-            <label>
-              Código
-              <input
-                required
-                value={wcForm.code}
-                onChange={(e) => setWcForm({ ...wcForm, code: e.target.value })}
               />
             </label>
             <button type="submit" className="btn btn-primary">
@@ -93,6 +88,9 @@ export default function OrganizationPage() {
       {canDept && (
         <section className="card settings-section">
           <h3>Nuevo departamento</h3>
+          <p className="muted small">
+            El código se asigna automáticamente (p. ej. DEP-001, DEP-002…).
+          </p>
           <form onSubmit={addDept} className="form-grid">
             <label>
               Centro
@@ -119,14 +117,6 @@ export default function OrganizationPage() {
                 required
                 value={deptForm.name}
                 onChange={(e) => setDeptForm({ ...deptForm, name: e.target.value })}
-              />
-            </label>
-            <label>
-              Código
-              <input
-                required
-                value={deptForm.code}
-                onChange={(e) => setDeptForm({ ...deptForm, code: e.target.value })}
               />
             </label>
             <button type="submit" className="btn btn-primary">

@@ -43,6 +43,39 @@ class PublicSignupRequest(BaseModel):
 class PublicStripeConfig(BaseModel):
     enabled: bool
     publishable_key: str | None
+    simulation_mode: bool
+    checkout_mode: str
+
+
+class SimulateCheckoutPreview(BaseModel):
+    token: str
+    company_name: str
+    tenant_slug: str
+    amount_cents: int
+    currency: str
+    plan_name: str
+    billing_cycle: str
+    subscription_status: str
+
+
+class SimulatePaymentRequest(BaseModel):
+    token: str
+
+
+class SimulatePaymentResponse(BaseModel):
+    tenant_id: UUID
+    tenant_slug: str
+    company_name: str
+    subscription_status: str
+    amount_cents: int
+    currency: str
+    already_completed: bool
+    gowa_status: str
+    gowa_ui_url: str | None = None
+    gowa_port: int | None = None
+    gowa_container_name: str | None = None
+    gowa_error: str | None = None
+    simulated: bool = True
 
 
 class PublicSignupResponse(BaseModel):
@@ -51,4 +84,5 @@ class PublicSignupResponse(BaseModel):
     company_name: str
     checkout_url: str | None
     stripe_enabled: bool
+    simulation_mode: bool = False
     admin_login_hint: str

@@ -7,6 +7,7 @@ const nav = [
   { to: "/admin/tarifas", label: "Tarifas", end: false },
   { to: "/admin/descuentos", label: "Descuentos", end: false },
   { to: "/admin/cobros", label: "Cobros Stripe", end: false },
+  { to: "/admin/whatsapp", label: "WhatsApp", end: false },
 ];
 
 export default function PlatformLayout() {

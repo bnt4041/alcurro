@@ -71,11 +71,14 @@ function formatApiError(status: number, detail: unknown): string {
       : detail != null
         ? JSON.stringify(detail)
         : "";
+  if (status >= 500 && text && text !== "Internal Server Error") {
+    return text;
+  }
   if (
     status >= 500 &&
     (!text || text === "Internal Server Error" || text.includes("ECONNREFUSED"))
   ) {
-    return "No se puede contactar con la API. Ejecuta: docker compose down && docker compose up -d";
+    return "Error del servidor. Si acabas de actualizar, reinicia: docker compose restart backend";
   }
   return text || `Error ${status}`;
 }
@@ -96,9 +99,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   }
   if (res.status === 401 && !path.includes("/auth/login")) {
     setToken(null);
-    window.location.href = path.includes("/platform")
-      ? "/admin/login"
-      : "/acceso-cliente";
+    window.location.href = "/acceso";
     throw new Error("Sesión expirada");
   }
   if (res.status === 204) return undefined as T;
@@ -127,9 +128,7 @@ export const api = {
     });
     if (res.status === 401) {
       setToken(null);
-      window.location.href = path.includes("/platform")
-        ? "/admin/login"
-        : "/acceso-cliente";
+      window.location.href = "/acceso";
       throw new Error("Sesión expirada");
     }
     if (!res.ok) {

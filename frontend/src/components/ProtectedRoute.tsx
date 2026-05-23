@@ -9,7 +9,7 @@ export default function ProtectedRoute() {
         <p className="muted">Cargando sesión…</p>
       </div>
     );
-  if (!user) return <Navigate to="/acceso-cliente" replace />;
+  if (!user) return <Navigate to="/acceso" replace />;
   return <Outlet />;
 }
 
@@ -21,7 +21,7 @@ export function PlatformProtectedRoute() {
         <p className="muted">Cargando sesión…</p>
       </div>
     );
-  if (!platformUser) return <Navigate to="/admin/login" replace />;
+  if (!platformUser) return <Navigate to="/acceso" replace />;
   return <Outlet />;
 }
 

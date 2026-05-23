@@ -42,8 +42,16 @@ interface AuthContextValue {
   user: AuthUser | null;
   platformUser: PlatformUser | null;
   loading: boolean;
-  login: (tenantSlug: string, username: string, password: string) => Promise<void>;
+  login: (
+    tenantSlug: string,
+    username: string,
+    password: string
+  ) => Promise<AuthUser>;
   loginPlatform: (email: string, password: string) => Promise<void>;
+  loginUnified: (
+    login: string,
+    password: string
+  ) => Promise<{ scope: "platform" | "tenant"; user?: AuthUser }>;
   logout: () => void;
   refresh: () => Promise<void>;
   setActiveCompany: (companyId: string) => void;
@@ -111,7 +119,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     refresh();
   }, [refresh]);
 
-  const login = async (tenantSlug: string, username: string, password: string) => {
+  const login = async (
+    tenantSlug: string,
+    username: string,
+    password: string
+  ): Promise<AuthUser> => {
     const res = await api.post<{ access_token: string }>("/auth/login", {
       tenant_slug: tenantSlug,
       username,
@@ -122,8 +134,63 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setStoredTenantSlug(tenantSlug);
     localStorage.removeItem(WORK_CENTER_KEY);
     localStorage.removeItem(DEPARTMENT_KEY);
-    setLoading(true);
-    await refresh();
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${res.access_token}`,
+    };
+    const me = await fetch("/api/auth/me", { headers });
+    if (!me.ok) throw new Error("No se pudo cargar la sesión");
+    const data: AuthUser = await me.json();
+    setUser(data);
+    setPlatformUser(null);
+    localStorage.setItem(COMPANY_KEY, data.company_id);
+    setLoading(false);
+    return data;
+  };
+
+  const loginUnified = async (
+    login: string,
+    password: string
+  ): Promise<{ scope: "platform" | "tenant"; user?: AuthUser }> => {
+    const res = await api.post<{
+      access_token: string;
+      scope: string;
+      tenant_slug?: string;
+    }>("/auth/login-unified", { login, password });
+
+    setToken(res.access_token);
+
+    if (res.scope === "platform") {
+      localStorage.setItem(SCOPE_KEY, "platform");
+      localStorage.removeItem(COMPANY_KEY);
+      localStorage.removeItem(WORK_CENTER_KEY);
+      localStorage.removeItem(DEPARTMENT_KEY);
+      const me = await fetch("/api/platform/auth/me", {
+        headers: { Authorization: `Bearer ${res.access_token}` },
+      });
+      if (!me.ok) throw new Error("No se pudo cargar la sesión");
+      const platform = await me.json();
+      setPlatformUser(platform);
+      setUser(null);
+      setLoading(false);
+      return { scope: "platform" };
+    }
+
+    localStorage.setItem(SCOPE_KEY, "tenant");
+    if (res.tenant_slug) setStoredTenantSlug(res.tenant_slug);
+    localStorage.removeItem(WORK_CENTER_KEY);
+    localStorage.removeItem(DEPARTMENT_KEY);
+
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${res.access_token}`,
+    };
+    const me = await fetch("/api/auth/me", { headers });
+    if (!me.ok) throw new Error("No se pudo cargar la sesión");
+    const data: AuthUser = await me.json();
+    setUser(data);
+    setPlatformUser(null);
+    localStorage.setItem(COMPANY_KEY, data.company_id);
+    setLoading(false);
+    return { scope: "tenant", user: data };
   };
 
   const loginPlatform = async (email: string, password: string) => {
@@ -178,6 +245,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         loading,
         login,
         loginPlatform,
+        loginUnified,
         logout,
         refresh,
         setActiveCompany,

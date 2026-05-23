@@ -8,9 +8,25 @@ from app.models.billing import StripePaymentStatus
 
 class StripePlatformStatus(BaseModel):
     configured: bool
+    simulation_mode: bool
     publishable_key_set: bool
     webhook_secret_set: bool
     public_app_url: str
+
+
+class SimulateTenantPaymentResult(BaseModel):
+    tenant_id: UUID
+    tenant_slug: str
+    company_name: str
+    subscription_status: str
+    amount_cents: int
+    currency: str
+    gowa_status: str
+    gowa_ui_url: str | None = None
+    gowa_port: int | None = None
+    gowa_container_name: str | None = None
+    gowa_error: str | None = None
+    simulated: bool = True
 
 
 class StripePaymentRead(BaseModel):

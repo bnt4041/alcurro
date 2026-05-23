@@ -12,10 +12,45 @@ from app.routers.webhook import router as webhook_router
 UPLOAD_DIR = Path("/app/uploads")
 
 
+def _run_startup_migrations() -> None:
+    """Migraciones idempotentes que no cubre SQLModel.create_all."""
+    try:
+        from scripts.migrate_gowa_device import main as migrate_gowa_device
+
+        migrate_gowa_device()
+    except Exception:
+        pass
+    try:
+        from scripts.migrate_system_gowa import main as migrate_system_gowa
+
+        migrate_system_gowa()
+    except Exception:
+        pass
+    try:
+        from scripts.migrate_employee_id_document import main as migrate_id_document
+
+        migrate_id_document()
+    except Exception:
+        pass
+    try:
+        from scripts.migrate_work_breaks import main as migrate_work_breaks
+
+        migrate_work_breaks()
+    except Exception:
+        pass
+    try:
+        from scripts.migrate_legal_and_schedule import main as migrate_legal
+
+        migrate_legal()
+    except Exception:
+        pass
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     create_db_and_tables()
+    _run_startup_migrations()
     yield
 
 

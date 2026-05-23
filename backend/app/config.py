@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     )
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "llama3.2"
-    gowa_send_url: str = "http://localhost:3000/send/message"
+    gowa_send_url: str = "http://gowa:3000/send/message"
     gowa_basic_auth: str = "admin:admin"
     jwt_secret: str = "change-me-in-production-hrm-jwt-secret"
     jwt_expire_hours: int = 12
@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     stripe_secret_key: str = ""
     stripe_webhook_secret: str = ""
     stripe_publishable_key: str = ""
+    stripe_simulation_mode: bool = True
     public_app_url: str = "http://localhost:5174"
 
 

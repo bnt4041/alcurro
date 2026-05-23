@@ -5,6 +5,8 @@ import TenantAccountSheet, {
   TenantFormState,
   TenantUserRow,
 } from "../components/TenantAccountSheet";
+import InvoiceHistoryTable from "../components/InvoiceHistoryTable";
+import SubscriptionSummaryCard from "../components/SubscriptionSummaryCard";
 import { TenantBillingOverview } from "../components/TenantBillingTab";
 import PageHeader from "../components/PageHeader";
 import { useToast } from "../context/ToastContext";
@@ -13,6 +15,9 @@ import {
   normalizeAccountCode,
   suggestAccountCode,
 } from "../lib/slug";
+import { formatMoney } from "../lib/money";
+import type { InvoiceRow, SubscriptionSummary } from "../lib/subscription";
+import { SUBSCRIPTION_STATUS_LABELS } from "../lib/subscription";
 
 interface GroupTemplate {
   id: string;
@@ -30,13 +35,14 @@ interface TenantRow {
   tax_id: string | null;
   billing_email: string | null;
   billing_phone: string | null;
-  billing_address: string | null;
-  billing_city: string | null;
-  billing_postal_code: string | null;
-  billing_province: string | null;
-  billing_country: string;
+  billing_address?: string | null;
+  billing_city?: string | null;
+  billing_postal_code?: string | null;
+  billing_province?: string | null;
+  billing_country?: string;
   is_active: boolean;
   created_at: string;
+  subscription: SubscriptionSummary | null;
 }
 
 const emptyForm = (): TenantFormState => ({
@@ -85,8 +91,21 @@ export default function PlatformPage() {
   const [usersLoading, setUsersLoading] = useState(false);
   const [billing, setBilling] = useState<TenantBillingOverview | null>(null);
   const [billingLoading, setBillingLoading] = useState(false);
+  const [invoices, setInvoices] = useState<InvoiceRow[]>([]);
+  const [invoicesLoading, setInvoicesLoading] = useState(false);
 
   const sheetMode = editingId ? "edit" : "create";
+
+  const loadInvoices = async (tenantId: string) => {
+    setInvoicesLoading(true);
+    try {
+      setInvoices(await api.get<InvoiceRow[]>(`/platform/tenants/${tenantId}/invoices`));
+    } catch {
+      setInvoices([]);
+    } finally {
+      setInvoicesLoading(false);
+    }
+  };
 
   const loadBilling = async (tenantId: string) => {
     setBillingLoading(true);
@@ -138,15 +157,22 @@ export default function PlatformPage() {
     setSheetOpen(true);
   };
 
-  const openSheet = (t: TenantRow) => {
-    setEditingId(t.id);
-    setForm(tenantToForm(t));
+  const openSheet = async (t: TenantRow) => {
+    let row = t;
+    try {
+      row = await api.get<TenantRow>(`/platform/tenants/${t.id}`);
+    } catch {
+      /* list row */
+    }
+    setEditingId(row.id);
+    setForm(tenantToForm(row));
     setAccountCodeManual(true);
     setSheetTab("general");
     setUsers([]);
     setSheetOpen(true);
-    void loadUsers(t.id);
-    void loadBilling(t.id);
+    void loadUsers(row.id);
+    void loadBilling(row.id);
+    void loadInvoices(row.id);
   };
 
   const closeSheet = () => {
@@ -157,13 +183,17 @@ export default function PlatformPage() {
     setSheetTab("general");
     setUsers([]);
     setBilling(null);
+    setInvoices([]);
   };
 
   const handleTabChange = (tab: AccountSheetTab) => {
     setSheetTab(tab);
     if (!editingId) return;
     if (tab === "users") void loadUsers(editingId);
-    if (tab === "billing") void loadBilling(editingId);
+    if (tab === "billing") {
+      void loadBilling(editingId);
+      void loadInvoices(editingId);
+    }
   };
 
   const onNameChange = (name: string) => {
@@ -237,6 +267,7 @@ export default function PlatformPage() {
         toast.success(`Cuenta «${base.name}» actualizada correctamente`);
         void loadUsers(editingId);
         void loadBilling(editingId);
+        void loadInvoices(editingId);
       } else {
         const body: Record<string, unknown> = { ...base };
         if (!accountCodeManual && !form.accountCode.trim()) {
@@ -354,8 +385,10 @@ export default function PlatformPage() {
               <th>Código</th>
               <th>Nombre</th>
               <th>CIF</th>
-              <th>Teléfono</th>
-              <th>Estado</th>
+              <th>Tarifa</th>
+              <th>Suscripción</th>
+              <th>Importe</th>
+              <th>Cuenta</th>
             </tr>
           </thead>
           <tbody>
@@ -371,7 +404,33 @@ export default function PlatformPage() {
                 </td>
                 <td>{t.name}</td>
                 <td>{t.tax_id ?? "—"}</td>
-                <td>{t.billing_phone ?? "—"}</td>
+                <td>{t.subscription?.plan_name ?? "—"}</td>
+                <td>
+                  {t.subscription ? (
+                    <span
+                      className={`badge ${
+                        t.subscription.status === "active"
+                          ? "badge--ok"
+                          : t.subscription.status === "past_due"
+                            ? "badge--danger"
+                            : ""
+                      }`}
+                    >
+                      {SUBSCRIPTION_STATUS_LABELS[t.subscription.status] ??
+                        t.subscription.status}
+                    </span>
+                  ) : (
+                    "—"
+                  )}
+                </td>
+                <td>
+                  {t.subscription
+                    ? formatMoney(
+                        t.subscription.amount_cents,
+                        t.subscription.currency
+                      )
+                    : "—"}
+                </td>
                 <td>{t.is_active ? "Activa" : "Inactiva"}</td>
               </tr>
             ))}
@@ -394,7 +453,15 @@ export default function PlatformPage() {
         usersLoading={usersLoading}
         billing={billing}
         billingLoading={billingLoading}
-        onBillingReload={() => editingId && loadBilling(editingId)}
+        invoices={invoices}
+        invoicesLoading={invoicesLoading}
+        subscription={tenants.find((x) => x.id === editingId)?.subscription ?? null}
+        onBillingReload={() => {
+          if (!editingId) return;
+          void loadBilling(editingId);
+          void loadInvoices(editingId);
+          load();
+        }}
         onTabChange={handleTabChange}
         onClose={closeSheet}
         onSave={save}

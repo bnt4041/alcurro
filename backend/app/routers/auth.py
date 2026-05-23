@@ -28,7 +28,14 @@ from app.models.organization import Department, WorkCenter
 from app.models.tenant import Company, Tenant
 from app.core.org_context import resolve_department_chain
 
-from app.schemas.auth import LoginRequest, TokenResponse, UserMe
+from app.schemas.auth import (
+    LoginRequest,
+    TokenResponse,
+    UnifiedLoginRequest,
+    UnifiedLoginResponse,
+    UserMe,
+)
+from app.services.unified_login import unified_login
 
 
 
@@ -69,13 +76,20 @@ def _find_employee(
     return None
 
 
-
+@router.post("/login-unified", response_model=UnifiedLoginResponse)
+def login_unified(
+    data: UnifiedLoginRequest, session: Session = Depends(get_session)
+) -> UnifiedLoginResponse:
+    result = unified_login(session, data.login, data.password)
+    return UnifiedLoginResponse(
+        access_token=result.access_token,
+        scope=result.scope,
+        tenant_slug=result.tenant_slug,
+    )
 
 
 @router.post("/login", response_model=TokenResponse)
-
 def login(data: LoginRequest, session: Session = Depends(get_session)) -> TokenResponse:
-
     slug = data.tenant_slug.strip().lower()
 
     tenant = session.exec(select(Tenant).where(Tenant.slug == slug)).first()
@@ -90,7 +104,9 @@ def login(data: LoginRequest, session: Session = Depends(get_session)) -> TokenR
 
     row = _find_employee(session, tenant, username)
 
-    if not row or row.role.value not in PANEL_ROLES:
+    from app.services.unified_login import _role_key
+
+    if not row or _role_key(row.role) not in PANEL_ROLES:
 
         raise HTTPException(status_code=401, detail="Credenciales inválidas")
 
@@ -118,7 +134,7 @@ def login(data: LoginRequest, session: Session = Depends(get_session)) -> TokenR
 
         access_token=create_access_token(
 
-            row.id, row.role.value, tenant.id, row.company_id
+            row.id, _role_key(row.role), tenant.id, row.company_id
 
         )
 

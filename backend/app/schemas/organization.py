@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 class WorkCenterCreate(BaseModel):
     name: str
-    code: str = Field(max_length=50)
+    code: str | None = Field(default=None, max_length=50)
     address: str | None = None
     city: str | None = None
 
@@ -26,7 +26,7 @@ class WorkCenterRead(BaseModel):
 
 class DepartmentCreate(BaseModel):
     name: str
-    code: str = Field(max_length=50)
+    code: str | None = Field(default=None, max_length=50)
     work_center_id: UUID | None = None
 
 

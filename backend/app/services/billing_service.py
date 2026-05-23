@@ -4,7 +4,13 @@ from uuid import UUID
 
 from sqlmodel import Session, select
 
-from app.models.billing import BillingCycle, BillingMethod, Subscription, SubscriptionStatus
+from app.models.billing import (
+    BillingCycle,
+    BillingMethod,
+    StripePayment,
+    Subscription,
+    SubscriptionStatus,
+)
 from app.models.tenant import Company, Tenant
 from app.services.pricing_service import get_default_plan, sync_subscription_pricing
 
@@ -100,3 +106,35 @@ def get_tenant_billing_overview(session: Session, tenant_id: UUID) -> dict:
         "account_methods": methods_by_company.get(None, []),
         "companies": company_rows,
     }
+
+
+def get_primary_subscription(
+    session: Session, tenant_id: UUID
+) -> tuple[Subscription | None, Company | None]:
+    """Suscripción de referencia (primera empresa activa de la cuenta)."""
+    overview = get_tenant_billing_overview(session, tenant_id)
+    companies = overview.get("companies") or []
+    if not companies:
+        return None, None
+    row = companies[0]
+    return row.get("subscription"), row.get("company")
+
+
+def list_tenant_invoices(
+    session: Session, tenant_id: UUID, *, limit: int = 50
+) -> list[StripePayment]:
+    return list(
+        session.exec(
+            select(StripePayment)
+            .where(StripePayment.tenant_id == tenant_id)
+            .order_by(StripePayment.created_at.desc())  # type: ignore[attr-defined]
+            .limit(min(limit, 200))
+        ).all()
+    )
+
+
+def subscription_summary_for_tenant(
+    session: Session, tenant_id: UUID
+) -> Subscription | None:
+    sub, _company = get_primary_subscription(session, tenant_id)
+    return sub

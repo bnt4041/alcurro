@@ -10,7 +10,6 @@ export default function SettingsPage() {
   const canAdmin = user && canModule(user.permissions, "admin", "settings");
   const [form, setForm] = useState<SystemSettings | null>(null);
   const [saving, setSaving] = useState(false);
-  const [gowaTest, setGowaTest] = useState<ConnectionTest | null>(null);
   const [ollamaTest, setOllamaTest] = useState<ConnectionTest | null>(null);
   const [msg, setMsg] = useState("");
 
@@ -28,7 +27,11 @@ export default function SettingsPage() {
     setSaving(true);
     setMsg("");
     try {
-      const updated = await api.put<SystemSettings>("/settings", form);
+      const updated = await api.put<SystemSettings>("/settings", {
+        company_name: form.company_name,
+        ollama_base_url: form.ollama_base_url,
+        ollama_model: form.ollama_model,
+      });
       setForm(updated);
       setMsg("Configuración guardada");
     } catch (err) {
@@ -36,10 +39,6 @@ export default function SettingsPage() {
     } finally {
       setSaving(false);
     }
-  };
-
-  const testGowa = async () => {
-    setGowaTest(await api.post<ConnectionTest>("/settings/test/gowa", {}));
   };
 
   const testOllama = async () => {
@@ -52,7 +51,7 @@ export default function SettingsPage() {
     <>
       <PageHeader
         title="Configuración"
-        subtitle="goWA, Ollama, webhooks y datos de empresa"
+        subtitle="Ollama y datos de empresa"
       />
       {msg && (
         <div
@@ -74,59 +73,6 @@ export default function SettingsPage() {
               }
             />
           </label>
-        </section>
-        <section className="card">
-          <h3>goWA — WhatsApp</h3>
-          <p className="muted small">
-            Panel QR:{" "}
-            <a href={form.gowa_ui_url} target="_blank" rel="noreferrer">
-              {form.gowa_ui_url}
-            </a>
-          </p>
-          <label>
-            URL panel / UI
-            <input
-              value={form.gowa_ui_url}
-              onChange={(ev) => setForm({ ...form, gowa_ui_url: ev.target.value })}
-            />
-          </label>
-          <label>
-            URL envío mensajes (POST)
-            <input
-              value={form.gowa_send_url}
-              onChange={(ev) =>
-                setForm({ ...form, gowa_send_url: ev.target.value })
-              }
-            />
-          </label>
-          <label>
-            Basic Auth (usuario:contraseña)
-            <input
-              value={form.gowa_basic_auth}
-              onChange={(ev) =>
-                setForm({ ...form, gowa_basic_auth: ev.target.value })
-              }
-            />
-          </label>
-          <label>
-            Webhook (goWA → backend)
-            <input
-              value={form.gowa_webhook_url}
-              onChange={(ev) =>
-                setForm({ ...form, gowa_webhook_url: ev.target.value })
-              }
-            />
-          </label>
-          <div className="test-row">
-            <button type="button" className="btn" onClick={testGowa}>
-              Probar conexión goWA
-            </button>
-            {gowaTest && (
-              <span className={gowaTest.ok ? "test-ok" : "test-fail"}>
-                {gowaTest.message}
-              </span>
-            )}
-          </div>
         </section>
         <section className="card">
           <h3>Ollama — IA local</h3>

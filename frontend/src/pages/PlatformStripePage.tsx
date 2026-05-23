@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import PageHeader from "../components/PageHeader";
+import { useToast } from "../context/ToastContext";
 import { formatMoney } from "../lib/money";
 
 interface StripeStatus {
   configured: boolean;
+  simulation_mode: boolean;
   publishable_key_set: boolean;
   webhook_secret_set: boolean;
   public_app_url: string;
@@ -23,6 +25,14 @@ interface StripePayment {
   created_at: string;
 }
 
+interface SimulateResult {
+  tenant_slug: string;
+  company_name: string;
+  gowa_status: string;
+  gowa_ui_url: string | null;
+  gowa_error: string | null;
+}
+
 const statusLabel: Record<string, string> = {
   succeeded: "Cobrado",
   pending: "Pendiente",
@@ -31,9 +41,13 @@ const statusLabel: Record<string, string> = {
 };
 
 export default function PlatformStripePage() {
+  const toast = useToast();
   const [status, setStatus] = useState<StripeStatus | null>(null);
   const [payments, setPayments] = useState<StripePayment[]>([]);
   const [loading, setLoading] = useState(true);
+  const [tenantId, setTenantId] = useState("");
+  const [simulating, setSimulating] = useState(false);
+  const [lastSim, setLastSim] = useState<SimulateResult | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -53,24 +67,56 @@ export default function PlatformStripePage() {
     load();
   }, []);
 
+  const runSimulate = async () => {
+    if (!tenantId.trim()) {
+      toast.error("Indica el UUID de la cuenta");
+      return;
+    }
+    setSimulating(true);
+    setLastSim(null);
+    try {
+      const res = await api.post<SimulateResult>(
+        `/platform/stripe/simulate-tenant/${tenantId.trim()}`,
+        {}
+      );
+      setLastSim(res);
+      toast.success(`Cobro simulado · goWA: ${res.gowa_status}`);
+      load();
+    } catch (err) {
+      toast.error(String(err).replace(/^Error:\s*/i, ""));
+    } finally {
+      setSimulating(false);
+    }
+  };
+
   return (
     <>
       <PageHeader
         title="Cobros Stripe"
-        subtitle="Pagos recibidos y estado de la integración"
+        subtitle="Pagos recibidos, simulación y estado de la integración"
       />
 
       {status && (
-        <div className={`stripe-status card ${status.configured ? "ok" : "warn"}`}>
-          <h3>Estado de Stripe</h3>
-          {!status.configured ? (
-            <p>
-              Stripe no está configurado. Define{" "}
-              <code>STRIPE_SECRET_KEY</code> en el backend para activar checkout y
-              cobros automáticos. El alta de clientes funciona en modo prueba sin
-              pago.
-            </p>
-          ) : (
+        <div
+          className={`stripe-status card ${
+            status.configured ? "ok" : status.simulation_mode ? "simulate" : "warn"
+          }`}
+        >
+          <h3>Estado de pagos</h3>
+          {status.simulation_mode && !status.configured && (
+            <>
+              <p>
+                <strong>Modo simulación activo</strong> (
+                <code>STRIPE_SIMULATION_MODE=true</code>). El alta en{" "}
+                <code>/registro</code> redirige a un checkout falso y registra el cobro.
+              </p>
+              <p className="muted small">
+                Para Stripe real: configura las claves y pon{" "}
+                <code>STRIPE_SIMULATION_MODE=false</code>.
+              </p>
+            </>
+          )}
+          {status.configured && (
             <ul className="stripe-status-list">
               <li>API secreta: configurada</li>
               <li>
@@ -83,8 +129,63 @@ export default function PlatformStripePage() {
                   ? "configurado"
                   : "falta STRIPE_WEBHOOK_SECRET"}
               </li>
+              {status.simulation_mode && (
+                <li className="warn-text">
+                  Simulación también activa (prioridad: Stripe real en el alta si ambos)
+                </li>
+              )}
               <li>URL pública: {status.public_app_url}</li>
             </ul>
+          )}
+          {!status.configured && !status.simulation_mode && (
+            <p>
+              Sin Stripe ni simulación. Activa{" "}
+              <code>STRIPE_SIMULATION_MODE=true</code> o configura Stripe.
+            </p>
+          )}
+        </div>
+      )}
+
+      {status?.simulation_mode && (
+        <div className="card simulate-admin" style={{ marginTop: "1rem" }}>
+          <h3>Simular cobro + goWA (cuenta existente)</h3>
+          <p className="muted small">
+            UUID de la cuenta (columna en la ficha o listado de cuentas). Útil para
+            reprobar el flujo sin pasar por el registro.
+          </p>
+          <div className="simulate-admin-row">
+            <input
+              type="text"
+              placeholder="UUID del tenant"
+              value={tenantId}
+              onChange={(e) => setTenantId(e.target.value)}
+            />
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={simulating}
+              onClick={runSimulate}
+            >
+              {simulating ? "Ejecutando…" : "Simular cobro y crear goWA"}
+            </button>
+          </div>
+          {lastSim && (
+            <div className="simulate-gowa card-inner">
+              <p>
+                <strong>{lastSim.company_name}</strong> ({lastSim.tenant_slug}) · goWA:{" "}
+                {lastSim.gowa_status}
+              </p>
+              {lastSim.gowa_ui_url && (
+                <p>
+                  <a href={lastSim.gowa_ui_url} target="_blank" rel="noreferrer">
+                    {lastSim.gowa_ui_url}
+                  </a>
+                </p>
+              )}
+              {lastSim.gowa_error && (
+                <div className="alert alert-error">{lastSim.gowa_error}</div>
+              )}
+            </div>
           )}
         </div>
       )}
@@ -105,7 +206,7 @@ export default function PlatformStripePage() {
                   <th>Importe</th>
                   <th>Estado</th>
                   <th>Descripción</th>
-                  <th>Factura Stripe</th>
+                  <th>Referencia</th>
                 </tr>
               </thead>
               <tbody>

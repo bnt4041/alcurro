@@ -19,7 +19,7 @@ class SettingsService:
         env = get_settings()
         row = SystemSettings(
             id=1,
-            gowa_send_url=env.gowa_send_url,
+            gowa_send_url="http://gowa:3000/send/message",
             gowa_basic_auth=env.gowa_basic_auth,
             gowa_webhook_url="http://backend:8000/webhook/whatsapp",
             gowa_ui_url="http://localhost:3000",
@@ -45,16 +45,27 @@ class SettingsService:
         return SystemSettingsRead.model_validate(row)
 
     async def test_gowa(self) -> tuple[bool, str, str | None]:
+        from app.services.gowa_client import _in_docker, gowa_api_base
+
         s = self.get_or_create()
+        base = gowa_api_base(s)
+        user, password = (s.gowa_basic_auth or "admin:admin").split(":", 1)
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
-                base = s.gowa_ui_url.rstrip("/")
-                r = await client.get(f"{base}/", follow_redirects=True)
+                r = await client.get(
+                    f"{base}/devices",
+                    auth=httpx.BasicAuth(user, password),
+                )
             if r.status_code < 500:
                 return True, f"goWA accesible en {base}", None
             return False, f"goWA respondió {r.status_code}", None
         except Exception as exc:
-            return False, "No se pudo conectar con goWA", str(exc)
+            hint = (
+                " Usa http://gowa:3000/send/message como URL de envío dentro de Docker."
+                if _in_docker() and "localhost" in (s.gowa_send_url or "")
+                else ""
+            )
+            return False, f"No se pudo conectar con goWA.{hint}", str(exc)
 
     async def test_ollama(self) -> tuple[bool, str, str | None]:
         s = self.get_or_create()

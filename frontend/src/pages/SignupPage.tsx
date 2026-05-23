@@ -4,6 +4,7 @@ import {
   publicApi,
   type PublicPricingPlan,
   type PublicSignupBody,
+  type PublicStripeConfig,
 } from "../api/public";
 import { applyAlcurroDefaults } from "../hooks/useBranding";
 import {
@@ -44,9 +45,11 @@ export default function SignupPage() {
   const [slugTouched, setSlugTouched] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [stripeConfig, setStripeConfig] = useState<PublicStripeConfig | null>(null);
 
   useEffect(() => {
     applyAlcurroDefaults();
+    publicApi.getStripeConfig().then(setStripeConfig).catch(() => null);
     publicApi.getPlans().then((list) => {
       setPlans(list);
       const fromUrl = searchParams.get("plan");
@@ -141,6 +144,13 @@ export default function SignupPage() {
           Crea tu cuenta alcurro. Tras el registro podrás acceder con tu código de
           cuenta y el usuario administrador ADM001.
         </p>
+        {stripeConfig?.simulation_mode && (
+          <div className="alert alert-info simulate-banner">
+            <strong>Modo simulación:</strong> tras crear la cuenta verás una pantalla
+            de pago de prueba. Se activará la suscripción y se creará el contenedor
+            Docker de WhatsApp (goWA) sin usar Stripe real.
+          </div>
+        )}
         {error && <div className="alert alert-error">{error}</div>}
 
         <form className="signup-form card" onSubmit={submit}>

@@ -12,6 +12,7 @@ from app.database import create_db_and_tables, engine
 from app.models.models import Employee, Role, ShiftConfiguration, ShiftPatternType
 from app.models.rbac import PlatformUser
 from app.models.tenant import Company, Tenant
+from app.services.legal_service import seed_default_legal_documents
 from app.services.rbac_service import ensure_system_groups, assign_role_default_group
 
 PANEL_PASSWORD = "admin123"
@@ -51,6 +52,7 @@ def seed() -> None:
             session.flush()
 
         ensure_system_groups(session, tenant.id)
+        seed_default_legal_documents(session, tenant.id)
 
         if not session.exec(select(PlatformUser)).first():
             session.add(
