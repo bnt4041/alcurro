@@ -418,8 +418,18 @@ th {
   max-width: 720px;
 }
 
+.modal-xlarge {
+  max-width: min(960px, 96vw);
+  max-height: 96vh;
+  width: 100%;
+}
+
 .modal-tall {
   max-height: min(92vh, 920px);
+}
+
+.modal-xlarge.modal-tall {
+  max-height: 96vh;
 }
 
 .modal-header {
@@ -1913,25 +1923,103 @@ code {
 }
 
 .schedule-blocks-fieldset {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.75rem 1rem;
-}
-
-.schedule-block {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.75rem 1rem;
-  padding: 0.85rem 1rem;
-  margin-bottom: 0.5rem;
-}
-
-.schedule-block__header {
+  display: block;
   grid-column: 1 / -1;
+}
+
+.schedule-editor {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.schedule-editor__title {
+  margin: 0 0 0.25rem;
+  font-size: 1rem;
+}
+
+.schedule-period {
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-muted, #f8fafc);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.schedule-period__header,
+.schedule-block__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
+}
+
+.schedule-period__dates {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.schedule-block {
+  padding: 0.85rem;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.schedule-slots {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.schedule-slot {
+  display: grid;
+  grid-template-columns: auto 1fr 1fr 5rem auto;
+  gap: 0.5rem 0.75rem;
+  align-items: end;
+  padding: 0.5rem;
+  background: var(--surface-muted, #f1f5f9);
+  border-radius: 6px;
+}
+
+.schedule-slot__label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  align-self: center;
+}
+
+.schedule-slot__remove {
+  align-self: center;
+  padding: 0.2rem 0.5rem;
+}
+
+.employee-modal-form fieldset {
+  grid-column: 1 / -1;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem;
+  margin: 0;
+}
+
+.employee-modal-form fieldset legend {
+  padding: 0 0.35rem;
+  font-weight: 600;
+}
+
+@media (max-width: 720px) {
+  .schedule-slot {
+    grid-template-columns: 1fr 1fr;
+  }
+  .schedule-slot__label {
+    grid-column: 1 / -1;
+  }
 }
 
 .label-like {

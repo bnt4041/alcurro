@@ -77,12 +77,19 @@ Body create (extracto):
   "full_name": "...",
   "id_document": "12345678Z",
   "phone": "...",
-  "work_schedule_blocks": [
+  "work_schedule_periods": [
     {
-      "work_days": [0, 1, 2, 3],
-      "work_start_time": "09:00:00",
-      "work_end_time": "18:00:00",
-      "break_minutes": 60
+      "valid_from": "2026-01-01",
+      "valid_to": "2026-07-31",
+      "blocks": [
+        {
+          "work_days": [0, 1, 2, 3],
+          "slots": [
+            { "work_start_time": "09:00:00", "work_end_time": "14:00:00", "break_minutes": 0 },
+            { "work_start_time": "16:00:00", "work_end_time": "18:00:00", "break_minutes": 0 }
+          ]
+        }
+      ]
     }
   ]
 }

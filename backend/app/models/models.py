@@ -143,8 +143,13 @@ class Employee(SQLModel, table=True):
     work_schedule_blocks: list[dict] = Field(
         default_factory=list,
         sa_column=Column(JSON, nullable=False),
+        description="Resumen legacy del periodo activo",
+    )
+    work_schedule_periods: list[dict] = Field(
+        default_factory=list,
+        sa_column=Column(JSON, nullable=False),
         description=(
-            "Bloques de horario: [{work_days, work_start_time, work_end_time, break_minutes}]"
+            "Periodos: [{valid_from, valid_to, blocks:[{work_days, slots:[...]}]}]"
         ),
     )
     created_at: datetime = Field(default_factory=datetime.utcnow)

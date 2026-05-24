@@ -35,46 +35,51 @@ POST /api/employees
 { "department_id": "uuid", "work_schedule_blocks": [...], ... }
 ```
 
-## Bloques de horario (`work_schedule_blocks`)
+## Horarios (`work_schedule_periods`)
 
-Permite varios tramos con días distintos, por ejemplo:
+Estructura en tres niveles:
 
-| Bloque | Días | Horario | Descanso |
-|--------|------|---------|----------|
-| 1 | Lun–Jue (0–3) | 09:00–18:00 | 60 min |
-| 2 | Vie (4) | 08:00–15:00 | 0 min |
+1. **Periodo** — vigencia por fechas (`valid_from`, `valid_to` opcional).
+2. **Bloque de días** — qué días de la semana (0=lunes … 6=domingo).
+3. **Franjas horarias** — una o varias por bloque (turno partido).
+
+Ejemplo: del 01/01/2026 al 31/07/2026, lun–jue 09:00–14:00 y 16:00–18:00, viernes 08:00–15:00.
 
 ### Reglas
 
-- Cada día de la semana (0=lunes … 6=domingo) solo puede aparecer en **un** bloque.
-- Cada bloque necesita al menos un día, hora inicio &lt; hora fin.
-- `break_minutes`: 0–480.
+- Varios **periodos** sin solaparse en fechas.
+- En cada periodo, cada **día** solo en un bloque.
+- Cada bloque tiene al menos una **franja**; inicio &lt; fin.
+- `break_minutes` por franja (0–480).
 
 ### Modelo de datos
 
-Tabla `employees`:
-
-| Columna | Tipo | Descripción |
-|---------|------|-------------|
-| `work_schedule_blocks` | JSONB | Lista de bloques (fuente de verdad) |
-| `work_start_time`, `work_end_time`, `work_days` | legacy | Sincronizados con el **primer bloque** al guardar |
-| `shift_configuration_id` | UUID opcional | Turno complejo alternativo |
-
-Ejemplo JSON:
+| Columna | Descripción |
+|---------|-------------|
+| `work_schedule_periods` | JSONB — fuente de verdad |
+| `work_schedule_blocks` | Resumen legacy del primer periodo |
+| `work_start_time`, `work_end_time`, `work_days` | Legacy (primer bloque / primera franja) |
 
 ```json
 [
   {
-    "work_days": [0, 1, 2, 3],
-    "work_start_time": "09:00:00",
-    "work_end_time": "18:00:00",
-    "break_minutes": 60
-  },
-  {
-    "work_days": [4],
-    "work_start_time": "08:00:00",
-    "work_end_time": "15:00:00",
-    "break_minutes": 0
+    "valid_from": "2026-01-01",
+    "valid_to": "2026-07-31",
+    "blocks": [
+      {
+        "work_days": [0, 1, 2, 3],
+        "slots": [
+          { "work_start_time": "09:00:00", "work_end_time": "14:00:00", "break_minutes": 0 },
+          { "work_start_time": "16:00:00", "work_end_time": "18:00:00", "break_minutes": 0 }
+        ]
+      },
+      {
+        "work_days": [4],
+        "slots": [
+          { "work_start_time": "08:00:00", "work_end_time": "15:00:00", "break_minutes": 0 }
+        ]
+      }
+    ]
   }
 ]
 ```
@@ -91,7 +96,7 @@ Componente `WorkScheduleEditor` (`frontend/src/components/WorkScheduleEditor.tsx
 
 Validación en `app/services/work_schedule.py` → `normalize_employee_schedule()` llamado en create/update de empleados.
 
-Migración: `scripts/migrate_work_schedule_blocks.py`
+Migraciones: `migrate_work_schedule_blocks.py`, `migrate_work_schedule_periods.py`
 
 ## Listado
 

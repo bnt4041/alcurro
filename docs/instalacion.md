@@ -30,6 +30,7 @@ Al arrancar, el backend ejecuta migraciones idempotentes en `lifespan` (`backend
 - `migrate_legal_and_schedule`
 - `migrate_signatures`, `migrate_mail`
 - `migrate_work_schedule_blocks`
+- `migrate_work_schedule_periods`
 
 Para bases de datos nuevas o tras clonar el repo, ejecuta también las migraciones históricas una vez:
 

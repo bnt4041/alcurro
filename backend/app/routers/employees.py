@@ -166,7 +166,13 @@ def update_employee(
     updates = data.model_dump(exclude_unset=True, exclude={"password"})
     if any(
         k in updates
-        for k in ("work_schedule_blocks", "work_days", "work_start_time", "work_end_time")
+        for k in (
+            "work_schedule_periods",
+            "work_schedule_blocks",
+            "work_days",
+            "work_start_time",
+            "work_end_time",
+        )
     ):
         try:
             updates = normalize_employee_schedule(updates)

@@ -1,10 +1,11 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { api, buildQuery } from "../api/client";
-import type { Employee, Role, ShiftConfiguration, WorkScheduleBlock } from "../api/types";
+import type { Employee, Role, ShiftConfiguration, WorkSchedulePeriod } from "../api/types";
 import {
-  blocksFromEmployee,
-  defaultScheduleBlocks,
+  defaultSchedulePeriods,
   formatWorkSchedule,
+  periodsFromEmployee,
+  validatePeriodsClient,
 } from "../lib/workSchedule";
 import Modal from "../components/Modal";
 import PageHeader from "../components/PageHeader";
@@ -78,7 +79,7 @@ const empty = (defaults?: {
   department_id: defaults?.department_id ?? null,
   work_center_id: defaults?.work_center_id ?? null,
   shift_configuration_id: null,
-  work_schedule_blocks: defaultScheduleBlocks(),
+  work_schedule_periods: defaultSchedulePeriods(),
 });
 
 export default function EmployeesPage() {
@@ -90,8 +91,8 @@ export default function EmployeesPage() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Employee | null>(null);
   const [form, setForm] = useState<EmployeeForm>(empty());
-  const [scheduleBlocks, setScheduleBlocks] = useState<WorkScheduleBlock[]>(
-    defaultScheduleBlocks()
+  const [schedulePeriods, setSchedulePeriods] = useState<WorkSchedulePeriod[]>(
+    defaultSchedulePeriods()
   );
   const [orgTree, setOrgTree] = useState<OrgTreeCompany[]>([]);
   const [error, setError] = useState("");
@@ -165,7 +166,7 @@ export default function EmployeesPage() {
     const wcId =
       user?.work_center_id ?? resolveWorkCenterForDepartment(deptId) ?? null;
     setForm(empty({ department_id: deptId, work_center_id: wcId }));
-    setScheduleBlocks(defaultScheduleBlocks());
+    setSchedulePeriods(defaultSchedulePeriods());
     setLegalStatus(null);
     setSelectedGroups(panelGroupId ? [panelGroupId] : []);
     setOpen(true);
@@ -173,8 +174,8 @@ export default function EmployeesPage() {
 
   const openEdit = async (row: Employee) => {
     setEditing(row);
-    const blocks = blocksFromEmployee(row);
-    setScheduleBlocks(blocks);
+    const periods = periodsFromEmployee(row);
+    setSchedulePeriods(periods);
     let tree = orgTree;
     if (!tree.length) {
       try {
@@ -223,8 +224,9 @@ export default function EmployeesPage() {
       setError("Selecciona centro y departamento");
       return;
     }
-    if (scheduleBlocks.some((b) => b.work_days.length === 0)) {
-      setError("Cada bloque de horario debe tener al menos un día");
+    const scheduleErr = validatePeriodsClient(schedulePeriods);
+    if (scheduleErr) {
+      setError(scheduleErr);
       return;
     }
     try {
@@ -239,7 +241,7 @@ export default function EmployeesPage() {
         supervisor_id: form.supervisor_id,
         department_id: form.department_id,
         shift_configuration_id: form.shift_configuration_id,
-        work_schedule_blocks: scheduleBlocks,
+        work_schedule_periods: schedulePeriods,
       };
       if (form.password) body.password = form.password;
       if (!editing) {
@@ -362,10 +364,10 @@ export default function EmployeesPage() {
         title={editing ? "Editar empleado" : "Nuevo empleado"}
         open={open && !!canWrite}
         onClose={() => setOpen(false)}
-        wide
+        xlarge
         tall
       >
-        <form onSubmit={save} className="form-grid modal-form-scroll">
+        <form onSubmit={save} className="form-grid employee-modal-form modal-form-scroll">
           {error && <div className="alert alert-error">{error}</div>}
           {editing && (
             <label>
@@ -472,8 +474,8 @@ export default function EmployeesPage() {
             </select>
           </label>
           <WorkScheduleEditor
-            blocks={scheduleBlocks}
-            onChange={setScheduleBlocks}
+            periods={schedulePeriods}
+            onChange={setSchedulePeriods}
             shiftConfigs={shiftConfigs}
             shiftConfigurationId={form.shift_configuration_id}
             onShiftChange={(id) => setForm({ ...form, shift_configuration_id: id })}
@@ -504,7 +506,7 @@ export default function EmployeesPage() {
             </fieldset>
           )}
           {canGroups && groups.length > 0 && (
-            <fieldset>
+            <fieldset className="form-grid-full">
               <legend>Grupos de permisos</legend>
               {!editing && (
                 <p className="muted small">

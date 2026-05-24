@@ -35,15 +35,34 @@ export interface Employee {
   work_end_time: string | null;
   work_days: number[];
   work_schedule_blocks: WorkScheduleBlock[];
+  work_schedule_periods: WorkSchedulePeriod[];
   created_at: string;
   updated_at: string;
 }
 
+/** @deprecated Resumen legacy; usar work_schedule_periods */
 export interface WorkScheduleBlock {
   work_days: number[];
   work_start_time: string;
   work_end_time: string;
   break_minutes: number;
+}
+
+export interface WorkScheduleTimeSlot {
+  work_start_time: string;
+  work_end_time: string;
+  break_minutes: number;
+}
+
+export interface WorkScheduleDayBlock {
+  work_days: number[];
+  slots: WorkScheduleTimeSlot[];
+}
+
+export interface WorkSchedulePeriod {
+  valid_from: string;
+  valid_to: string | null;
+  blocks: WorkScheduleDayBlock[];
 }
 
 export interface ClockIn {

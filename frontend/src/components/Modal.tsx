@@ -7,14 +7,15 @@ interface Props {
   children: ReactNode;
   wide?: boolean;
   tall?: boolean;
+  xlarge?: boolean;
 }
 
-export default function Modal({ title, open, onClose, children, wide, tall }: Props) {
+export default function Modal({ title, open, onClose, children, wide, tall, xlarge }: Props) {
   if (!open) return null;
   const modalClass = [
     "modal",
-    wide ? "modal-wide" : "",
-    tall ? "modal-tall" : "",
+    xlarge ? "modal-xlarge" : wide ? "modal-wide" : "",
+    tall || xlarge ? "modal-tall" : "",
   ]
     .filter(Boolean)
     .join(" ");

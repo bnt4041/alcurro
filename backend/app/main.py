@@ -64,6 +64,14 @@ def _run_startup_migrations() -> None:
         migrate_work_schedule_blocks()
     except Exception:
         pass
+    try:
+        from scripts.migrate_work_schedule_periods import (
+            main as migrate_work_schedule_periods,
+        )
+
+        migrate_work_schedule_periods()
+    except Exception:
+        pass
 
 
 @asynccontextmanager

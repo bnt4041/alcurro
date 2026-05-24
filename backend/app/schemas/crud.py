@@ -30,6 +30,7 @@ class EmployeeCreate(BaseModel):
     work_end_time: time | None = None
     work_days: list[int] = Field(default_factory=lambda: [0, 1, 2, 3, 4])
     work_schedule_blocks: list[dict[str, Any]] | None = None
+    work_schedule_periods: list[dict[str, Any]] | None = None
 
 
 class EmployeeUpdate(BaseModel):
@@ -48,6 +49,7 @@ class EmployeeUpdate(BaseModel):
     work_end_time: time | None = None
     work_days: list[int] | None = None
     work_schedule_blocks: list[dict[str, Any]] | None = None
+    work_schedule_periods: list[dict[str, Any]] | None = None
 
 
 class EmployeeRead(BaseModel):
@@ -69,6 +71,7 @@ class EmployeeRead(BaseModel):
     work_end_time: time | None = None
     work_days: list[int] = Field(default_factory=list)
     work_schedule_blocks: list[dict[str, Any]] = Field(default_factory=list)
+    work_schedule_periods: list[dict[str, Any]] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 
