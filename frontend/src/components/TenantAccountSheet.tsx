@@ -1,4 +1,4 @@
-import { FormEvent } from "react";
+import { FormEvent, useState } from "react";
 import type { Role } from "../api/types";
 import InvoiceHistoryTable from "./InvoiceHistoryTable";
 import SubscriptionSummaryCard from "./SubscriptionSummaryCard";
@@ -35,6 +35,15 @@ export interface TenantUserRow {
   is_active: boolean;
 }
 
+export interface TenantUserCreateForm {
+  full_name: string;
+  phone: string;
+  email: string;
+  id_document: string;
+  role: Role;
+  password: string;
+}
+
 interface Props {
   open: boolean;
   mode: "create" | "edit";
@@ -62,6 +71,8 @@ interface Props {
   onDeactivate?: () => void;
   onReactivate?: () => void;
   onDelete?: () => void;
+  onCreateTenantUser?: (data: TenantUserCreateForm) => Promise<void>;
+  creatingUser?: boolean;
 }
 
 const TABS: { id: AccountSheetTab; label: string }[] = [
@@ -97,7 +108,32 @@ export default function TenantAccountSheet({
   onDeactivate,
   onReactivate,
   onDelete,
+  onCreateTenantUser,
+  creatingUser = false,
 }: Props) {
+  const [userForm, setUserForm] = useState<TenantUserCreateForm>({
+    full_name: "",
+    phone: "",
+    email: "",
+    id_document: "",
+    role: "tenant_admin",
+    password: "",
+  });
+
+  const submitNewUser = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!onCreateTenantUser) return;
+    await onCreateTenantUser(userForm);
+    setUserForm({
+      full_name: "",
+      phone: "",
+      email: "",
+      id_document: "",
+      role: "tenant_admin",
+      password: "",
+    });
+  };
+
   if (!open) return null;
 
   const isEdit = mode === "edit";
@@ -353,45 +389,134 @@ export default function TenantAccountSheet({
                     cliente.
                   </p>
                 </div>
-              ) : usersLoading ? (
-                <p className="muted">Cargando usuarios…</p>
-              ) : users.length === 0 ? (
-                <div className="sheet-placeholder">
-                  <p className="muted">
-                    Esta cuenta aún no tiene usuarios. Los empleados se dan de alta
-                    desde el panel del cliente (acceso con código{" "}
-                    <code>{form.accountCode}</code>).
-                  </p>
-                </div>
               ) : (
-                <div className="table-wrap">
-                  <table className="sheet-users-table">
-                    <thead>
-                      <tr>
-                        <th>Usuario</th>
-                        <th>Nombre</th>
-                        <th>Teléfono</th>
-                        <th>Rol</th>
-                        <th>Empresa</th>
-                        <th>Estado</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {users.map((u) => (
-                        <tr key={u.id} className={!u.is_active ? "row-inactive" : ""}>
-                          <td>
-                            <code>{u.employee_code}</code>
-                          </td>
-                          <td>{u.full_name}</td>
-                          <td>{u.phone}</td>
-                          <td>{ROLE_LABELS[u.role] ?? u.role}</td>
-                          <td className="muted small">{u.company_name}</td>
-                          <td>{u.is_active ? "Activo" : "Inactivo"}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <>
+                  {onCreateTenantUser && (
+                    <section className="card sheet-user-create">
+                      <h4>Crear usuario</h4>
+                      <p className="muted small">
+                        Acceso al panel del cliente con código{" "}
+                        <code>{form.accountCode}</code> y el usuario generado (EMP-001…).
+                      </p>
+                      <form onSubmit={submitNewUser} className="form-grid">
+                        <label>
+                          Nombre
+                          <input
+                            required
+                            value={userForm.full_name}
+                            onChange={(ev) =>
+                              setUserForm({ ...userForm, full_name: ev.target.value })
+                            }
+                          />
+                        </label>
+                        <label>
+                          DNI/NIE
+                          <input
+                            required
+                            value={userForm.id_document}
+                            onChange={(ev) =>
+                              setUserForm({
+                                ...userForm,
+                                id_document: ev.target.value.toUpperCase(),
+                              })
+                            }
+                          />
+                        </label>
+                        <label>
+                          Teléfono (WhatsApp)
+                          <input
+                            required
+                            value={userForm.phone}
+                            onChange={(ev) =>
+                              setUserForm({ ...userForm, phone: ev.target.value })
+                            }
+                          />
+                        </label>
+                        <label>
+                          Email
+                          <input
+                            type="email"
+                            value={userForm.email}
+                            onChange={(ev) =>
+                              setUserForm({ ...userForm, email: ev.target.value })
+                            }
+                          />
+                        </label>
+                        <label>
+                          Rol
+                          <select
+                            value={userForm.role}
+                            onChange={(ev) =>
+                              setUserForm({
+                                ...userForm,
+                                role: ev.target.value as Role,
+                              })
+                            }
+                          >
+                            <option value="tenant_admin">Administrador de cuenta</option>
+                            <option value="manager">Responsable</option>
+                            <option value="employee">Empleado</option>
+                          </select>
+                        </label>
+                        <label>
+                          Contraseña panel
+                          <input
+                            type="password"
+                            required
+                            minLength={6}
+                            value={userForm.password}
+                            onChange={(ev) =>
+                              setUserForm({ ...userForm, password: ev.target.value })
+                            }
+                          />
+                        </label>
+                        <div className="form-actions form-grid-full">
+                          <button
+                            type="submit"
+                            className="btn btn-primary"
+                            disabled={creatingUser}
+                          >
+                            {creatingUser ? "Creando…" : "Crear usuario"}
+                          </button>
+                        </div>
+                      </form>
+                    </section>
+                  )}
+                  {usersLoading ? (
+                    <p className="muted">Cargando usuarios…</p>
+                  ) : users.length === 0 ? (
+                    <p className="muted small">Aún no hay usuarios en esta cuenta.</p>
+                  ) : (
+                    <div className="table-wrap">
+                      <table className="sheet-users-table">
+                        <thead>
+                          <tr>
+                            <th>Usuario</th>
+                            <th>Nombre</th>
+                            <th>Teléfono</th>
+                            <th>Rol</th>
+                            <th>Empresa</th>
+                            <th>Estado</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {users.map((u) => (
+                            <tr key={u.id} className={!u.is_active ? "row-inactive" : ""}>
+                              <td>
+                                <code>{u.employee_code}</code>
+                              </td>
+                              <td>{u.full_name}</td>
+                              <td>{u.phone}</td>
+                              <td>{ROLE_LABELS[u.role] ?? u.role}</td>
+                              <td className="muted small">{u.company_name}</td>
+                              <td>{u.is_active ? "Activo" : "Inactivo"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           )}

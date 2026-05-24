@@ -44,6 +44,18 @@ def _run_startup_migrations() -> None:
         migrate_legal()
     except Exception:
         pass
+    try:
+        from scripts.migrate_signatures import main as migrate_signatures
+
+        migrate_signatures()
+    except Exception:
+        pass
+    try:
+        from scripts.migrate_mail import main as migrate_mail
+
+        migrate_mail()
+    except Exception:
+        pass
 
 
 @asynccontextmanager

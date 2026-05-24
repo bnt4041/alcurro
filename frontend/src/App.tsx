@@ -19,13 +19,17 @@ import LoginPage from "./pages/LoginPage";
 import OrganizationPage from "./pages/OrganizationPage";
 import PlatformDiscountsPage from "./pages/PlatformDiscountsPage";
 import PlatformPage from "./pages/PlatformPage";
+import PlatformUsersPage from "./pages/PlatformUsersPage";
 import PlatformPricingPage from "./pages/PlatformPricingPage";
 import PlatformStripePage from "./pages/PlatformStripePage";
 import PlatformWhatsAppPage from "./pages/PlatformWhatsAppPage";
+import PlatformMailPage from "./pages/PlatformMailPage";
 import ShiftsPage from "./pages/ShiftsPage";
 import SignupPage from "./pages/SignupPage";
 import SignupSimulatePaymentPage from "./pages/SignupSimulatePaymentPage";
 import SignupSuccessPage from "./pages/SignupSuccessPage";
+import SignDocumentPage from "./pages/SignDocumentPage";
+import SignaturesPage from "./pages/SignaturesPage";
 
 export default function App() {
   return (
@@ -40,6 +44,8 @@ export default function App() {
               <Route path="registro/ok" element={<SignupSuccessPage />} />
             </Route>
 
+            <Route path="/firmar/:token" element={<SignDocumentPage />} />
+
             <Route path="/acceso" element={<LoginPage />} />
             <Route path="/login" element={<Navigate to="/acceso" replace />} />
             <Route path="/acceso-cliente" element={<Navigate to="/acceso" replace />} />
@@ -48,10 +54,12 @@ export default function App() {
             <Route path="/admin" element={<PlatformProtectedRoute />}>
               <Route element={<PlatformLayout />}>
                 <Route index element={<PlatformPage />} />
+                <Route path="usuarios" element={<PlatformUsersPage />} />
                 <Route path="tarifas" element={<PlatformPricingPage />} />
                 <Route path="descuentos" element={<PlatformDiscountsPage />} />
                 <Route path="cobros" element={<PlatformStripePage />} />
                 <Route path="whatsapp" element={<PlatformWhatsAppPage />} />
+                <Route path="mail" element={<PlatformMailPage />} />
               </Route>
             </Route>
 
@@ -65,6 +73,7 @@ export default function App() {
                 <Route path="vacaciones" element={<LeaveRequestsPage />} />
                 <Route path="turnos" element={<ShiftsPage />} />
                 <Route path="documentos" element={<DocumentsPage />} />
+                <Route path="firmas" element={<SignaturesPage />} />
                 <Route path="legal" element={<LegalPage />} />
                 <Route path="grupos" element={<GroupsPage />} />
                 <Route path="cuenta" element={<AccountPage />} />

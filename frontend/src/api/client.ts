@@ -120,6 +120,22 @@ export const api = {
   put: <T>(path: string, body: unknown) =>
     request<T>(path, { method: "PUT", body: JSON.stringify(body) }),
   delete: (path: string) => request<void>(path, { method: "DELETE" }),
+  download: async (path: string, filename: string) => {
+    const res = await fetch(`${BASE}${path}`, { headers: authHeaders() });
+    if (res.status === 401) {
+      setToken(null);
+      window.location.href = "/acceso";
+      throw new Error("Sesión expirada");
+    }
+    if (!res.ok) throw new Error(`No se pudo descargar (${res.status})`);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  },
   upload: async <T>(path: string, form: FormData) => {
     const res = await fetch(`${BASE}${path}`, {
       method: "POST",

@@ -4,10 +4,12 @@ import { useAuth } from "../context/AuthContext";
 
 const nav = [
   { to: "/admin", label: "Cuentas", end: true },
+  { to: "/admin/usuarios", label: "Usuarios", end: false },
   { to: "/admin/tarifas", label: "Tarifas", end: false },
   { to: "/admin/descuentos", label: "Descuentos", end: false },
   { to: "/admin/cobros", label: "Cobros Stripe", end: false },
   { to: "/admin/whatsapp", label: "WhatsApp", end: false },
+  { to: "/admin/mail", label: "Correo", end: false },
 ];
 
 export default function PlatformLayout() {

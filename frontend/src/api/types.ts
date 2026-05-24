@@ -110,3 +110,26 @@ export interface ConnectionTest {
   message: string;
   detail: string | null;
 }
+
+export interface MailSettings {
+  smtp_host: string | null;
+  smtp_port: number;
+  smtp_user: string | null;
+  smtp_use_tls: boolean;
+  mail_from_address: string | null;
+  mail_from_name: string | null;
+  smtp_password_configured: boolean;
+  updated_at: string;
+}
+
+export interface MailLog {
+  id: string;
+  to_address: string;
+  subject: string;
+  event_type: string;
+  success: boolean;
+  detail: string | null;
+  tenant_id: string | null;
+  envelope_id: string | null;
+  created_at: string;
+}

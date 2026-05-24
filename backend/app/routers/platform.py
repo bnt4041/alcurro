@@ -8,7 +8,13 @@ from app.core.security import create_platform_token, hash_password, verify_passw
 from app.database import get_session
 from app.models.rbac import PlatformUser
 from app.models.tenant import Tenant
-from app.schemas.rbac import PlatformLoginRequest, PlatformUserMe
+from app.schemas.rbac import (
+    PlatformLoginRequest,
+    PlatformUserAdminRead,
+    PlatformUserCreate,
+    PlatformUserMe,
+    PlatformUserUpdate,
+)
 from app.schemas.auth import TokenResponse
 from app.models.models import Employee
 from app.models.tenant import Company
@@ -16,9 +22,14 @@ from app.schemas.tenant import (
     TenantCreate,
     TenantPlatformUpdate,
     TenantRead,
+    TenantUserCreate,
     TenantUserRead,
 )
 from app.models.organization import GroupTemplate
+from app.models.organization import Department, WorkCenter
+from app.services.code_generator import next_employee_code
+from app.services.id_document import validate_id_document
+from app.services.rbac_service import assign_role_default_group, ensure_system_groups
 from app.schemas.billing import InvoiceRead, TenantListItemRead
 from app.schemas.organization import GroupTemplateRead, GroupTemplateUpdate
 from app.services.billing_read import subscription_to_summary, tenant_account_billing
@@ -52,6 +63,73 @@ def platform_me(user: PlatformUser = Depends(get_platform_user)) -> PlatformUser
     return PlatformUserMe(
         id=user.id, email=user.email, full_name=user.full_name, scope="platform"
     )
+
+
+@router.get("/users", response_model=list[PlatformUserAdminRead])
+def list_platform_users(
+    session: Session = Depends(get_session),
+    _: PlatformUser = Depends(get_platform_user),
+) -> list[PlatformUser]:
+    return list(
+        session.exec(
+            select(PlatformUser).order_by(PlatformUser.full_name)  # type: ignore[attr-defined]
+        ).all()
+    )
+
+
+@router.post("/users", response_model=PlatformUserAdminRead, status_code=201)
+def create_platform_user(
+    data: PlatformUserCreate,
+    session: Session = Depends(get_session),
+    _: PlatformUser = Depends(get_platform_user),
+) -> PlatformUser:
+    email = data.email.strip().lower()
+    if session.exec(
+        select(PlatformUser).where(PlatformUser.email == email)
+    ).first():
+        raise HTTPException(status_code=409, detail="Ya existe un usuario con ese email")
+    row = PlatformUser(
+        email=email,
+        full_name=data.full_name.strip(),
+        password_hash=hash_password(data.password),
+        is_active=True,
+    )
+    session.add(row)
+    session.commit()
+    session.refresh(row)
+    return row
+
+
+@router.patch("/users/{user_id}", response_model=PlatformUserAdminRead)
+def update_platform_user(
+    user_id: UUID,
+    data: PlatformUserUpdate,
+    session: Session = Depends(get_session),
+    current: PlatformUser = Depends(get_platform_user),
+) -> PlatformUser:
+    row = session.get(PlatformUser, user_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    if data.is_active is False and row.id == current.id:
+        raise HTTPException(status_code=400, detail="No puedes desactivarte a ti mismo")
+    if data.is_active is False:
+        active_count = session.exec(
+            select(PlatformUser).where(PlatformUser.is_active == True)  # noqa: E712
+        ).all()
+        if len(active_count) <= 1 and row.is_active:
+            raise HTTPException(
+                status_code=400, detail="Debe quedar al menos un administrador activo"
+            )
+    if data.full_name is not None:
+        row.full_name = data.full_name.strip()
+    if data.password:
+        row.password_hash = hash_password(data.password)
+    if data.is_active is not None:
+        row.is_active = data.is_active
+    session.add(row)
+    session.commit()
+    session.refresh(row)
+    return row
 
 
 @router.get("/tenants", response_model=list[TenantListItemRead])
@@ -182,6 +260,82 @@ def list_tenant_users(
         )
         for e in employees
     ]
+
+
+@router.post("/tenants/{tenant_id}/users", response_model=TenantUserRead, status_code=201)
+def create_tenant_user(
+    tenant_id: UUID,
+    data: TenantUserCreate,
+    session: Session = Depends(get_session),
+    _: PlatformUser = Depends(get_platform_user),
+) -> TenantUserRead:
+    tenant = session.get(Tenant, tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Cuenta no encontrada")
+
+    company = session.exec(
+        select(Company).where(Company.tenant_id == tenant_id).order_by(Company.created_at)  # type: ignore[attr-defined]
+    ).first()
+    if not company:
+        raise HTTPException(status_code=400, detail="La cuenta no tiene empresa configurada")
+
+    wc = session.exec(
+        select(WorkCenter).where(WorkCenter.company_id == company.id)
+    ).first()
+    if not wc:
+        raise HTTPException(status_code=400, detail="La cuenta no tiene centro de trabajo")
+
+    dept = session.exec(
+        select(Department).where(Department.work_center_id == wc.id)
+    ).first()
+    if not dept:
+        raise HTTPException(status_code=400, detail="La cuenta no tiene departamento configurado")
+
+    try:
+        id_document = validate_id_document(data.id_document)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    if session.exec(
+        select(Employee).where(
+            Employee.company_id == company.id,
+            Employee.id_document == id_document,
+        )
+    ).first():
+        raise HTTPException(status_code=409, detail="DNI/NIE ya registrado en la cuenta")
+
+    employee_code = next_employee_code(session, company.id)
+    ensure_system_groups(session, tenant_id)
+
+    row = Employee(
+        company_id=company.id,
+        department_id=dept.id,
+        phone=data.phone.strip(),
+        email=data.email.strip().lower() if data.email else None,
+        full_name=data.full_name.strip(),
+        id_document=id_document,
+        employee_code=employee_code,
+        role=data.role,
+        password_hash=hash_password(data.password),
+        is_active=True,
+    )
+    session.add(row)
+    session.flush()
+    assign_role_default_group(session, row, tenant_id)
+    session.commit()
+    session.refresh(row)
+
+    return TenantUserRead(
+        id=row.id,
+        company_id=row.company_id,
+        company_name=company.name,
+        full_name=row.full_name,
+        employee_code=row.employee_code,
+        phone=row.phone,
+        email=row.email,
+        role=row.role,
+        is_active=row.is_active,
+    )
 
 
 @router.patch("/tenants/{tenant_id}", response_model=TenantRead)

@@ -49,3 +49,23 @@ class PlatformUserMe(BaseModel):
     email: str
     full_name: str
     scope: str = "platform"
+
+
+class PlatformUserCreate(BaseModel):
+    email: str = Field(min_length=3, max_length=255)
+    full_name: str = Field(min_length=1, max_length=200)
+    password: str = Field(min_length=6, max_length=128)
+
+
+class PlatformUserUpdate(BaseModel):
+    full_name: str | None = Field(default=None, max_length=200)
+    password: str | None = Field(default=None, min_length=6, max_length=128)
+    is_active: bool | None = None
+
+
+class PlatformUserAdminRead(BaseModel):
+    id: UUID
+    email: str
+    full_name: str
+    is_active: bool
+    created_at: datetime

@@ -407,13 +407,19 @@ th {
   border-radius: var(--radius);
   width: 100%;
   max-width: 480px;
-  max-height: 90vh;
-  overflow: auto;
+  max-height: min(90vh, 900px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   box-shadow: var(--shadow);
 }
 
 .modal-wide {
-  max-width: 640px;
+  max-width: 720px;
+}
+
+.modal-tall {
+  max-height: min(92vh, 920px);
 }
 
 .modal-header {
@@ -422,6 +428,7 @@ th {
   align-items: center;
   padding: 1rem 1.25rem;
   border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
 }
 
 .modal-header h2 {
@@ -431,6 +438,79 @@ th {
 
 .modal-body {
   padding: 1.25rem;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+.modal-form-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-height: 0;
+}
+
+.modal-form-scroll .form-actions {
+  position: sticky;
+  bottom: 0;
+  background: var(--card);
+  padding-top: 0.75rem;
+  margin: 0 -0.25rem;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.file-dropzone {
+  border: 2px dashed var(--border);
+  border-radius: 10px;
+  padding: 1.25rem 1rem;
+  text-align: center;
+  cursor: pointer;
+  background: var(--surface-muted, #f8fafc);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.file-dropzone--active {
+  border-color: var(--accent, #25d366);
+  background: rgba(37, 211, 102, 0.06);
+}
+
+.file-dropzone--has-file {
+  border-style: solid;
+  border-color: var(--accent, #25d366);
+}
+
+.file-dropzone-input {
+  display: none;
+}
+
+.file-dropzone-icon {
+  font-size: 1.75rem;
+  line-height: 1;
+}
+
+.file-dropzone-clear {
+  margin-top: 0.35rem;
+}
+
+.doc-source-toggle {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.doc-source-toggle button {
+  flex: 1;
+  min-width: 8rem;
+}
+
+.doc-source-toggle button.active {
+  border-color: var(--accent, #25d366);
+  background: rgba(37, 211, 102, 0.08);
 }
 
 .form-grid {
@@ -1009,6 +1089,14 @@ th {
   text-transform: uppercase;
   letter-spacing: 0.03em;
   color: var(--muted);
+}
+
+.sheet-user-create {
+  margin-bottom: 1.25rem;
+}
+
+.sheet-user-create h4 {
+  margin: 0 0 0.5rem;
 }
 
 .sheet-hint {
@@ -1824,6 +1912,89 @@ code {
   font-size: 0.85rem;
   font-weight: 500;
   margin-bottom: 0.25rem;
+}
+
+.sign-page {
+  min-height: 100vh;
+  background: linear-gradient(160deg, #f0f4f8 0%, #e8eef5 100%);
+  padding: 2rem 1rem;
+}
+
+.sign-page-header {
+  text-align: center;
+  margin-bottom: 1.5rem;
+}
+
+.sign-page-header h1 {
+  margin: 0.75rem 0 0;
+  font-size: 1.35rem;
+}
+
+.sign-page-main {
+  max-width: 520px;
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+
+.signature-canvas-wrap {
+  margin-top: 0.5rem;
+}
+
+.signature-canvas {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  border: 2px dashed var(--border, #cbd5e1);
+  border-radius: 8px;
+  background: #fff;
+  touch-action: none;
+  cursor: crosshair;
+}
+
+.signers-inline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 0.85rem;
+}
+
+.signers-inline li {
+  margin-bottom: 0.35rem;
+}
+
+.signature-signers-fieldset {
+  border: none;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.signature-signers-fieldset legend {
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+}
+
+.signer-block-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  grid-column: 1 / -1;
+}
+
+.signer-block {
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 8px;
+  padding: 0.75rem;
+  margin-bottom: 0.75rem;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.75rem;
+}
+
+@media (min-width: 520px) {
+  .signer-block {
+    grid-template-columns: 1fr 1fr;
+  }
 }
 
 @media (max-width: 640px) {

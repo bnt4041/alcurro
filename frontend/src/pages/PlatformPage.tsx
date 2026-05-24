@@ -3,6 +3,7 @@ import { api } from "../api/client";
 import TenantAccountSheet, {
   AccountSheetTab,
   TenantFormState,
+  TenantUserCreateForm,
   TenantUserRow,
 } from "../components/TenantAccountSheet";
 import InvoiceHistoryTable from "../components/InvoiceHistoryTable";
@@ -89,6 +90,7 @@ export default function PlatformPage() {
   const [saving, setSaving] = useState(false);
   const [users, setUsers] = useState<TenantUserRow[]>([]);
   const [usersLoading, setUsersLoading] = useState(false);
+  const [creatingUser, setCreatingUser] = useState(false);
   const [billing, setBilling] = useState<TenantBillingOverview | null>(null);
   const [billingLoading, setBillingLoading] = useState(false);
   const [invoices, setInvoices] = useState<InvoiceRow[]>([]);
@@ -350,6 +352,24 @@ export default function PlatformPage() {
     }
   };
 
+  const createTenantUser = async (data: TenantUserCreateForm) => {
+    if (!editingId) return;
+    setCreatingUser(true);
+    try {
+      await api.post(`/platform/tenants/${editingId}/users`, {
+        ...data,
+        email: data.email || undefined,
+      });
+      toast.success(`Usuario creado. Acceso: cuenta «${form.accountCode}»`);
+      await loadUsers(editingId);
+    } catch (err) {
+      toast.error(String(err).replace(/^Error:\s*/i, ""));
+      throw err;
+    } finally {
+      setCreatingUser(false);
+    }
+  };
+
   return (
     <>
       <PageHeader
@@ -479,6 +499,8 @@ export default function PlatformPage() {
         onDeactivate={editingId ? deactivate : undefined}
         onReactivate={editingId ? reactivate : undefined}
         onDelete={editingId ? removePermanent : undefined}
+        onCreateTenantUser={editingId ? createTenantUser : undefined}
+        creatingUser={creatingUser}
       />
     </>
   );

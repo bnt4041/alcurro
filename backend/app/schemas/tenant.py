@@ -263,6 +263,15 @@ class TenantUserRead(BaseModel):
     is_active: bool
 
 
+class TenantUserCreate(BaseModel):
+    full_name: str = Field(min_length=1, max_length=200)
+    phone: str = Field(min_length=6, max_length=20)
+    email: str | None = None
+    id_document: str = Field(min_length=1, max_length=20)
+    role: Role = Role.TENANT_ADMIN
+    password: str = Field(min_length=6, max_length=128)
+
+
 class CompanyCreate(BaseModel):
 
     name: str

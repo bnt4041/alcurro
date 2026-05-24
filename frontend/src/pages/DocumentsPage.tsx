@@ -1,4 +1,5 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { api, buildQuery } from "../api/client";
 import type { DocumentDelivery } from "../api/types";
 import PageHeader from "../components/PageHeader";
@@ -76,7 +77,7 @@ export default function DocumentsPage() {
     <>
       <PageHeader
         title="Documentos"
-        subtitle="Nóminas, contratos y envío por WhatsApp"
+        subtitle="Nóminas, contratos, envío por WhatsApp y firma electrónica"
       />
       <TableToolbar
         search={search}
@@ -96,6 +97,12 @@ export default function DocumentsPage() {
           },
         ]}
       />
+      {canWrite && (
+        <p className="muted">
+          Para solicitar firma con certificado y varios firmantes, sube el documento y ve a{" "}
+          <Link to="/app/firmas">Firmas</Link>.
+        </p>
+      )}
       {canWrite && (
       <section className="card">
         <h3>Subir documento</h3>
