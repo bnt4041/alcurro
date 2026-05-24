@@ -16,6 +16,7 @@ from app.services.code_generator import next_employee_code
 from app.services.id_document import validate_id_document
 from app.services.org_service import employee_ids_in_scope
 from app.services.rbac_service import assign_role_default_group
+from app.services.work_schedule import normalize_employee_schedule
 
 router = APIRouter(prefix="/employees", tags=["employees"])
 
@@ -125,6 +126,10 @@ def create_employee(
         raise HTTPException(status_code=409, detail="DNI/NIE ya registrado en la empresa")
 
     payload = data.model_dump(exclude={"password", "employee_code"})
+    try:
+        payload = normalize_employee_schedule(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     payload["employee_code"] = employee_code
     payload["id_document"] = id_document
     payload["company_id"] = company.id
@@ -159,6 +164,14 @@ def update_employee(
     if row.id not in _scope_ids(ctx, session):
         raise HTTPException(status_code=404, detail="Empleado no encontrado")
     updates = data.model_dump(exclude_unset=True, exclude={"password"})
+    if any(
+        k in updates
+        for k in ("work_schedule_blocks", "work_days", "work_start_time", "work_end_time")
+    ):
+        try:
+            updates = normalize_employee_schedule(updates)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
     if "id_document" in updates and updates["id_document"] is not None:
         try:
             updates["id_document"] = validate_id_document(updates["id_document"])

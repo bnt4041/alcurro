@@ -29,6 +29,7 @@ class EmployeeCreate(BaseModel):
     work_start_time: time | None = None
     work_end_time: time | None = None
     work_days: list[int] = Field(default_factory=lambda: [0, 1, 2, 3, 4])
+    work_schedule_blocks: list[dict[str, Any]] | None = None
 
 
 class EmployeeUpdate(BaseModel):
@@ -46,6 +47,7 @@ class EmployeeUpdate(BaseModel):
     work_start_time: time | None = None
     work_end_time: time | None = None
     work_days: list[int] | None = None
+    work_schedule_blocks: list[dict[str, Any]] | None = None
 
 
 class EmployeeRead(BaseModel):
@@ -66,6 +68,7 @@ class EmployeeRead(BaseModel):
     work_start_time: time | None = None
     work_end_time: time | None = None
     work_days: list[int] = Field(default_factory=list)
+    work_schedule_blocks: list[dict[str, Any]] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 
@@ -207,7 +210,8 @@ class ShiftAssignmentRead(ShiftAssignmentCreate):
 
 
 class DocumentDeliveryCreate(BaseModel):
-    employee_id: UUID
+    employee_id: UUID | None = None
+    company_id: UUID | None = None
     file_name: str
     document_type: str
     requires_acknowledgment: bool = True

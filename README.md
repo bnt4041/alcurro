@@ -1,9 +1,50 @@
 # alcurro — HRM multi-tenant por WhatsApp
 
-## Arranque
+Gestión de RRHH: fichajes, vacaciones, documentos, **firma electrónica**, textos legales y panel multi-empresa. Integración WhatsApp vía **goWA**.
+
+## Documentación
+
+**Índice completo:** [docs/README.md](docs/README.md)
+
+| Tema | Enlace |
+|------|--------|
+| Instalación, Docker, migraciones | [docs/instalacion.md](docs/instalacion.md) |
+| Arquitectura y multi-tenant | [docs/arquitectura.md](docs/arquitectura.md) |
+| Admin plataforma (cuentas, mail, WhatsApp, Stripe) | [docs/admin-plataforma.md](docs/admin-plataforma.md) |
+| Panel cliente `/app` | [docs/panel-cliente.md](docs/panel-cliente.md) |
+| Empleados y horarios múltiples | [docs/empleados-y-horarios.md](docs/empleados-y-horarios.md) |
+| Firmas electrónicas | [docs/firmas-electronicas.md](docs/firmas-electronicas.md) |
+| Correo SMTP | [docs/correo-smtp.md](docs/correo-smtp.md) |
+| Textos legales | [docs/legal.md](docs/legal.md) |
+| API REST | [docs/api.md](docs/api.md) |
+
+## Arranque rápido
 
 ```bash
 docker compose up -d --build
+```
+
+| Servicio | URL |
+|----------|-----|
+| Web | http://localhost:5174 |
+| Alta cliente | http://localhost:5174/registro |
+| Acceso (plataforma + tenant) | http://localhost:5174/acceso |
+| Admin plataforma | http://localhost:5174/admin |
+| API (OpenAPI) | http://localhost:8000/docs |
+| goWA (QR) | http://localhost:3000 |
+
+### Credenciales demo
+
+| Rol | Acceso |
+|-----|--------|
+| **Admin plataforma** | `/acceso` → `platform@hrm.local` / `platform123` |
+| **Tenant demo** | `/acceso` → cuenta `demo`, usuario `ADM001`, contraseña `admin123` |
+
+### Migraciones iniciales (primera instalación)
+
+Además de las migraciones automáticas al arrancar el backend, ejecuta una vez:
+
+```bash
 docker exec hrm-backend python -m scripts.migrate_multitenant
 docker exec hrm-backend python -m scripts.migrate_rbac_billing
 docker exec hrm-backend python -m scripts.migrate_org_hierarchy
@@ -11,111 +52,54 @@ docker exec hrm-backend python -m scripts.migrate_company_billing
 docker exec hrm-backend python -m scripts.migrate_pricing_catalog
 docker exec hrm-backend python -m scripts.migrate_stripe
 docker exec hrm-backend python -m scripts.migrate_employee_constraints
-docker exec hrm-ollama ollama pull llama3.2
 ```
 
-| Servicio | URL |
-|----------|-----|
-| **Web pública** | http://localhost:5174/ |
-| **Alta cliente** | http://localhost:5174/registro |
-| **Admin plataforma** | http://localhost:5174/admin/login |
-| **Acceso cliente** | http://localhost:5174/acceso-cliente |
-| **API** | http://localhost:8000/docs |
-
-## Login
-
-| URL | Quién | Demo |
-|-----|-------|------|
-| `/admin/login` | Administrador plataforma | `platform@hrm.local` / `platform123` |
-| `/acceso-cliente` | Tenant / responsables / empleados | cuenta `demo` · `ADM001` / `admin123` |
-
-## Stripe (opcional)
-
-En `.env` o `docker-compose`:
-
-- `STRIPE_SECRET_KEY` — checkout y cobros
-- `STRIPE_WEBHOOK_SECRET` — eventos (`POST /api/webhooks/stripe`)
-- `STRIPE_PUBLISHABLE_KEY` — futuro uso en frontend
-- `PUBLIC_APP_URL` — URLs de retorno (p. ej. `http://localhost:5174`)
-
-**Modo simulación** (por defecto `STRIPE_SIMULATION_MODE=true`): el alta en `/registro` redirige a `/registro/pago-simulado`, registra un cobro ficticio, activa la suscripción y crea el contenedor Docker `hrm-gowa-{slug}`. En admin: **Cobros Stripe** (`/admin/cobros`) puedes simular cobro+goWA para una cuenta existente por UUID.
-
-Cuando contrates Stripe: define las claves y pon `STRIPE_SIMULATION_MODE=false`.
-
-## Jerarquía organizativa (monetización)
+## Jerarquía organizativa
 
 ```
-Tenant (cuenta de facturación)
+Tenant (cuenta)
  └── Empresa
       └── Centro de trabajo
            └── Departamento
                 └── Empleado
 ```
 
-- **Grupos de usuarios**: permisos personalizables por tenant.
-- **Plantillas de grupos**: al crear un cliente desde plataforma se clonan los grupos por defecto.
+## Funcionalidades principales
 
-## Tipos de usuario y grupos
+- **Fichajes y paradas** — Registro inalterable (normativa española).
+- **Vacaciones** — Solicitudes y aprobación.
+- **Turnos** — Configuraciones complejas (opcional por empleado).
+- **Empleados** — DNI/NIE, centro/departamento, **bloques de horario** (varios tramos por semana).
+- **Documentos** — Biblioteca y envío por WhatsApp.
+- **Firmas** — OTP, firma manuscrita, PDF firmado y certificado; firmantes externos sin ser empleados.
+- **Legal** — Textos versionados y aceptación obligatoria.
+- **Admin plataforma** — Cuentas, tarifas, Stripe, goWA compartido, **SMTP global** y logs de correo.
+- **RBAC** — Grupos de permisos personalizables por tenant.
 
-| Tipo | Descripción |
-|------|-------------|
-| **Administrador plataforma** | Gestiona todas las cuentas (`/plataforma`) |
-| **Administrador de cuenta** | Control total dentro de su tenant |
-| **Responsable** | Supervisión de equipos (permisos por defecto vía grupo) |
-| **Inspector de Trabajo** | Solo lectura |
-| **Empleado** | WhatsApp; panel solo si tiene grupo con permisos |
+## Variables de entorno
 
-Los **grupos** (`/grupos`) permiten personalizar permisos (empleados, fichajes, vacaciones, facturación, goWA, etc.). Cada cuenta incluye grupos predefinidos del sistema.
+Ver [.env.example](.env.example). Destacadas:
 
-## Facturación de cuentas
+- `PUBLIC_APP_URL` — Enlaces públicos (firmas, Stripe).
+- `STRIPE_SIMULATION_MODE` — `true` por defecto (alta sin Stripe real).
+- `JWT_SECRET` — Cambiar en producción.
 
-En **Cuenta → Datos de facturación**: razón social, CIF/NIF, email, dirección, ciudad, CP, provincia y país (mínimos para facturar).
+## Stripe (opcional)
 
-## Arquitectura multi-tenant
+Con claves reales y `STRIPE_SIMULATION_MODE=false`: checkout y webhooks en `/api/webhooks/stripe`.  
+En simulación: `/registro/pago-simulado` y **Cobros** en `/admin/cobros`.
 
-```
-Tenant (cuenta)
- ├── Empresa A, Empresa B, …
- ├── White-label (logo, colores)
- └── Contenedor goWA dedicado (WhatsApp propio)
-      └── Webhook: POST /webhook/whatsapp/{slug}
-```
+## goWA
 
-- Cada **tenant** = una cuenta cliente con varias **empresas**.
-- Cada tenant tiene su **propio contenedor goWA** (se crea desde **Cuenta → Crear contenedor goWA**).
-- **White-label**: logo URL + colores primario/sidebar/acento (página login y panel).
+- **Compartido**: configurar en `/admin/whatsapp` (URL interna `http://gowa:3000/...` en Docker).
+- **Por tenant**: desde `/app/cuenta` (requiere Docker socket en el backend).
 
-## Crear nueva cuenta (plataforma)
+## Especificación de firmas (legacy)
 
-```bash
-curl -X POST http://localhost:8000/api/tenants \
-  -H "Content-Type: application/json" \
-  -H "X-Platform-Key: hrm-platform-setup" \
-  -d '{"slug":"mi-cliente","name":"Mi Cliente S.L."}'
-```
+El documento [`firmas.md`](firmas.md) describe el diseño original (Laravel). La implementación actual en este repo está documentada en [docs/firmas-electronicas.md](docs/firmas-electronicas.md).
 
-Luego login con `mi-cliente` / usuario admin creado en esa cuenta.
+## Stack
 
-## goWA por tenant
+React + Vite · FastAPI · PostgreSQL · goWA · (Ollama opcional)
 
-1. Admin entra en **Cuenta** en el panel.
-2. Pulsa **Crear / reiniciar contenedor goWA**.
-3. Abre el enlace del panel QR (puerto 3010, 3011, …).
-4. Escanea QR con el móvil del tenant.
-
-Requisito: el backend monta `/var/run/docker.sock` (Docker Desktop en Windows).
-
-## Cambiar empresa activa
-
-Si el tenant tiene varias empresas, el admin ve un selector en la barra lateral (`X-Company-Id`).
-
-## Login falla con "Internal Server Error"
-
-Suele ser el proxy de Vite sin conexión al backend (contenedores en redes distintas tras cambios en `docker-compose`):
-
-```bash
-docker compose down
-docker compose up -d --build
-```
-
-En el login usa los **tres** campos: cuenta `demo`, usuario `ADM001`, contraseña `admin123`.
+Desarrollo frontend local: `cd frontend && bun install && bun run dev`

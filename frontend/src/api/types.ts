@@ -19,6 +19,8 @@ export type ShiftPatternType =
 
 export interface Employee {
   id: string;
+  company_id?: string;
+  department_id: string | null;
   phone: string;
   email: string | null;
   full_name: string;
@@ -32,8 +34,16 @@ export interface Employee {
   work_start_time: string | null;
   work_end_time: string | null;
   work_days: number[];
+  work_schedule_blocks: WorkScheduleBlock[];
   created_at: string;
   updated_at: string;
+}
+
+export interface WorkScheduleBlock {
+  work_days: number[];
+  work_start_time: string;
+  work_end_time: string;
+  break_minutes: number;
 }
 
 export interface ClockIn {

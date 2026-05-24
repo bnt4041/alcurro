@@ -1,14 +1,15 @@
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { api, buildQuery } from "../api/client";
-import type { Employee, Role, ShiftConfiguration } from "../api/types";
+import type { Employee, Role, ShiftConfiguration, WorkScheduleBlock } from "../api/types";
 import {
+  blocksFromEmployee,
+  defaultScheduleBlocks,
   formatWorkSchedule,
-  toTimeInput,
-  WORK_DAY_LABELS,
 } from "../lib/workSchedule";
 import Modal from "../components/Modal";
 import PageHeader from "../components/PageHeader";
 import TableToolbar from "../components/TableToolbar";
+import WorkScheduleEditor from "../components/WorkScheduleEditor";
 import { useAuth } from "../context/AuthContext";
 import {
   canModule,
@@ -37,7 +38,34 @@ interface EmployeeLegalStatus {
   items: LegalStatusItem[];
 }
 
-const empty = (): Partial<Employee> & { password?: string } => ({
+interface OrgDepartment {
+  id: string;
+  name: string;
+  code: string;
+}
+
+interface OrgWorkCenter {
+  id: string;
+  name: string;
+  code: string;
+  departments: OrgDepartment[];
+}
+
+interface OrgTreeCompany {
+  id: string;
+  name: string;
+  work_centers: OrgWorkCenter[];
+}
+
+type EmployeeForm = Partial<Employee> & {
+  password?: string;
+  work_center_id?: string | null;
+};
+
+const empty = (defaults?: {
+  department_id?: string | null;
+  work_center_id?: string | null;
+}): EmployeeForm => ({
   phone: "",
   email: "",
   full_name: "",
@@ -47,10 +75,10 @@ const empty = (): Partial<Employee> & { password?: string } => ({
   is_active: true,
   supervisor_id: null,
   password: "",
-  work_days: [0, 1, 2, 3, 4],
-  work_start_time: "09:00:00",
-  work_end_time: "18:00:00",
+  department_id: defaults?.department_id ?? null,
+  work_center_id: defaults?.work_center_id ?? null,
   shift_configuration_id: null,
+  work_schedule_blocks: defaultScheduleBlocks(),
 });
 
 export default function EmployeesPage() {
@@ -61,7 +89,11 @@ export default function EmployeesPage() {
   const [roleFilter, setRoleFilter] = useState("");
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Employee | null>(null);
-  const [form, setForm] = useState(empty());
+  const [form, setForm] = useState<EmployeeForm>(empty());
+  const [scheduleBlocks, setScheduleBlocks] = useState<WorkScheduleBlock[]>(
+    defaultScheduleBlocks()
+  );
+  const [orgTree, setOrgTree] = useState<OrgTreeCompany[]>([]);
   const [error, setError] = useState("");
 
   const [groups, setGroups] = useState<UserGroup[]>([]);
@@ -102,20 +134,38 @@ export default function EmployeesPage() {
         .get<ShiftConfiguration[]>("/shifts/configurations")
         .then(setShiftConfigs)
         .catch(() => setShiftConfigs([]));
+      api
+        .get<OrgTreeCompany[]>("/org/tree")
+        .then(setOrgTree)
+        .catch(() => setOrgTree([]));
     }
   }, [open, canWrite]);
 
-  const toggleWorkDay = (day: number) => {
-    const current = form.work_days ?? [];
-    const next = current.includes(day)
-      ? current.filter((d) => d !== day)
-      : [...current, day].sort((a, b) => a - b);
-    setForm({ ...form, work_days: next });
+  const company = useMemo(
+    () => orgTree.find((c) => c.id === user?.company_id) ?? orgTree[0],
+    [orgTree, user?.company_id]
+  );
+  const workCenters = company?.work_centers ?? [];
+  const departments = useMemo(() => {
+    const wc = workCenters.find((w) => w.id === form.work_center_id);
+    return wc?.departments ?? [];
+  }, [workCenters, form.work_center_id]);
+
+  const resolveWorkCenterForDepartment = (departmentId: string | null | undefined) => {
+    if (!departmentId || !company) return null;
+    for (const wc of company.work_centers) {
+      if (wc.departments.some((d) => d.id === departmentId)) return wc.id;
+    }
+    return null;
   };
 
   const openCreate = () => {
     setEditing(null);
-    setForm(empty());
+    const deptId = user?.department_id ?? null;
+    const wcId =
+      user?.work_center_id ?? resolveWorkCenterForDepartment(deptId) ?? null;
+    setForm(empty({ department_id: deptId, work_center_id: wcId }));
+    setScheduleBlocks(defaultScheduleBlocks());
     setLegalStatus(null);
     setSelectedGroups(panelGroupId ? [panelGroupId] : []);
     setOpen(true);
@@ -123,12 +173,31 @@ export default function EmployeesPage() {
 
   const openEdit = async (row: Employee) => {
     setEditing(row);
+    const blocks = blocksFromEmployee(row);
+    setScheduleBlocks(blocks);
+    let tree = orgTree;
+    if (!tree.length) {
+      try {
+        tree = await api.get<OrgTreeCompany[]>("/org/tree");
+        setOrgTree(tree);
+      } catch {
+        tree = [];
+      }
+    }
+    const comp = tree.find((c) => c.id === row.company_id) ?? tree[0];
+    let wcId: string | null = null;
+    if (row.department_id && comp) {
+      for (const wc of comp.work_centers) {
+        if (wc.departments.some((d) => d.id === row.department_id)) {
+          wcId = wc.id;
+          break;
+        }
+      }
+    }
     setForm({
       ...row,
       password: "",
-      work_start_time: row.work_start_time ?? null,
-      work_end_time: row.work_end_time ?? null,
-      work_days: row.work_days?.length ? row.work_days : [0, 1, 2, 3, 4],
+      work_center_id: wcId,
     });
     if (canGroups) {
       const ids = await api.get<string[]>(`/groups/employees/${row.id}/groups`);
@@ -150,9 +219,29 @@ export default function EmployeesPage() {
   const save = async (e: FormEvent) => {
     e.preventDefault();
     setError("");
+    if (!form.department_id) {
+      setError("Selecciona centro y departamento");
+      return;
+    }
+    if (scheduleBlocks.some((b) => b.work_days.length === 0)) {
+      setError("Cada bloque de horario debe tener al menos un día");
+      return;
+    }
     try {
-      const body: Record<string, unknown> = { ...form };
-      if (!body.password) delete body.password;
+      const body: Record<string, unknown> = {
+        phone: form.phone,
+        email: form.email,
+        full_name: form.full_name,
+        id_document: form.id_document,
+        role: form.role,
+        vacation_days_balance: form.vacation_days_balance,
+        is_active: form.is_active,
+        supervisor_id: form.supervisor_id,
+        department_id: form.department_id,
+        shift_configuration_id: form.shift_configuration_id,
+        work_schedule_blocks: scheduleBlocks,
+      };
+      if (form.password) body.password = form.password;
       if (!editing) {
         delete body.employee_code;
       } else {
@@ -273,8 +362,10 @@ export default function EmployeesPage() {
         title={editing ? "Editar empleado" : "Nuevo empleado"}
         open={open && !!canWrite}
         onClose={() => setOpen(false)}
+        wide
+        tall
       >
-        <form onSubmit={save} className="form-grid">
+        <form onSubmit={save} className="form-grid modal-form-scroll">
           {error && <div className="alert alert-error">{error}</div>}
           {editing && (
             <label>
@@ -339,69 +430,54 @@ export default function EmployeesPage() {
               ))}
             </select>
           </label>
-          <fieldset className="form-grid-full">
-            <legend>Horario de trabajo</legend>
-            <label>
-              Hora inicio
-              <input
-                type="time"
-                value={toTimeInput(form.work_start_time ?? undefined)}
-                onChange={(ev) =>
-                  setForm({
-                    ...form,
-                    work_start_time: ev.target.value ? `${ev.target.value}:00` : null,
-                  })
-                }
-              />
-            </label>
-            <label>
-              Hora fin
-              <input
-                type="time"
-                value={toTimeInput(form.work_end_time ?? undefined)}
-                onChange={(ev) =>
-                  setForm({
-                    ...form,
-                    work_end_time: ev.target.value ? `${ev.target.value}:00` : null,
-                  })
-                }
-              />
-            </label>
-            <label>
-              Turno (opcional)
-              <select
-                value={form.shift_configuration_id ?? ""}
-                onChange={(ev) =>
-                  setForm({
-                    ...form,
-                    shift_configuration_id: ev.target.value || null,
-                  })
-                }
-              >
-                <option value="">Sin turno asignado</option>
-                {shiftConfigs.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <div className="form-grid-full">
-              <span className="label-like">Días laborables</span>
-              <div className="day-chips">
-                {WORK_DAY_LABELS.map((label, day) => (
-                  <label key={day} className="checkbox chip">
-                    <input
-                      type="checkbox"
-                      checked={(form.work_days ?? []).includes(day)}
-                      onChange={() => toggleWorkDay(day)}
-                    />
-                    {label}
-                  </label>
-                ))}
-              </div>
-            </div>
-          </fieldset>
+          <label>
+            Centro de trabajo
+            <select
+              required
+              value={form.work_center_id ?? ""}
+              onChange={(ev) => {
+                const work_center_id = ev.target.value || null;
+                const wc = workCenters.find((w) => w.id === work_center_id);
+                setForm({
+                  ...form,
+                  work_center_id,
+                  department_id: wc?.departments[0]?.id ?? null,
+                });
+              }}
+            >
+              <option value="">Seleccionar centro…</option>
+              {workCenters.map((wc) => (
+                <option key={wc.id} value={wc.id}>
+                  {wc.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Departamento
+            <select
+              required
+              value={form.department_id ?? ""}
+              onChange={(ev) =>
+                setForm({ ...form, department_id: ev.target.value || null })
+              }
+              disabled={!form.work_center_id}
+            >
+              <option value="">Seleccionar departamento…</option>
+              {departments.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <WorkScheduleEditor
+            blocks={scheduleBlocks}
+            onChange={setScheduleBlocks}
+            shiftConfigs={shiftConfigs}
+            shiftConfigurationId={form.shift_configuration_id}
+            onShiftChange={(id) => setForm({ ...form, shift_configuration_id: id })}
+          />
           {editing && legalStatus && (
             <fieldset className="form-grid-full">
               <legend>Aceptación legal</legend>
@@ -484,7 +560,7 @@ export default function EmployeesPage() {
             />
             Activo
           </label>
-          <div className="form-actions">
+          <div className="form-actions form-grid-full">
             <button type="button" className="btn" onClick={() => setOpen(false)}>
               Cancelar
             </button>

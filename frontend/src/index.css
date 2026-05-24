@@ -1907,6 +1907,33 @@ code {
   font-size: 0.85rem;
 }
 
+.day-chips .chip--disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.schedule-blocks-fieldset {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem 1rem;
+}
+
+.schedule-block {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem 1rem;
+  padding: 0.85rem 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.schedule-block__header {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
 .label-like {
   display: block;
   font-size: 0.85rem;

@@ -50,7 +50,7 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 const emptySigner = (order: number): SignerRow => ({
-  kind: "employee",
+  kind: "external",
   employee_id: "",
   full_name: "",
   id_document: "",
@@ -126,10 +126,6 @@ export default function SignaturesPage() {
       })
       .filter(Boolean);
 
-  const firstEmployeeSignerId = signers.find(
-    (s) => s.kind === "employee" && s.employee_id
-  )?.employee_id;
-
   const create = async (e: FormEvent) => {
     e.preventDefault();
     setError("");
@@ -146,12 +142,6 @@ export default function SignaturesPage() {
       setError("Selecciona un documento existente");
       return;
     }
-    if (docSource === "upload" && !firstEmployeeSignerId) {
-      setError(
-        "Para subir un documento nuevo incluye al menos un firmante empleado (titular del archivo)"
-      );
-      return;
-    }
 
     setSaving(true);
     try {
@@ -160,9 +150,6 @@ export default function SignaturesPage() {
         fd.append("file", uploadFile);
         fd.append("title", title || uploadFile.name);
         fd.append("signers_json", JSON.stringify(payloadSigners));
-        if (firstEmployeeSignerId) {
-          fd.append("owner_employee_id", firstEmployeeSignerId);
-        }
         fd.append("send_notifications", "true");
         fd.append("expires_in_days", "14");
         await api.upload<SignatureEnvelope>("/signatures/from-upload", fd);
@@ -403,8 +390,8 @@ export default function SignaturesPage() {
                       setSigners(next);
                     }}
                   >
-                    <option value="employee">Empleado</option>
                     <option value="external">Firmante externo</option>
+                    <option value="employee">Empleado</option>
                   </select>
                 </label>
                 {s.kind === "employee" ? (

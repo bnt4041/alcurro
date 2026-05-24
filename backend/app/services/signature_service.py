@@ -92,6 +92,17 @@ def envelope_to_read(
     return base
 
 
+def _document_belongs_to_company(
+    session: Session, doc: DocumentDelivery, company_id: UUID
+) -> bool:
+    if doc.company_id:
+        return doc.company_id == company_id
+    if doc.employee_id:
+        emp = session.get(Employee, doc.employee_id)
+        return bool(emp and emp.company_id == company_id)
+    return False
+
+
 def create_envelope(
     session: Session,
     tenant_id: UUID,
@@ -105,8 +116,7 @@ def create_envelope(
         doc = session.get(DocumentDelivery, data.document_delivery_id)
         if not doc:
             raise ValueError("Documento no encontrado")
-        emp = session.get(Employee, doc.employee_id)
-        if not emp or emp.company_id != company_id:
+        if not _document_belongs_to_company(session, doc, company_id):
             raise ValueError("Documento fuera de la empresa activa")
         original_path = Path(doc.file_path)
         if not original_path.exists() or original_path.stat().st_size == 0:
@@ -177,18 +187,20 @@ def create_envelope(
 def _store_document_delivery(
     session: Session,
     company_id: UUID,
-    employee_id: UUID,
     file_name: str,
     content: bytes,
+    employee_id: UUID | None = None,
 ) -> DocumentDelivery:
-    emp = session.get(Employee, employee_id)
-    if not emp or emp.company_id != company_id:
-        raise ValueError("Empleado no válido para asociar el documento")
+    if employee_id:
+        emp = session.get(Employee, employee_id)
+        if not emp or emp.company_id != company_id:
+            raise ValueError("Empleado no válido para asociar el documento")
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     safe_name = Path(file_name).name or "documento.pdf"
     stored = UPLOAD_DIR / f"{uuid4()}_{safe_name}"
     stored.write_bytes(content)
     row = DocumentDelivery(
+        company_id=company_id,
         employee_id=employee_id,
         file_path=str(stored),
         file_name=safe_name,
@@ -206,15 +218,13 @@ def _parse_signers_payload(signers_data: list[dict]) -> list[SignerInput]:
 
 def _resolve_owner_employee_id(
     signers: list[SignerInput], owner_employee_id: UUID | None
-) -> UUID:
+) -> UUID | None:
     if owner_employee_id:
         return owner_employee_id
     for s in signers:
         if s.employee_id:
             return s.employee_id
-    raise ValueError(
-        "Indica un empleado titular del documento o al menos un firmante empleado"
-    )
+    return None
 
 
 def create_envelope_from_upload(
@@ -232,7 +242,9 @@ def create_envelope_from_upload(
 ) -> SignatureEnvelope:
     signers = _parse_signers_payload(signers_data)
     owner_id = _resolve_owner_employee_id(signers, owner_employee_id)
-    doc = _store_document_delivery(session, company_id, owner_id, file_name, content)
+    doc = _store_document_delivery(
+        session, company_id, file_name, content, employee_id=owner_id
+    )
     data = SignatureEnvelopeCreate(
         document_delivery_id=doc.id,
         title=title or doc.file_name,

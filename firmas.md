@@ -1,5 +1,8 @@
 # Firma electrónica — Puerta Sevilla Inmobiliaria
 
+> **Implementación alcurro (FastAPI/React):** ver [docs/firmas-electronicas.md](docs/firmas-electronicas.md) en este repositorio.  
+> El texto siguiente describe el diseño de referencia original (Laravel / MySQL).
+
 Flujo completo de firma de documentos: creación de envelope, autenticación del firmante por OTP, captura de firma manuscrita, generación del PDF firmado con sello y certificado, y notificación a los firmantes por email/WhatsApp.
 
 > Reemplaza el camino "Firmafy" del ADR-001. Hoy el sistema opera 100 % in-house: la integración con Firmafy queda como opción futura para firmas avanzadas/cualificadas externas.

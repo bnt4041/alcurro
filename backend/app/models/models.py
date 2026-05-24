@@ -140,6 +140,13 @@ class Employee(SQLModel, table=True):
         sa_column=Column(JSON, nullable=False),
         description="Días laborables 0=lunes … 6=domingo",
     )
+    work_schedule_blocks: list[dict] = Field(
+        default_factory=list,
+        sa_column=Column(JSON, nullable=False),
+        description=(
+            "Bloques de horario: [{work_days, work_start_time, work_end_time, break_minutes}]"
+        ),
+    )
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -281,7 +288,8 @@ class DocumentDelivery(SQLModel, table=True):
     __tablename__ = "document_deliveries"
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
-    employee_id: UUID = Field(foreign_key="employees.id", index=True)
+    company_id: UUID | None = Field(default=None, foreign_key="companies.id", index=True)
+    employee_id: UUID | None = Field(default=None, foreign_key="employees.id", index=True)
     file_path: str = Field(max_length=500)
     file_name: str = Field(max_length=255)
     document_type: str = Field(max_length=50)
