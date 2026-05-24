@@ -83,6 +83,7 @@ const empty = (defaults?: {
   work_center_id: defaults?.work_center_id ?? null,
   shift_configuration_id: null,
   rotating_shift: false,
+  weekly_hours: null,
   work_schedule_periods: defaultSchedulePeriods(),
 });
 
@@ -263,6 +264,14 @@ export default function EmployeesPage() {
         setError("Selecciona un turno complejo (o desmarca turno rotativo)");
         return;
       }
+      if (
+        form.weekly_hours == null ||
+        form.weekly_hours <= 0 ||
+        form.weekly_hours > 168
+      ) {
+        setError("Indica las horas semanales (entre 0 y 168)");
+        return;
+      }
     } else {
       const scheduleErr = validatePeriodsClient(schedulePeriods);
       if (scheduleErr) {
@@ -284,6 +293,7 @@ export default function EmployeesPage() {
         department_id: form.department_id,
         rotating_shift: form.rotating_shift ?? false,
         shift_configuration_id: form.shift_configuration_id,
+        weekly_hours: form.rotating_shift ? form.weekly_hours : null,
         work_schedule_periods: form.rotating_shift ? [] : schedulePeriods,
       };
       if (form.password) body.password = form.password;
@@ -557,6 +567,7 @@ export default function EmployeesPage() {
                     shift_configuration_id: ev.target.checked
                       ? form.shift_configuration_id
                       : null,
+                    weekly_hours: ev.target.checked ? form.weekly_hours : null,
                   })
                 }
               />
@@ -572,20 +583,50 @@ export default function EmployeesPage() {
                   <select
                     required
                     value={form.shift_configuration_id ?? ""}
-                    onChange={(ev) =>
+                    onChange={(ev) => {
+                      const id = ev.target.value || null;
+                      const cfg = shiftConfigs.find((s) => s.id === id);
                       setForm({
                         ...form,
-                        shift_configuration_id: ev.target.value || null,
-                      })
-                    }
+                        shift_configuration_id: id,
+                        weekly_hours:
+                          form.weekly_hours ??
+                          cfg?.weekly_hours ??
+                          null,
+                      });
+                    }}
                   >
                     <option value="">Seleccionar turno…</option>
                     {shiftConfigs.map((s) => (
                       <option key={s.id} value={s.id}>
                         {s.name}
+                        {s.weekly_hours != null ? ` (${s.weekly_hours} h/sem)` : ""}
                       </option>
                     ))}
                   </select>
+                </label>
+                <label>
+                  Horas semanales
+                  <input
+                    type="number"
+                    required
+                    min={0.5}
+                    max={168}
+                    step={0.5}
+                    value={form.weekly_hours ?? ""}
+                    onChange={(ev) =>
+                      setForm({
+                        ...form,
+                        weekly_hours: ev.target.value
+                          ? parseFloat(ev.target.value)
+                          : null,
+                      })
+                    }
+                    placeholder="Ej. 40"
+                  />
+                  <span className="muted small">
+                    Jornada semanal pactada para este empleado con turno complejo.
+                  </span>
                 </label>
                 {shiftConfigs.length === 0 && (
                   <p className="muted small">

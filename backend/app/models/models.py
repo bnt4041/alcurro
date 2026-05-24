@@ -156,6 +156,12 @@ class Employee(SQLModel, table=True):
         default=False,
         description="Horario vía turno complejo; sin franjas fijas en este formulario",
     )
+    weekly_hours: float | None = Field(
+        default=None,
+        ge=0,
+        le=168,
+        description="Horas semanales pactadas (turno rotativo/complejo)",
+    )
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 

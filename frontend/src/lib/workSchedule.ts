@@ -118,7 +118,11 @@ function formatPeriod(period: WorkSchedulePeriod): string {
 }
 
 export function formatWorkSchedule(emp: Partial<Employee>): string {
-  if (emp.rotating_shift) return "Turno rotativo (complejo)";
+  if (emp.rotating_shift) {
+    const h =
+      emp.weekly_hours != null ? ` · ${emp.weekly_hours} h/sem` : "";
+    return `Turno rotativo (complejo)${h}`;
+  }
   const periods = periodsFromEmployee(emp);
   if (!periods.length) return "—";
   return periods.map(formatPeriod).join(" | ") || "—";

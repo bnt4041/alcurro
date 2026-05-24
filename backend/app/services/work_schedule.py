@@ -152,7 +152,12 @@ def normalize_employee_schedule(payload: dict) -> dict:
         payload["work_days"] = []
         payload["work_start_time"] = None
         payload["work_end_time"] = None
+        wh = payload.get("weekly_hours")
+        if wh is not None and wh <= 0:
+            raise ValueError("Las horas semanales deben ser mayores que 0")
         return payload
+
+    payload["weekly_hours"] = None
 
     periods_raw = payload.pop("work_schedule_periods", None)
     blocks_raw = payload.pop("work_schedule_blocks", None)

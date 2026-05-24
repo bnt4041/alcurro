@@ -37,6 +37,7 @@ export interface Employee {
   work_schedule_blocks: WorkScheduleBlock[];
   work_schedule_periods: WorkSchedulePeriod[];
   rotating_shift: boolean;
+  weekly_hours: number | null;
   created_at: string;
   updated_at: string;
 }

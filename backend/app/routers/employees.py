@@ -183,6 +183,11 @@ def create_employee(
             status_code=400,
             detail="Con turno rotativo debes seleccionar un turno complejo",
         )
+    if payload.get("rotating_shift") and not payload.get("weekly_hours"):
+        raise HTTPException(
+            status_code=400,
+            detail="Con turno rotativo debes indicar las horas semanales",
+        )
     payload["employee_code"] = employee_code
     payload["id_document"] = id_document
     payload["phone"] = phone
@@ -242,6 +247,8 @@ def update_employee(
             "work_start_time",
             "work_end_time",
             "rotating_shift",
+            "weekly_hours",
+            "shift_configuration_id",
         )
     ):
         try:
@@ -254,6 +261,11 @@ def update_employee(
         raise HTTPException(
             status_code=400,
             detail="Con turno rotativo debes seleccionar un turno complejo",
+        )
+    if rotating and not updates.get("weekly_hours", row.weekly_hours):
+        raise HTTPException(
+            status_code=400,
+            detail="Con turno rotativo debes indicar las horas semanales",
         )
     if "phone" in updates and updates["phone"]:
         updates["phone"] = _normalize_phone(updates["phone"], country_iso)

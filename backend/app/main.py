@@ -92,6 +92,14 @@ def _run_startup_migrations() -> None:
         migrate_permissions_v3()
     except Exception as exc:
         print(f"migrate_permissions_v3: {exc}")
+    try:
+        from scripts.migrate_employee_weekly_hours import (
+            main as migrate_employee_weekly_hours,
+        )
+
+        migrate_employee_weekly_hours()
+    except Exception as exc:
+        print(f"migrate_employee_weekly_hours: {exc}")
 
 
 @asynccontextmanager

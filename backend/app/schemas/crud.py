@@ -32,6 +32,7 @@ class EmployeeCreate(BaseModel):
     work_schedule_blocks: list[dict[str, Any]] | None = None
     work_schedule_periods: list[dict[str, Any]] | None = None
     rotating_shift: bool = False
+    weekly_hours: float | None = Field(default=None, ge=0, le=168)
 
 
 class EmployeeUpdate(BaseModel):
@@ -52,6 +53,7 @@ class EmployeeUpdate(BaseModel):
     work_schedule_blocks: list[dict[str, Any]] | None = None
     work_schedule_periods: list[dict[str, Any]] | None = None
     rotating_shift: bool | None = None
+    weekly_hours: float | None = Field(default=None, ge=0, le=168)
 
 
 class EmployeeRead(BaseModel):
@@ -75,6 +77,7 @@ class EmployeeRead(BaseModel):
     work_schedule_blocks: list[dict[str, Any]] = Field(default_factory=list)
     work_schedule_periods: list[dict[str, Any]] = Field(default_factory=list)
     rotating_shift: bool = False
+    weekly_hours: float | None = None
     created_at: datetime
     updated_at: datetime
 
