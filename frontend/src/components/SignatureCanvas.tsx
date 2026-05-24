@@ -14,7 +14,7 @@ export default function SignatureCanvas({ onChange }: Props) {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     ctx.strokeStyle = "#12263a";
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 2.5;
     ctx.lineCap = "round";
   }, []);
 
@@ -72,8 +72,8 @@ export default function SignatureCanvas({ onChange }: Props) {
     <div className="signature-canvas-wrap">
       <canvas
         ref={canvasRef}
-        width={500}
-        height={160}
+        width={640}
+        height={220}
         className="signature-canvas"
         onMouseDown={start}
         onMouseMove={move}

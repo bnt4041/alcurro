@@ -17,3 +17,9 @@ export const ALCURRO = {
 
 export const LOGO_LIGHT = "/alcurro.png";
 export const LOGO_DARK = "/alcurro_trans.png";
+
+export const ALCURRO_FOOTER = {
+  title: "Tecnología alcurro",
+  description:
+    "Firma electrónica y gestión de RRHH integrada con WhatsApp. Plataforma desarrollada por alcurro.",
+} as const;

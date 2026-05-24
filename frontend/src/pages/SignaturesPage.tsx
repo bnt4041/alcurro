@@ -62,7 +62,8 @@ const emptySigner = (order: number): SignerRow => ({
 export default function SignaturesPage() {
   const { user } = useAuth();
   const { employees } = useEmployees();
-  const canWrite = user && canModule(user.permissions, "write", "documents");
+  const canCreate = user && canModule(user.permissions, "create", "signatures");
+  const canUpdate = user && canModule(user.permissions, "update", "signatures");
   const [rows, setRows] = useState<SignatureEnvelope[]>([]);
   const [documents, setDocuments] = useState<DocumentDelivery[]>([]);
   const [loading, setLoading] = useState(true);
@@ -189,8 +190,15 @@ export default function SignaturesPage() {
   };
 
   const resend = async (envelopeId: string, signerId: string) => {
-    await api.post(`/signatures/${envelopeId}/signers/${signerId}/resend`, {});
-    alert("Enlace reenviado por WhatsApp");
+    const { data } = await api.post<{ message: string; whatsapp_sent?: boolean; detail?: string }>(
+      `/signatures/${envelopeId}/signers/${signerId}/resend`,
+      {}
+    );
+    if (data.whatsapp_sent === false) {
+      alert(data.detail ? `${data.message}\n\n${data.detail}` : data.message);
+      return;
+    }
+    alert(data.message || "Enlace reenviado por WhatsApp");
   };
 
   return (
@@ -199,7 +207,7 @@ export default function SignaturesPage() {
         title="Firmas"
         subtitle="Envío de documentos con firma manuscrita, OTP y certificado"
         action={
-          canWrite ? (
+          canCreate ? (
             <button type="button" className="btn btn-primary" onClick={openCreate}>
               + Nueva solicitud
             </button>
@@ -236,7 +244,7 @@ export default function SignaturesPage() {
                       {r.signers.map((s) => (
                         <li key={s.id}>
                           {s.full_name} — {s.status}
-                          {canWrite && s.status !== "firmado" && (
+                          {canUpdate && s.status !== "firmado" && (
                             <button
                               type="button"
                               className="btn btn-sm"
@@ -281,7 +289,7 @@ export default function SignaturesPage() {
                         </button>
                       </>
                     )}
-                    {canWrite && !["completado", "cancelado"].includes(r.status) && (
+                    {canUpdate && !["completado", "cancelado"].includes(r.status) && (
                       <button
                         type="button"
                         className="btn btn-sm btn-danger"
@@ -300,7 +308,7 @@ export default function SignaturesPage() {
 
       <Modal
         title="Nueva solicitud de firma"
-        open={open && !!canWrite}
+        open={open && !!canCreate}
         onClose={() => setOpen(false)}
         wide
         tall
@@ -444,6 +452,7 @@ export default function SignaturesPage() {
                       Teléfono (WhatsApp)
                       <input
                         value={s.phone}
+                        placeholder="624230960 o +34 624 230 960"
                         onChange={(ev) => {
                           const next = [...signers];
                           next[i] = { ...next[i], phone: ev.target.value };

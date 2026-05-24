@@ -4,7 +4,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlmodel import Session
 
-from app.core.security import PANEL_ROLES, decode_access_token
+from app.core.security import can_access_panel, decode_access_token
 from app.database import get_session
 from app.models.models import Employee
 
@@ -26,6 +26,7 @@ def get_current_user(
         if payload.get("type") == "platform":
             raise ValueError("platform token")
         user_id = UUID(payload["sub"])
+        tenant_id = UUID(payload["tenant_id"])
     except (ValueError, KeyError):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -34,6 +35,6 @@ def get_current_user(
     user = session.get(Employee, user_id)
     if not user or not user.is_active:
         raise HTTPException(status_code=401, detail="Usuario no válido")
-    if user.role.value not in PANEL_ROLES:
+    if not can_access_panel(session, user, tenant_id):
         raise HTTPException(status_code=403, detail="Sin acceso al panel")
     return user

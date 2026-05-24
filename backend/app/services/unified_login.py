@@ -7,9 +7,9 @@ from dataclasses import dataclass
 from fastapi import HTTPException
 from sqlmodel import Session, select
 
-from app.core.permissions import get_employee_permissions, normalize_role
+from app.core.permissions import normalize_role
 from app.core.security import (
-    PANEL_ROLES,
+    can_access_panel,
     create_access_token,
     create_platform_token,
     verify_password,
@@ -110,13 +110,10 @@ def _tenant_login(
         raise HTTPException(status_code=401, detail="Credenciales inválidas")
 
     row = _find_employee_in_tenant(session, tenant, username)
-    if not row or _role_key(row.role) not in PANEL_ROLES:
-        raise HTTPException(status_code=401, detail="Credenciales inválidas")
-    if not verify_password(password, row.password_hash):
+    if not row or not verify_password(password, row.password_hash):
         raise HTTPException(status_code=401, detail="Credenciales inválidas")
 
-    perms = get_employee_permissions(session, row, tenant.id)
-    if not perms:
+    if not can_access_panel(session, row, tenant.id):
         raise HTTPException(
             status_code=403,
             detail="Sin permisos de panel. Asigna un grupo al usuario.",

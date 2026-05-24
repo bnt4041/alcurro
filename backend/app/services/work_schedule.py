@@ -146,6 +146,14 @@ def _flatten_legacy_from_periods(periods: list[WorkSchedulePeriod]) -> dict:
 
 def normalize_employee_schedule(payload: dict) -> dict:
     """Rellena work_schedule_periods y campos legacy."""
+    if payload.get("rotating_shift"):
+        payload["work_schedule_periods"] = []
+        payload["work_schedule_blocks"] = []
+        payload["work_days"] = []
+        payload["work_start_time"] = None
+        payload["work_end_time"] = None
+        return payload
+
     periods_raw = payload.pop("work_schedule_periods", None)
     blocks_raw = payload.pop("work_schedule_blocks", None)
     legacy_days = payload.get("work_days")

@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
+import BrandLogo from "../components/BrandLogo";
 import PageHeader from "../components/PageHeader";
+import { useAuth } from "../context/AuthContext";
 
 interface Stats {
   employees: number;
@@ -11,9 +13,23 @@ interface Stats {
   documents: number;
 }
 
+interface TenantBranding {
+  name: string;
+  logo_url: string | null;
+}
+
 export default function Dashboard() {
+  const { user } = useAuth();
   const [stats, setStats] = useState<Stats | null>(null);
+  const [branding, setBranding] = useState<TenantBranding | null>(null);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    api
+      .get<TenantBranding>("/tenants/current")
+      .then((t) => setBranding({ name: t.name, logo_url: t.logo_url }))
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     Promise.all([
@@ -35,11 +51,25 @@ export default function Dashboard() {
       .catch((err) => setError(String(err)));
   }, []);
 
+  const displayName = branding?.name ?? user?.tenant_name ?? "Panel";
+
   return (
     <>
+      <div className="dashboard-hero card">
+        <BrandLogo
+          variant="light"
+          logoSrc={branding?.logo_url}
+          alt={displayName}
+          className="dashboard-hero__logo"
+        />
+        <div className="dashboard-hero__text">
+          <h2 className="dashboard-hero__title">{displayName}</h2>
+          <p className="muted">Gestión de empleados, fichajes, paradas y vacaciones</p>
+        </div>
+      </div>
       <PageHeader
-        title="Panel alcurro"
-        subtitle="Gestión de empleados, fichajes, paradas y vacaciones"
+        title="Resumen"
+        subtitle="Accesos rápidos y métricas del día"
       />
       {error && <div className="alert alert-error">{error}</div>}
       <div className="stats-grid">
@@ -69,7 +99,7 @@ export default function Dashboard() {
             <Link to="/documentos">Subir nóminas / contratos</Link>
           </li>
           <li>
-            <Link to="/cuenta">Facturación y suscripción</Link>
+            <Link to="/cuenta">Facturación, logo y suscripción</Link>
           </li>
         </ul>
       </section>

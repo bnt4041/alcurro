@@ -53,6 +53,7 @@ def public_meta(
         full_name=signer.full_name,
         document_title=envelope.title,
         company_name=tenant.name if tenant else "Empresa",
+        logo_url=tenant.logo_url if tenant else None,
         email_hint=email_hint,
         phone_hint=phone_hint,
         status=signer.status,

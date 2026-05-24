@@ -28,6 +28,7 @@ from app.schemas.signature import (
     SignatureSignerRead,
     SignerInput,
 )
+from app.schemas.whatsapp import normalize_mobile_digits
 from app.services.id_document import normalize_id_document
 from app.services.signature_audit import append_event
 from app.services.signature_pdf import file_sha256, finalize_signed_pdf
@@ -52,7 +53,15 @@ def _signing_url(token: str) -> str:
     return f"{base}/firmar/{token}"
 
 
-def _resolve_signer(session: Session, data: SignerInput, company_id: UUID) -> dict:
+def _normalize_phone(phone: str | None, country_iso: str) -> str | None:
+    if not phone or not str(phone).strip():
+        return None
+    return normalize_mobile_digits(str(phone).strip(), country_iso)
+
+
+def _resolve_signer(
+    session: Session, data: SignerInput, company_id: UUID, country_iso: str = "ES"
+) -> dict:
     if data.employee_id:
         emp = session.get(Employee, data.employee_id)
         if not emp or emp.company_id != company_id:
@@ -61,7 +70,7 @@ def _resolve_signer(session: Session, data: SignerInput, company_id: UUID) -> di
             "employee_id": emp.id,
             "full_name": emp.full_name,
             "email": emp.email,
-            "phone": emp.phone,
+            "phone": _normalize_phone(emp.phone, country_iso),
             "id_document": normalize_id_document(emp.id_document or data.id_document or ""),
             "sign_order": data.sign_order,
         }
@@ -71,7 +80,7 @@ def _resolve_signer(session: Session, data: SignerInput, company_id: UUID) -> di
         "employee_id": None,
         "full_name": data.full_name.strip(),
         "email": (data.email or "").strip() or None,
-        "phone": (data.phone or "").strip() or None,
+        "phone": _normalize_phone(data.phone, country_iso),
         "id_document": normalize_id_document(data.id_document),
         "sign_order": data.sign_order,
     }
@@ -149,9 +158,12 @@ def create_envelope(
         {"reference": envelope.reference, "original_hash": original_hash},
     )
 
+    tenant = session.get(Tenant, tenant_id)
+    country_iso = (tenant.billing_country if tenant else None) or "ES"
+
     orders = sorted(data.signers, key=lambda s: s.sign_order)
     for idx, signer_in in enumerate(orders, start=1):
-        resolved = _resolve_signer(session, signer_in, company_id)
+        resolved = _resolve_signer(session, signer_in, company_id, country_iso)
         plain, token_hash = generate_signer_token()
         signer = SignatureSigner(
             envelope_id=envelope.id,
@@ -499,12 +511,16 @@ def cancel_envelope(
     notify_cancelled(session, envelope, reason)
 
 
-def resend_signer(session: Session, envelope: SignatureEnvelope, signer: SignatureSigner) -> str:
+def resend_signer(session: Session, envelope: SignatureEnvelope, signer: SignatureSigner) -> dict:
     plain, token_hash = generate_signer_token()
     signer.token_hash = token_hash
     signer.token_plain = plain
     signer.status = SignerStatus.PENDING
     signer.otp_verified_at = None
+    tenant = session.get(Tenant, envelope.tenant_id)
+    country_iso = (tenant.billing_country if tenant else None) or "ES"
+    if signer.phone:
+        signer.phone = _normalize_phone(signer.phone, country_iso)
     session.add(signer)
     append_event(
         session,
@@ -514,7 +530,6 @@ def resend_signer(session: Session, envelope: SignatureEnvelope, signer: Signatu
     )
     session.commit()
 
-    tenant = session.get(Tenant, envelope.tenant_id)
     from app.services.signature_notify import notify_signer
 
     link = _signing_url(plain)
@@ -526,7 +541,24 @@ def resend_signer(session: Session, envelope: SignatureEnvelope, signer: Signatu
         company_name=tenant.name if tenant else "Empresa",
         link=link,
     )
+    session.commit()
+    notif = session.exec(
+        select(SignatureNotification)
+        .where(
+            SignatureNotification.signer_id == signer.id,
+            SignatureNotification.channel == "whatsapp",
+        )
+        .order_by(SignatureNotification.created_at.desc())  # type: ignore[attr-defined]
+    ).first()
     signer.token_plain = None
     session.add(signer)
     session.commit()
-    return link
+    wa_ok = bool(notif and notif.success)
+    return {
+        "link": link,
+        "whatsapp_sent": wa_ok,
+        "message": "Enlace reenviado por WhatsApp"
+        if wa_ok
+        else "No se pudo enviar WhatsApp; revisa el teléfono y la configuración goWA",
+        "detail": notif.detail if notif and not notif.success else None,
+    }

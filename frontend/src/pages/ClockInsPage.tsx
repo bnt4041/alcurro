@@ -20,7 +20,7 @@ export default function ClockInsPage() {
     record_type: "entrada" as ClockInType,
     notes: "",
   });
-  const canWrite = user && canModule(user.permissions, "write", "clock_ins");
+  const canCreate = user && canModule(user.permissions, "create", "clock_ins");
 
   const load = useCallback(async () => {
     const path = buildQuery({
@@ -53,7 +53,7 @@ export default function ClockInsPage() {
         title="Fichajes"
         subtitle="Registro inalterable — sin borrado (normativa española)"
         action={
-          canWrite ? (
+          canCreate ? (
             <button type="button" className="btn btn-primary" onClick={() => setOpen(true)}>
               + Fichaje manual
             </button>
@@ -113,7 +113,7 @@ export default function ClockInsPage() {
           </tbody>
         </table>
       </div>
-      <Modal title="Fichaje manual" open={open && !!canWrite} onClose={() => setOpen(false)}>
+      <Modal title="Fichaje manual" open={open && !!canCreate} onClose={() => setOpen(false)}>
         <form onSubmit={save} className="form-grid">
           <label>
             Empleado

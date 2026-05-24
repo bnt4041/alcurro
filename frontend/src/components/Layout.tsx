@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 import { api } from "../api/client";
 import BrandLogo from "./BrandLogo";
@@ -13,17 +13,19 @@ const nav = [
   { to: "/app/organizacion", label: "Organización", module: "companies" as const },
   { to: "/app/empleados", label: "Empleados", module: "employees" as const },
   { to: "/app/fichajes", label: "Fichajes", module: "clock_ins" as const },
-  { to: "/app/paradas", label: "Paradas", module: "clock_ins" as const },
+  { to: "/app/paradas", label: "Paradas", module: "breaks" as const },
   { to: "/app/vacaciones", label: "Vacaciones", module: "leave" as const },
   { to: "/app/turnos", label: "Turnos", module: "shifts" as const },
   { to: "/app/documentos", label: "Documentos", module: "documents" as const },
-  { to: "/app/firmas", label: "Firmas", module: "documents" as const },
+  { to: "/app/firmas", label: "Firmas", module: "signatures" as const },
+  { to: "/app/legal", label: "Textos legales", module: "legal" as const },
   { to: "/app/grupos", label: "Grupos", module: "groups" as const },
   { to: "/app/cuenta", label: "Cuenta", module: "tenant" as const, write: true },
 ];
 
 export default function Layout() {
   const { user, logout } = useAuth();
+  const [tenantLogo, setTenantLogo] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -36,7 +38,10 @@ export default function Layout() {
         accent_color: string;
         logo_url: string | null;
       }>(`/tenants/public/${getStoredTenantSlug()}/branding`)
-      .then(applyBranding)
+      .then((b) => {
+        applyBranding(b);
+        setTenantLogo(b.logo_url);
+      })
       .catch(() => {});
   }, [user]);
 
@@ -48,7 +53,7 @@ export default function Layout() {
     <div className="layout layout--light">
       <aside className="sidebar sidebar--light">
         <div className="brand">
-          <BrandLogo variant="light" compact />
+          <BrandLogo variant="light" compact logoSrc={tenantLogo} alt={user.tenant_name} />
           <p className="tenant-label">{user.tenant_name}</p>
         </div>
         <div className="user-chip">

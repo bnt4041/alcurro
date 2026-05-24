@@ -7,16 +7,7 @@ from sqlmodel import Session, select
 from app.core.deps import get_current_user
 
 from app.core.permissions import get_employee_permissions, normalize_role
-
-from app.core.security import (
-
-    PANEL_ROLES,
-
-    create_access_token,
-
-    verify_password,
-
-)
+from app.core.security import can_access_panel, create_access_token, verify_password
 
 from app.database import get_session
 
@@ -106,19 +97,10 @@ def login(data: LoginRequest, session: Session = Depends(get_session)) -> TokenR
 
     from app.services.unified_login import _role_key
 
-    if not row or _role_key(row.role) not in PANEL_ROLES:
-
+    if not row or not verify_password(data.password, row.password_hash):
         raise HTTPException(status_code=401, detail="Credenciales inválidas")
 
-    if not verify_password(data.password, row.password_hash):
-
-        raise HTTPException(status_code=401, detail="Credenciales inválidas")
-
-
-
-    perms = get_employee_permissions(session, row, tenant.id)
-
-    if not perms:
+    if not can_access_panel(session, row, tenant.id):
 
         raise HTTPException(
 

@@ -7,6 +7,7 @@ from sqlmodel import Session, func, select
 from app.core.permissions import (
     ALL_PERMS,
     PERM_LABELS,
+    PERM_SECTIONS,
     Permission,
     require_permission,
 )
@@ -21,6 +22,7 @@ from app.schemas.rbac import (
     GroupRead,
     GroupUpdate,
     PermCatalogItem,
+    PermCatalogSection,
 )
 
 router = APIRouter(prefix="/groups", tags=["groups"])
@@ -45,13 +47,19 @@ def _group_read(session: Session, group: UserGroup) -> GroupRead:
     )
 
 
-@router.get("/catalog", response_model=list[PermCatalogItem])
+@router.get("/catalog", response_model=list[PermCatalogSection])
 def permission_catalog(
     _: object = Depends(require_permission(Permission.READ, "groups")),
-) -> list[PermCatalogItem]:
+) -> list[PermCatalogSection]:
     return [
-        PermCatalogItem(key=p, label=PERM_LABELS.get(p, p))
-        for p in sorted(ALL_PERMS)
+        PermCatalogSection(
+            section=section,
+            items=[
+                PermCatalogItem(key=p, label=PERM_LABELS.get(p, p))
+                for p in keys
+            ],
+        )
+        for section, keys in PERM_SECTIONS
     ]
 
 
@@ -187,11 +195,13 @@ def set_employee_groups(
     ).all()
     if len(valid_groups) != len(set(data.group_ids)):
         raise HTTPException(status_code=400, detail="Grupos no válidos")
+    group_ids = list(dict.fromkeys(data.group_ids))
     for link in session.exec(
         select(EmployeeGroup).where(EmployeeGroup.employee_id == emp.id)
     ).all():
         session.delete(link)
-    for gid in data.group_ids:
+    session.flush()
+    for gid in group_ids:
         session.add(EmployeeGroup(employee_id=emp.id, group_id=gid))
     session.commit()
-    return data.group_ids
+    return group_ids

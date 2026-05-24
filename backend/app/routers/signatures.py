@@ -6,15 +6,18 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from sqlmodel import Session, select
 
+from app.core.deps import get_current_user
 from app.core.org_context import OrgContext, get_org_context
-from app.core.permissions import Permission, require_permission
+from app.core.permissions import Permission, require_permission, require_write
 from app.database import get_session
+from app.models.models import Employee
 from app.models.signature import SignatureEnvelope, SignatureSigner
 from app.schemas.signature import (
     SignatureEnvelopeCancel,
     SignatureEnvelopeCreate,
     SignatureEnvelopeRead,
 )
+from app.services.scope_service import is_read_own_only
 from app.services.signature_service import (
     cancel_envelope,
     create_envelope,
@@ -30,14 +33,24 @@ router = APIRouter(prefix="/signatures", tags=["signatures"])
 def list_envelopes(
     ctx: OrgContext = Depends(get_org_context),
     session: Session = Depends(get_session),
+    user: Employee = Depends(get_current_user),
     status: str | None = None,
-    _: object = Depends(require_permission(Permission.READ, "documents")),
+    _: object = Depends(require_permission(Permission.READ, "signatures")),
 ) -> list[SignatureEnvelopeRead]:
     stmt = (
         select(SignatureEnvelope)
         .where(SignatureEnvelope.tenant_id == ctx.tenant.id)
         .order_by(SignatureEnvelope.created_at.desc())  # type: ignore[attr-defined]
     )
+    if is_read_own_only(session, user, ctx.tenant.id, "signatures"):
+        own_env_ids = session.exec(
+            select(SignatureSigner.envelope_id).where(
+                SignatureSigner.employee_id == user.id
+            )
+        ).all()
+        if not own_env_ids:
+            return []
+        stmt = stmt.where(SignatureEnvelope.id.in_(own_env_ids))  # type: ignore[attr-defined]
     if status:
         stmt = stmt.where(SignatureEnvelope.status == status)
     rows = list(session.exec(stmt).all())
@@ -49,7 +62,7 @@ def get_envelope(
     envelope_id: UUID,
     ctx: OrgContext = Depends(get_org_context),
     session: Session = Depends(get_session),
-    _: object = Depends(require_permission(Permission.READ, "documents")),
+    _: object = Depends(require_permission(Permission.READ, "signatures")),
 ) -> SignatureEnvelopeRead:
     row = session.get(SignatureEnvelope, envelope_id)
     if not row or row.tenant_id != ctx.tenant.id:
@@ -62,7 +75,7 @@ def create_signature_envelope(
     data: SignatureEnvelopeCreate,
     ctx: OrgContext = Depends(get_org_context),
     session: Session = Depends(get_session),
-    _: object = Depends(require_permission(Permission.WRITE, "documents")),
+    _: object = Depends(require_write("signatures", "create")),
 ) -> SignatureEnvelopeRead:
     try:
         row = create_envelope(
@@ -86,7 +99,7 @@ async def create_signature_from_upload(
     expires_in_days: int = Form(14),
     ctx: OrgContext = Depends(get_org_context),
     session: Session = Depends(get_session),
-    _: object = Depends(require_permission(Permission.WRITE, "documents")),
+    _: object = Depends(require_write("signatures", "create")),
 ) -> SignatureEnvelopeRead:
     try:
         signers_data = json.loads(signers_json)
@@ -123,7 +136,7 @@ def cancel_signature_envelope(
     data: SignatureEnvelopeCancel,
     ctx: OrgContext = Depends(get_org_context),
     session: Session = Depends(get_session),
-    _: object = Depends(require_permission(Permission.WRITE, "documents")),
+    _: object = Depends(require_write("signatures", "update")),
 ) -> SignatureEnvelopeRead:
     row = session.get(SignatureEnvelope, envelope_id)
     if not row or row.tenant_id != ctx.tenant.id:
@@ -139,7 +152,7 @@ def resend_signer_link(
     signer_id: UUID,
     ctx: OrgContext = Depends(get_org_context),
     session: Session = Depends(get_session),
-    _: object = Depends(require_permission(Permission.WRITE, "documents")),
+    _: object = Depends(require_write("signatures", "update")),
 ) -> dict[str, str]:
     row = session.get(SignatureEnvelope, envelope_id)
     if not row or row.tenant_id != ctx.tenant.id:
@@ -147,8 +160,8 @@ def resend_signer_link(
     signer = session.get(SignatureSigner, signer_id)
     if not signer or signer.envelope_id != row.id:
         raise HTTPException(status_code=404, detail="Firmante no encontrado")
-    link = resend_signer(session, row, signer)
-    return {"link": link, "message": "Enlace reenviado por WhatsApp"}
+    result = resend_signer(session, row, signer)
+    return result
 
 
 @router.get("/{envelope_id}/signed")
@@ -156,7 +169,7 @@ def download_signed(
     envelope_id: UUID,
     ctx: OrgContext = Depends(get_org_context),
     session: Session = Depends(get_session),
-    _: object = Depends(require_permission(Permission.READ, "documents")),
+    _: object = Depends(require_permission(Permission.READ, "signatures")),
 ) -> FileResponse:
     row = session.get(SignatureEnvelope, envelope_id)
     if not row or row.tenant_id != ctx.tenant.id or not row.signed_path:
@@ -176,7 +189,7 @@ def download_certificate(
     envelope_id: UUID,
     ctx: OrgContext = Depends(get_org_context),
     session: Session = Depends(get_session),
-    _: object = Depends(require_permission(Permission.READ, "documents")),
+    _: object = Depends(require_permission(Permission.READ, "signatures")),
 ) -> FileResponse:
     row = session.get(SignatureEnvelope, envelope_id)
     if not row or row.tenant_id != ctx.tenant.id or not row.certificate_path:

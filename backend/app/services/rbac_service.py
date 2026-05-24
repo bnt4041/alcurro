@@ -12,11 +12,18 @@ from app.models.rbac import EmployeeGroup, UserGroup
 
 EMPLOYEE_PANEL_PERMS = frozenset(
     {
-        "clock_ins.read",
-        "leave.read",
-        "leave.write",
-        "documents.read",
+        "clock_ins.read_own",
+        "clock_ins.create_own",
+        "breaks.read_own",
+        "breaks.create_own",
+        "leave.read_own",
+        "leave.create_own",
+        "leave.update_own",
+        "documents.read_own",
+        "signatures.read_own",
         "legal.read",
+        "legal.read_own",
+        "legal.update_own",
     }
 )
 

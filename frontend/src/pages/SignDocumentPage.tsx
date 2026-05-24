@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import SignatureCanvas from "../components/SignatureCanvas";
 import BrandLogo from "../components/BrandLogo";
+import { ALCURRO, ALCURRO_FOOTER, LOGO_LIGHT } from "../lib/brand";
 
 const API = "/api/public/firma";
 
@@ -9,6 +10,7 @@ interface Meta {
   full_name: string;
   document_title: string;
   company_name: string;
+  logo_url: string | null;
   email_hint: string | null;
   phone_hint: string | null;
   status: string;
@@ -125,7 +127,12 @@ export default function SignDocumentPage() {
   return (
     <div className="sign-page">
       <header className="sign-page-header">
-        <BrandLogo variant="light" />
+        <BrandLogo
+          variant="light"
+          logoSrc={meta?.logo_url}
+          alt={meta?.company_name}
+          className="sign-page-header__brand"
+        />
         <h1>Firma electrónica</h1>
       </header>
       <main className="sign-page-main card">
@@ -204,7 +211,7 @@ export default function SignDocumentPage() {
             )}
 
             {step === "sign" && (
-              <form onSubmit={sign} className="form-grid">
+              <form onSubmit={sign} className="form-grid sign-form">
                 <label>
                   Nombre al firmar
                   <input
@@ -251,6 +258,14 @@ export default function SignDocumentPage() {
           </>
         )}
       </main>
+      <footer className="sign-page-footer">
+        <img src={LOGO_LIGHT} alt={ALCURRO.name} className="sign-page-footer__logo" />
+        <div className="sign-page-footer__text">
+          <strong>{ALCURRO_FOOTER.title}</strong>
+          <p className="muted small">{ALCURRO_FOOTER.description}</p>
+          <p className="muted small sign-page-footer__tagline">{ALCURRO.tagline}</p>
+        </div>
+      </footer>
     </div>
   );
 }

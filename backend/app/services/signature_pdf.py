@@ -11,11 +11,26 @@ from uuid import UUID
 
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
+from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
 from sqlmodel import Session, select
 
-from app.models.signature import SignatureEnvelope, SignatureEvent, SignatureSigner
+from app.models.signature import (
+    SignatureEnvelope,
+    SignatureEvent,
+    SignatureSigner,
+)
 from app.models.tenant import Tenant
+
+STAMP_UNIT = 21 * mm
+# Proporción 3:2 apaisada; al rotar 90° el lado largo queda a lo largo de la página
+STAMP_LONG = STAMP_UNIT * 3  # 63 mm — vertical en la página
+STAMP_SHORT = STAMP_UNIT * 2  # 42 mm — profundidad en el margen
+STAMP_MARGIN = 4 * mm
+STAMP_RGBA_GREEN = (30, 107, 79, 255)
+STAMP_RGBA_TEXT = (51, 65, 85, 255)
+STAMP_RGBA_MUTED = (100, 116, 139, 255)
+STAMP_DPI = 120
 
 
 def file_sha256(path: Path) -> str:
@@ -179,9 +194,9 @@ def finalize_signed_pdf(
 
     original = Path(envelope.original_path)
     merged = _merge_original_and_certificate(original, cert_bytes)
-
-    signed_pdf.write_bytes(merged)
-    signed_hash = file_sha256(signed_pdf)
+    stamped = _apply_lateral_stamp_all_pages(merged, envelope, signers)
+    signed_pdf.write_bytes(stamped)
+    signed_hash = hashlib.sha256(stamped).hexdigest()
 
     return {
         "signed_path": str(signed_pdf),
@@ -220,6 +235,180 @@ def _merge_original_and_certificate(original: Path, cert_bytes: bytes) -> bytes:
 
     if len(writer.pages) == 0:
         return cert_bytes
+
+    out = BytesIO()
+    writer.write(out)
+    return out.getvalue()
+
+
+def _fmt_signed_at(dt: datetime | None) -> str:
+    if not dt:
+        return "—"
+    return dt.strftime("%d/%m/%Y %H:%M UTC")
+
+
+def _mm_to_px(value_mm: float) -> int:
+    return max(1, int(value_mm / 25.4 * STAMP_DPI))
+
+
+def _load_stamp_fonts() -> tuple:
+    from PIL import ImageFont
+
+    paths = (
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    )
+    sizes = (11, 9, 7)
+    fonts = []
+    for path, size in zip(paths, sizes, strict=True):
+        try:
+            fonts.append(ImageFont.truetype(path, size))
+        except OSError:
+            fonts.append(ImageFont.load_default())
+    return tuple(fonts)
+
+
+def _render_stamp_png(
+    envelope: SignatureEnvelope,
+    signers: list[SignatureSigner],
+    document_hash: str,
+) -> bytes:
+    """Sello 3:2 (largo×ancho) con fondo transparente; firmas en fila."""
+    from PIL import Image, ImageDraw
+
+    long_px = _mm_to_px(STAMP_LONG / mm)
+    short_px = _mm_to_px(STAMP_SHORT / mm)
+    pad = _mm_to_px(2.2)
+
+    img = Image.new("RGBA", (long_px, short_px), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    draw.rectangle(
+        (1, 1, long_px - 2, short_px - 2),
+        outline=STAMP_RGBA_GREEN,
+        width=2,
+    )
+
+    font_b, font, font_s = _load_stamp_fonts()
+    signed = [s for s in sorted(signers, key=lambda z: z.sign_order) if s.signed_at]
+
+    draw.text((pad, pad), "SELLO DE FIRMA", fill=STAMP_RGBA_GREEN, font=font_b)
+    draw.text(
+        (pad, pad + _mm_to_px(4)),
+        envelope.reference[:36],
+        fill=STAMP_RGBA_GREEN,
+        font=font,
+    )
+
+    sig_y = _mm_to_px(13)
+    sig_h = _mm_to_px(9)
+    n = max(len(signed), 1)
+    cell_w = (long_px - 2 * pad) / n
+
+    for i, signer in enumerate(signed):
+        cell_x = pad + i * cell_w
+        cx = cell_x + cell_w / 2
+        sig_w = min(int(cell_w - _mm_to_px(1.2)), _mm_to_px(16))
+        if signer.signature_path and Path(signer.signature_path).exists():
+            try:
+                sig = Image.open(signer.signature_path).convert("RGBA")
+                sig.thumbnail((sig_w, sig_h), Image.Resampling.LANCZOS)
+                paste_x = int(cx - sig.width / 2)
+                img.paste(sig, (paste_x, sig_y), sig)
+            except Exception:
+                pass
+        name = (signer.signer_name or signer.full_name or "")[:16]
+        ts = _fmt_signed_at(signer.signed_at)
+        if len(ts) > 16:
+            ts = ts[0:11] + " " + ts[12:16]
+        name_bbox = draw.textbbox((0, 0), name, font=font_s)
+        name_w = name_bbox[2] - name_bbox[0]
+        draw.text(
+            (cx - name_w / 2, sig_y + sig_h + _mm_to_px(0.8)),
+            name,
+            fill=STAMP_RGBA_TEXT,
+            font=font_s,
+        )
+        ts_bbox = draw.textbbox((0, 0), ts, font=font_s)
+        ts_w = ts_bbox[2] - ts_bbox[0]
+        draw.text(
+            (cx - ts_w / 2, sig_y + sig_h + _mm_to_px(3.2)),
+            ts,
+            fill=STAMP_RGBA_MUTED,
+            font=font_s,
+        )
+
+    hash_y = short_px - _mm_to_px(11)
+    draw.text(
+        (pad, hash_y),
+        f"SHA-256: {document_hash[:30]}",
+        fill=STAMP_RGBA_TEXT,
+        font=font_s,
+    )
+    draw.text(
+        (pad, hash_y + _mm_to_px(2.8)),
+        document_hash[30:58],
+        fill=STAMP_RGBA_TEXT,
+        font=font_s,
+    )
+    draw.text(
+        (pad, short_px - _mm_to_px(3.5)),
+        "alcurro HRM",
+        fill=STAMP_RGBA_MUTED,
+        font=font_s,
+    )
+
+    # Rotar para colocar el lado largo a lo largo de la página
+    img = img.rotate(90, expand=True)
+
+    out = BytesIO()
+    img.save(out, format="PNG")
+    return out.getvalue()
+
+
+def _stamp_png_to_pdf(png_bytes: bytes) -> bytes:
+    """PDF del tamaño del sello con la PNG y transparencia."""
+    buf = BytesIO()
+    c = canvas.Canvas(buf, pagesize=(STAMP_SHORT, STAMP_LONG))
+    c.drawImage(
+        ImageReader(BytesIO(png_bytes)),
+        0,
+        0,
+        width=STAMP_SHORT,
+        height=STAMP_LONG,
+        mask="auto",
+    )
+    c.save()
+    return buf.getvalue()
+
+
+def _apply_lateral_stamp_all_pages(
+    pdf_bytes: bytes,
+    envelope: SignatureEnvelope,
+    signers: list[SignatureSigner],
+) -> bytes:
+    """Estampa el sello lateral en cada página del PDF."""
+    try:
+        from pypdf import PdfReader, PdfWriter, Transformation
+    except ImportError:
+        return pdf_bytes
+
+    document_hash = hashlib.sha256(pdf_bytes).hexdigest()
+    stamp_png = _render_stamp_png(envelope, signers, document_hash)
+    stamp_pdf = _stamp_png_to_pdf(stamp_png)
+    stamp_page = PdfReader(BytesIO(stamp_pdf)).pages[0]
+
+    reader = PdfReader(BytesIO(pdf_bytes))
+    writer = PdfWriter()
+
+    for page in reader.pages:
+        page_h = float(page.mediabox.height)
+        y = (page_h - STAMP_LONG) / 2
+        page.merge_transformed_page(
+            stamp_page,
+            Transformation().translate(STAMP_MARGIN, y),
+        )
+        writer.add_page(page)
 
     out = BytesIO()
     writer.write(out)

@@ -114,8 +114,51 @@ def normalize_phone(value: str) -> str:
     return "".join(c for c in local if c.isdigit())
 
 
-def format_phone_for_gowa(phone: str) -> str:
+# Código de país ISO → prefijo internacional (ampliar según necesidad)
+DIAL_BY_COUNTRY: dict[str, str] = {
+    "ES": "34",
+    "PT": "351",
+    "FR": "33",
+    "IT": "39",
+    "DE": "49",
+    "GB": "44",
+    "UK": "44",
+}
+
+
+def dial_code(country_iso: str = "ES") -> str:
+    iso = (country_iso or "ES").upper()
+    if iso.isdigit():
+        return iso
+    return DIAL_BY_COUNTRY.get(iso, "34")
+
+
+def normalize_mobile_digits(phone: str, country_iso: str = "ES") -> str:
+    """
+    Devuelve dígitos con prefijo internacional.
+    Ej: 624230960 + ES → 34624230960
+    """
+    digits = normalize_phone(phone)
+    if not digits:
+        return digits
+    if digits.startswith("00"):
+        digits = digits[2:]
+    dial = dial_code(country_iso)
+    if len(digits) >= 11 and digits.startswith(dial):
+        return digits
+    # Móvil español sin prefijo: 9 dígitos empezando por 6–9
+    if len(digits) == 9 and digits[0] in "6789":
+        return dial + digits
+    # 0624230960
+    if len(digits) == 10 and digits[0] == "0" and digits[1] in "6789":
+        return dial + digits[1:]
+    return digits
+
+
+def format_phone_for_gowa(phone: str, country_iso: str = "ES") -> str:
     if "@" in phone:
         return phone
-    digits = normalize_phone(phone)
+    digits = normalize_mobile_digits(phone, country_iso)
+    if not digits:
+        raise ValueError("Teléfono no válido")
     return f"{digits}@s.whatsapp.net"

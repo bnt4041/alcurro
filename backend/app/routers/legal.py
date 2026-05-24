@@ -103,16 +103,22 @@ def employee_status(
     employee_id: UUID,
     ctx: OrgContext = Depends(get_org_context),
     session: Session = Depends(get_session),
+    user: Employee = Depends(get_current_user),
     _: object = Depends(require_permission(Permission.READ, "legal")),
 ) -> EmployeeLegalStatusRead:
-    if employee_id not in employee_ids_in_scope(
-        session,
-        ctx.tenant.id,
-        company_id=ctx.company.id,
-        work_center_id=ctx.work_center.id if ctx.work_center else None,
-        department_id=ctx.department.id if ctx.department else None,
-    ):
+    from app.services.scope_service import is_read_own_only
+
+    if is_read_own_only(session, user, ctx.tenant.id, "legal") and employee_id != user.id:
         raise HTTPException(status_code=404, detail="Empleado no encontrado")
+    if not is_read_own_only(session, user, ctx.tenant.id, "legal"):
+        if employee_id not in employee_ids_in_scope(
+            session,
+            ctx.tenant.id,
+            company_id=ctx.company.id,
+            work_center_id=ctx.work_center.id if ctx.work_center else None,
+            department_id=ctx.department.id if ctx.department else None,
+        ):
+            raise HTTPException(status_code=404, detail="Empleado no encontrado")
     items, all_ok = employee_legal_status(session, ctx.tenant.id, employee_id)
     return EmployeeLegalStatusRead(
         employee_id=employee_id, all_required_accepted=all_ok, items=items

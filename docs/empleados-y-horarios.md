@@ -84,6 +84,14 @@ Ejemplo: del 01/01/2026 al 31/07/2026, lun–jue 09:00–14:00 y 16:00–18:00, 
 ]
 ```
 
+### Turno rotativo
+
+Si el empleado usa un **turno complejo** (rotativo, partido, nocturno, etc.), marca **Turno rotativo** en el formulario:
+
+- No se guardan franjas ni periodos en la ficha.
+- Debes elegir un turno de `/app/turnos`.
+- Campo `rotating_shift` en base de datos.
+
 ### UI
 
 Componente `WorkScheduleEditor` (`frontend/src/components/WorkScheduleEditor.tsx`):

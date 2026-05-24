@@ -1,6 +1,8 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile
 from sqlmodel import Session, select
 
 from app.config import get_settings
@@ -29,6 +31,24 @@ from app.services.org_service import (
 
 router = APIRouter(prefix="/tenants", tags=["tenants"])
 
+UPLOAD_DIR = Path("/app/uploads")
+LOGO_DIR = UPLOAD_DIR / "branding"
+ALLOWED_LOGO_TYPES = {
+    "image/png": ".png",
+    "image/jpeg": ".jpg",
+    "image/webp": ".webp",
+    "image/svg+xml": ".svg",
+}
+MAX_LOGO_BYTES = 2 * 1024 * 1024
+
+
+def _remove_tenant_logo_files(tenant_id: UUID) -> None:
+    tenant_dir = LOGO_DIR / str(tenant_id)
+    if not tenant_dir.is_dir():
+        return
+    for old in tenant_dir.glob("logo.*"):
+        old.unlink(missing_ok=True)
+
 
 def public_branding(slug: str, session: Session = Depends(get_session)) -> Tenant:
     tenant = session.exec(select(Tenant).where(Tenant.slug == slug.lower())).first()
@@ -56,6 +76,54 @@ def update_current_branding(
     for key, value in data.model_dump(exclude_unset=True).items():
         if key in ("name", "logo_url", "primary_color", "secondary_color", "accent_color"):
             setattr(tenant, key, value)
+    session.add(tenant)
+    session.commit()
+    session.refresh(tenant)
+    return tenant
+
+
+@router.post("/current/logo", response_model=TenantRead)
+async def upload_tenant_logo(
+    file: UploadFile = File(...),
+    ctx: TenantContext = Depends(get_tenant_context),
+    session: Session = Depends(get_session),
+    _: object = Depends(require_permission(Permission.WRITE, "tenant")),
+) -> Tenant:
+    content_type = (file.content_type or "").split(";")[0].strip().lower()
+    ext = ALLOWED_LOGO_TYPES.get(content_type)
+    if not ext:
+        raise HTTPException(
+            status_code=400,
+            detail="Formato no válido. Usa PNG, JPG, WEBP o SVG.",
+        )
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="El archivo está vacío")
+    if len(data) > MAX_LOGO_BYTES:
+        raise HTTPException(status_code=400, detail="El logo no puede superar 2 MB")
+
+    tenant = ctx.tenant
+    tenant_dir = LOGO_DIR / str(tenant.id)
+    tenant_dir.mkdir(parents=True, exist_ok=True)
+    _remove_tenant_logo_files(tenant.id)
+    stored = tenant_dir / f"logo{ext}"
+    stored.write_bytes(data)
+    tenant.logo_url = f"/uploads/branding/{tenant.id}/logo{ext}"
+    session.add(tenant)
+    session.commit()
+    session.refresh(tenant)
+    return tenant
+
+
+@router.delete("/current/logo", response_model=TenantRead)
+def remove_tenant_logo(
+    ctx: TenantContext = Depends(get_tenant_context),
+    session: Session = Depends(get_session),
+    _: object = Depends(require_permission(Permission.WRITE, "tenant")),
+) -> Tenant:
+    tenant = ctx.tenant
+    _remove_tenant_logo_files(tenant.id)
+    tenant.logo_url = None
     session.add(tenant)
     session.commit()
     session.refresh(tenant)

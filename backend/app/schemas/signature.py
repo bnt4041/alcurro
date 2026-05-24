@@ -68,6 +68,7 @@ class PublicSignerMeta(BaseModel):
     full_name: str
     document_title: str
     company_name: str
+    logo_url: str | None = None
     email_hint: str | None
     phone_hint: str | None
     status: str

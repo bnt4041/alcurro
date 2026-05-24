@@ -8,7 +8,17 @@ from pathlib import Path
 from sqlmodel import Session
 
 from app.models.signature import SignatureEnvelope, SignatureNotification, SignatureSigner
+from app.models.tenant import Tenant
 from app.services.gowa_service import GoWAService
+
+
+def _tenant_country(session: Session, envelope: SignatureEnvelope) -> str:
+    tenant = session.get(Tenant, envelope.tenant_id)
+    return (tenant.billing_country if tenant else None) or "ES"
+
+
+def _gowa(session: Session, envelope: SignatureEnvelope) -> GoWAService:
+    return GoWAService(session, country_iso=_tenant_country(session, envelope))
 
 
 def _log_notification(
@@ -54,16 +64,20 @@ def notify_signer(
     company_name: str,
     link: str,
 ) -> None:
-    msg = (
+    caption = (
         f"📝 *{company_name}* — Firma de documento\n"
         f"Documento: {envelope.title}\n"
         f"Referencia: {envelope.reference}\n\n"
-        f"Accede para firmar:\n{link}\n\n"
+        f"Enlace para firmar (pulsa para abrir):\n{link}\n\n"
         f"Necesitarás tu DNI/NIE y un código que te enviaremos por este canal."
     )
     if signer.phone:
         try:
-            _run_async(GoWAService(session).send_text(signer.phone, msg))
+            gowa = _gowa(session, envelope)
+            try:
+                _run_async(gowa.send_link(signer.phone, link, caption))
+            except Exception:
+                _run_async(gowa.send_text(signer.phone, caption))
             _log_notification(
                 session, envelope.id, signer.id, "whatsapp", event_type, True
             )
@@ -75,7 +89,7 @@ def notify_signer(
                 "whatsapp",
                 event_type,
                 False,
-                str(exc),
+                str(exc)[:500],
             )
     if signer.email:
         subject = f"Firma de documento — {envelope.reference}"
@@ -120,11 +134,11 @@ def send_otp(
     )
     if signer.phone:
         try:
-            _run_async(GoWAService(session).send_text(signer.phone, msg))
+            _run_async(_gowa(session, envelope).send_text(signer.phone, msg))
             _log_notification(session, envelope.id, signer.id, "whatsapp", "otp", True)
         except Exception as exc:
             _log_notification(
-                session, envelope.id, signer.id, "whatsapp", "otp", False, str(exc)
+                session, envelope.id, signer.id, "whatsapp", "otp", False, str(exc)[:500]
             )
     if signer.email:
         from app.services.mail_service import MailService
@@ -162,7 +176,7 @@ def notify_completed(session: Session, envelope: SignatureEnvelope) -> None:
     for signer in signers:
         if signer.phone:
             try:
-                _run_async(GoWAService(session).send_text(signer.phone, msg))
+                _run_async(_gowa(session, envelope).send_text(signer.phone, msg))
                 _log_notification(
                     session, envelope.id, signer.id, "whatsapp", "completada", True
                 )
@@ -174,7 +188,7 @@ def notify_completed(session: Session, envelope: SignatureEnvelope) -> None:
                     "whatsapp",
                     "completada",
                     False,
-                    str(exc),
+                    str(exc)[:500],
                 )
 
 
@@ -195,7 +209,7 @@ def notify_cancelled(
     for signer in signers:
         if signer.phone:
             try:
-                _run_async(GoWAService(session).send_text(signer.phone, msg))
+                _run_async(_gowa(session, envelope).send_text(signer.phone, msg))
                 _log_notification(
                     session, envelope.id, signer.id, "whatsapp", "cancelada", True
                 )
@@ -207,5 +221,5 @@ def notify_cancelled(
                     "whatsapp",
                     "cancelada",
                     False,
-                    str(exc),
+                    str(exc)[:500],
                 )

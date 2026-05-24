@@ -34,6 +34,16 @@ def verify_password(plain: str, hashed: str | None) -> bool:
         return False
 
 
+def can_access_panel(session, employee, tenant_id) -> bool:
+    """Panel: roles administrativos o empleado con permisos por grupo."""
+    from app.core.permissions import get_employee_permissions, normalize_role
+
+    role_key = normalize_role(employee.role).value
+    if role_key in PANEL_ROLES:
+        return True
+    return bool(get_employee_permissions(session, employee, tenant_id))
+
+
 def create_access_token(
     subject: UUID,
     role: str,

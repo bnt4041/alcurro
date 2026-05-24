@@ -6,6 +6,7 @@ from sqlmodel import Session, select
 from app.core.permissions import Permission, require_permission
 from app.core.tenant_context import TenantContext, get_tenant_context
 from app.database import get_session
+from app.models.tenant import Company
 from app.models.models import Employee, ShiftAssignment, ShiftConfiguration, ShiftPatternType
 from app.routers.crud_helpers import get_or_404
 from app.routers.search_helpers import ilike_filter
@@ -23,14 +24,19 @@ router = APIRouter(prefix="/shifts", tags=["shifts"])
 
 @router.get("/configurations", response_model=list[ShiftConfigurationRead])
 def list_configurations(
+    company_id: UUID | None = None,
     ctx: TenantContext = Depends(get_tenant_context),
     session: Session = Depends(get_session),
     q: str | None = None,
     pattern_type: ShiftPatternType | None = None,
     _: object = Depends(require_permission(Permission.READ, "shifts")),
 ) -> list[ShiftConfiguration]:
+    cid = company_id or ctx.company.id
+    company = session.get(Company, cid)
+    if not company or company.tenant_id != ctx.tenant.id:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
     stmt = select(ShiftConfiguration).where(
-        ShiftConfiguration.company_id == ctx.company.id
+        ShiftConfiguration.company_id == cid
     )
     stmt = stmt.order_by(ShiftConfiguration.name)
     filt = ilike_filter(ShiftConfiguration.name, ShiftConfiguration.description, term=q)

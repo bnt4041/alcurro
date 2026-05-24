@@ -71,7 +71,8 @@ export default function BreaksPage() {
     record_type: "inicio_parada" as BreakType,
     notes: "",
   });
-  const canWrite = user && canModule(user.permissions, "write", "clock_ins");
+  const canWrite = user && canModule(user.permissions, "write", "breaks");
+  const canCreate = user && canModule(user.permissions, "create", "breaks");
 
   const load = useCallback(async () => {
     const path = buildQuery({
@@ -108,7 +109,7 @@ export default function BreaksPage() {
         title="Paradas"
         subtitle="Descansos durante la jornada — filtrados por empresa/centro/departamento"
         action={
-          canWrite ? (
+          canCreate ? (
             <button type="button" className="btn btn-primary" onClick={() => setOpen(true)}>
               + Parada manual
             </button>
@@ -243,7 +244,7 @@ export default function BreaksPage() {
         </table>
       </div>
 
-      <Modal title="Parada manual" open={open && !!canWrite} onClose={() => setOpen(false)}>
+      <Modal title="Parada manual" open={open && !!canCreate} onClose={() => setOpen(false)}>
         <form onSubmit={save} className="form-grid">
           <label>
             Empleado

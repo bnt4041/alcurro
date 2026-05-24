@@ -39,6 +39,11 @@ class PermCatalogItem(BaseModel):
     label: str
 
 
+class PermCatalogSection(BaseModel):
+    section: str
+    items: list[PermCatalogItem]
+
+
 class PlatformLoginRequest(BaseModel):
     email: str
     password: str

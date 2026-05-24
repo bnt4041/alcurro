@@ -2,19 +2,47 @@ import type { Role } from "../api/types";
 
 export type Perm =
   | "employees.read"
+  | "employees.read_own"
   | "employees.write"
+  | "employees.create_own"
+  | "employees.update_own"
   | "employees.delete"
   | "clock_ins.read"
+  | "clock_ins.read_own"
   | "clock_ins.write"
+  | "clock_ins.create_own"
+  | "clock_ins.update_own"
+  | "breaks.read"
+  | "breaks.read_own"
+  | "breaks.write"
+  | "breaks.create_own"
+  | "breaks.update_own"
   | "leave.read"
+  | "leave.read_own"
   | "leave.write"
+  | "leave.create_own"
+  | "leave.update_own"
   | "leave.approve"
   | "shifts.read"
+  | "shifts.read_own"
   | "shifts.write"
+  | "shifts.create_own"
+  | "shifts.update_own"
   | "documents.read"
+  | "documents.read_own"
   | "documents.write"
+  | "documents.create_own"
+  | "documents.update_own"
+  | "signatures.read"
+  | "signatures.read_own"
+  | "signatures.write"
+  | "signatures.create_own"
+  | "signatures.update_own"
   | "legal.read"
+  | "legal.read_own"
   | "legal.write"
+  | "legal.create_own"
+  | "legal.update_own"
   | "settings.read"
   | "settings.write"
   | "tenant.read"
@@ -30,67 +58,127 @@ export type Perm =
   | "groups.write"
   | "gowa.manage";
 
-export type Coarse = "read" | "write" | "admin";
+export type Coarse = "read" | "write" | "admin" | "create" | "update";
 
 const MODULE_COARSE: Record<string, Record<Coarse, Perm[]>> = {
   employees: {
-    read: ["employees.read"],
-    write: ["employees.write"],
+    read: ["employees.read", "employees.read_own"],
+    write: ["employees.write", "employees.create_own", "employees.update_own"],
+    create: ["employees.write", "employees.create_own"],
+    update: ["employees.write", "employees.update_own"],
     admin: ["employees.delete"],
   },
   clock_ins: {
-    read: ["clock_ins.read"],
-    write: ["clock_ins.write"],
+    read: ["clock_ins.read", "clock_ins.read_own"],
+    write: ["clock_ins.write", "clock_ins.create_own", "clock_ins.update_own"],
+    create: ["clock_ins.write", "clock_ins.create_own"],
+    update: ["clock_ins.write", "clock_ins.update_own"],
     admin: ["clock_ins.write"],
   },
+  breaks: {
+    read: ["breaks.read", "breaks.read_own"],
+    write: ["breaks.write", "breaks.create_own", "breaks.update_own"],
+    create: ["breaks.write", "breaks.create_own"],
+    update: ["breaks.write", "breaks.update_own"],
+    admin: ["breaks.write"],
+  },
   leave: {
-    read: ["leave.read"],
-    write: ["leave.write", "leave.approve"],
+    read: ["leave.read", "leave.read_own"],
+    write: ["leave.write", "leave.create_own", "leave.update_own", "leave.approve"],
+    create: ["leave.write", "leave.create_own"],
+    update: ["leave.write", "leave.update_own", "leave.approve"],
     admin: ["leave.approve", "leave.write"],
   },
   shifts: {
-    read: ["shifts.read"],
-    write: ["shifts.write"],
+    read: ["shifts.read", "shifts.read_own"],
+    write: ["shifts.write", "shifts.create_own", "shifts.update_own"],
+    create: ["shifts.write", "shifts.create_own"],
+    update: ["shifts.write", "shifts.update_own"],
     admin: ["shifts.write"],
   },
   documents: {
-    read: ["documents.read"],
-    write: ["documents.write"],
+    read: ["documents.read", "documents.read_own"],
+    write: ["documents.write", "documents.create_own", "documents.update_own"],
+    create: ["documents.write", "documents.create_own"],
+    update: ["documents.write", "documents.update_own"],
     admin: ["documents.write"],
   },
+  signatures: {
+    read: [
+      "signatures.read",
+      "signatures.read_own",
+      "documents.read",
+      "documents.read_own",
+    ],
+    write: [
+      "signatures.write",
+      "signatures.create_own",
+      "signatures.update_own",
+      "documents.write",
+      "documents.create_own",
+      "documents.update_own",
+    ],
+    create: [
+      "signatures.write",
+      "signatures.create_own",
+      "documents.write",
+      "documents.create_own",
+    ],
+    update: [
+      "signatures.write",
+      "signatures.update_own",
+      "documents.write",
+      "documents.update_own",
+    ],
+    admin: ["signatures.write", "documents.write"],
+  },
   legal: {
-    read: ["legal.read"],
-    write: ["legal.write"],
+    read: ["legal.read", "legal.read_own"],
+    write: ["legal.write", "legal.create_own", "legal.update_own"],
+    create: ["legal.write", "legal.create_own"],
+    update: ["legal.write", "legal.update_own"],
     admin: ["legal.write"],
   },
   settings: {
     read: ["settings.read"],
     write: ["settings.write"],
+    create: ["settings.write"],
+    update: ["settings.write"],
     admin: ["settings.write"],
   },
   tenant: {
     read: ["tenant.read"],
     write: ["tenant.write", "tenant.billing"],
+    create: ["tenant.write", "tenant.billing"],
+    update: ["tenant.write", "tenant.billing"],
     admin: ["tenant.write", "tenant.billing", "gowa.manage"],
   },
   companies: {
     read: ["companies.read"],
     write: ["companies.write"],
+    create: ["companies.write"],
+    update: ["companies.write"],
     admin: ["companies.write"],
   },
   work_centers: {
     read: ["work_centers.read"],
     write: ["work_centers.write"],
+    create: ["work_centers.write"],
+    update: ["work_centers.write"],
     admin: ["work_centers.write"],
   },
   departments: {
     read: ["departments.read"],
     write: ["departments.write"],
+    create: ["departments.write"],
+    update: ["departments.write"],
     admin: ["departments.write"],
   },
   groups: {
     read: ["groups.read"],
     write: ["groups.write"],
+    create: ["groups.write"],
+    update: ["groups.write"],
     admin: ["groups.write"],
   },
 };
@@ -108,7 +196,6 @@ export function canModule(
   return required.some((p) => permissions?.includes(p));
 }
 
-/** Compatibilidad: admin = tenant.write o módulo admin */
 export function can(
   permissions: string[] | undefined,
   coarse: Coarse,
@@ -134,20 +221,48 @@ export const USER_TYPE_OPTIONS: { value: Role; label: string }[] = [
 ];
 
 export const PERM_LABELS: Record<Perm, string> = {
-  "employees.read": "Ver empleados",
-  "employees.write": "Editar empleados",
+  "employees.read": "Ver todos los empleados",
+  "employees.read_own": "Ver sólo los del usuario",
+  "employees.write": "Crear y modificar todos",
+  "employees.create_own": "Crear sólo los del usuario",
+  "employees.update_own": "Modificar sólo los del usuario",
   "employees.delete": "Eliminar empleados",
-  "clock_ins.read": "Ver fichajes",
-  "clock_ins.write": "Registrar fichajes",
-  "leave.read": "Ver vacaciones",
-  "leave.write": "Gestionar vacaciones",
+  "clock_ins.read": "Ver todos los fichajes",
+  "clock_ins.read_own": "Ver sólo los del usuario",
+  "clock_ins.write": "Crear y modificar todos",
+  "clock_ins.create_own": "Crear sólo los del usuario",
+  "clock_ins.update_own": "Modificar sólo los del usuario",
+  "breaks.read": "Ver todas las paradas",
+  "breaks.read_own": "Ver sólo las del usuario",
+  "breaks.write": "Crear y modificar todas",
+  "breaks.create_own": "Crear sólo las del usuario",
+  "breaks.update_own": "Modificar sólo las del usuario",
+  "leave.read": "Ver todas las vacaciones",
+  "leave.read_own": "Ver sólo las del usuario",
+  "leave.write": "Gestionar todas las vacaciones",
+  "leave.create_own": "Crear sólo las del usuario",
+  "leave.update_own": "Modificar sólo las del usuario",
   "leave.approve": "Aprobar vacaciones",
-  "shifts.read": "Ver turnos",
-  "shifts.write": "Gestionar turnos",
-  "documents.read": "Ver documentos",
-  "documents.write": "Gestionar documentos",
-  "legal.read": "Ver textos legales",
+  "shifts.read": "Ver todos los turnos",
+  "shifts.read_own": "Ver sólo los del usuario",
+  "shifts.write": "Crear y modificar todos",
+  "shifts.create_own": "Crear sólo los del usuario",
+  "shifts.update_own": "Modificar sólo los del usuario",
+  "documents.read": "Ver todos los documentos",
+  "documents.read_own": "Ver sólo los del usuario",
+  "documents.write": "Crear y modificar todos",
+  "documents.create_own": "Crear sólo los del usuario",
+  "documents.update_own": "Modificar sólo los del usuario",
+  "signatures.read": "Ver todas las firmas",
+  "signatures.read_own": "Ver sólo las del usuario",
+  "signatures.write": "Crear y modificar todas",
+  "signatures.create_own": "Crear sólo las del usuario",
+  "signatures.update_own": "Modificar sólo las del usuario",
+  "legal.read": "Ver textos legales (todos)",
+  "legal.read_own": "Ver sólo cumplimiento del usuario",
   "legal.write": "Gestionar textos legales",
+  "legal.create_own": "Crear sólo los del usuario",
+  "legal.update_own": "Modificar sólo los del usuario",
   "settings.read": "Ver configuración",
   "settings.write": "Editar configuración",
   "tenant.read": "Ver cuenta",
@@ -163,3 +278,111 @@ export const PERM_LABELS: Record<Perm, string> = {
   "groups.write": "Gestionar grupos",
   "gowa.manage": "Gestionar WhatsApp",
 };
+
+export const PERM_SECTIONS: { section: string; keys: Perm[] }[] = [
+  {
+    section: "Empleados",
+    keys: [
+      "employees.read",
+      "employees.read_own",
+      "employees.write",
+      "employees.create_own",
+      "employees.update_own",
+      "employees.delete",
+    ],
+  },
+  {
+    section: "Fichajes",
+    keys: [
+      "clock_ins.read",
+      "clock_ins.read_own",
+      "clock_ins.write",
+      "clock_ins.create_own",
+      "clock_ins.update_own",
+    ],
+  },
+  {
+    section: "Paradas",
+    keys: [
+      "breaks.read",
+      "breaks.read_own",
+      "breaks.write",
+      "breaks.create_own",
+      "breaks.update_own",
+    ],
+  },
+  {
+    section: "Vacaciones",
+    keys: [
+      "leave.read",
+      "leave.read_own",
+      "leave.write",
+      "leave.create_own",
+      "leave.update_own",
+      "leave.approve",
+    ],
+  },
+  {
+    section: "Turnos",
+    keys: [
+      "shifts.read",
+      "shifts.read_own",
+      "shifts.write",
+      "shifts.create_own",
+      "shifts.update_own",
+    ],
+  },
+  {
+    section: "Documentos",
+    keys: [
+      "documents.read",
+      "documents.read_own",
+      "documents.write",
+      "documents.create_own",
+      "documents.update_own",
+    ],
+  },
+  {
+    section: "Firmas electrónicas",
+    keys: [
+      "signatures.read",
+      "signatures.read_own",
+      "signatures.write",
+      "signatures.create_own",
+      "signatures.update_own",
+    ],
+  },
+  {
+    section: "Textos legales",
+    keys: [
+      "legal.read",
+      "legal.read_own",
+      "legal.write",
+      "legal.create_own",
+      "legal.update_own",
+    ],
+  },
+  {
+    section: "Organización",
+    keys: [
+      "companies.read",
+      "companies.write",
+      "work_centers.read",
+      "work_centers.write",
+      "departments.read",
+      "departments.write",
+    ],
+  },
+  {
+    section: "Grupos y permisos",
+    keys: ["groups.read", "groups.write"],
+  },
+  {
+    section: "Cuenta",
+    keys: ["tenant.read", "tenant.write", "tenant.billing", "gowa.manage"],
+  },
+  {
+    section: "Configuración sistema",
+    keys: ["settings.read", "settings.write"],
+  },
+];

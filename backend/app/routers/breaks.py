@@ -4,8 +4,9 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import Session, select
 
+from app.core.deps import get_current_user
 from app.core.org_context import OrgContext, get_org_context
-from app.core.permissions import Permission, require_permission
+from app.core.permissions import Permission, require_permission, require_write
 from app.database import get_session
 from app.models.models import BreakType, Employee, WorkBreak
 from app.models.tenant import Company
@@ -17,15 +18,17 @@ from app.schemas.crud import (
     BreakSummaryRow,
 )
 from app.services.break_service import BreakService
-from app.services.org_service import employee_ids_in_scope
+from app.services.scope_service import read_scope_employee_ids, resolve_write_employee_id
 
 router = APIRouter(prefix="/breaks", tags=["breaks"])
 
 
-def _scope_ids(ctx: OrgContext, session: Session) -> list[UUID]:
-    return employee_ids_in_scope(
+def _scope_ids(ctx: OrgContext, session: Session, user: Employee) -> list[UUID]:
+    return read_scope_employee_ids(
         session,
+        user,
         ctx.tenant.id,
+        "breaks",
         company_id=ctx.company.id,
         work_center_id=ctx.work_center.id if ctx.work_center else None,
         department_id=ctx.department.id if ctx.department else None,
@@ -36,13 +39,14 @@ def _scope_ids(ctx: OrgContext, session: Session) -> list[UUID]:
 def list_breaks(
     ctx: OrgContext = Depends(get_org_context),
     session: Session = Depends(get_session),
+    user: Employee = Depends(get_current_user),
     employee_id: UUID | None = None,
     record_type: BreakType | None = None,
     q: str | None = None,
     limit: int = 200,
-    _: object = Depends(require_permission(Permission.READ, "clock_ins")),
+    _: object = Depends(require_permission(Permission.READ, "breaks")),
 ) -> list[WorkBreak]:
-    ids = _scope_ids(ctx, session)
+    ids = _scope_ids(ctx, session, user)
     if not ids:
         return []
     stmt = (
@@ -77,11 +81,12 @@ def list_breaks(
 def breaks_summary(
     ctx: OrgContext = Depends(get_org_context),
     session: Session = Depends(get_session),
+    user: Employee = Depends(get_current_user),
     from_date: date | None = Query(None, alias="from"),
     to_date: date | None = Query(None, alias="to"),
-    _: object = Depends(require_permission(Permission.READ, "clock_ins")),
+    _: object = Depends(require_permission(Permission.READ, "breaks")),
 ) -> BreakSummaryResponse:
-    ids = _scope_ids(ctx, session)
+    ids = _scope_ids(ctx, session, user)
     svc = BreakService(session)
     rows_data = svc.summary_for_employees(ids, day_from=from_date, day_to=to_date)
     rows = [BreakSummaryRow.model_validate(r) for r in rows_data]
@@ -134,10 +139,11 @@ def get_break(
     break_id: UUID,
     ctx: OrgContext = Depends(get_org_context),
     session: Session = Depends(get_session),
-    _: object = Depends(require_permission(Permission.READ, "clock_ins")),
+    user: Employee = Depends(get_current_user),
+    _: object = Depends(require_permission(Permission.READ, "breaks")),
 ) -> WorkBreak:
     row = get_or_404(session, WorkBreak, break_id)
-    if row.employee_id not in _scope_ids(ctx, session):
+    if row.employee_id not in _scope_ids(ctx, session, user):
         raise HTTPException(status_code=404, detail="Parada no encontrada")
     return row
 
@@ -147,12 +153,14 @@ def create_break(
     data: BreakCreate,
     ctx: OrgContext = Depends(get_org_context),
     session: Session = Depends(get_session),
-    _: object = Depends(require_permission(Permission.WRITE, "clock_ins")),
+    user: Employee = Depends(get_current_user),
+    _: object = Depends(require_write("breaks", "create")),
 ) -> WorkBreak:
-    if data.employee_id not in _scope_ids(ctx, session):
-        raise HTTPException(status_code=400, detail="Empleado no válido en el ámbito")
+    emp_id = resolve_write_employee_id(
+        session, user, ctx, "breaks", data.employee_id, "create"
+    )
     row = WorkBreak(
-        employee_id=data.employee_id,
+        employee_id=emp_id,
         record_type=data.record_type,
         notes=data.notes,
         source="panel",

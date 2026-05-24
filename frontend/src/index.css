@@ -1927,8 +1927,29 @@ code {
   grid-column: 1 / -1;
 }
 
-.schedule-editor {
+.schedule-mode {
   grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.schedule-mode__toggle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-muted, #f8fafc);
+}
+
+.rotating-shift-panel {
+  padding: 1rem;
+}
+
+.schedule-editor {
   display: flex;
   flex-direction: column;
   gap: 1rem;
@@ -2029,6 +2050,68 @@ code {
   margin-bottom: 0.25rem;
 }
 
+.brand-logo--custom .brand-logo__img {
+  max-height: 56px;
+  max-width: 220px;
+  width: auto;
+  object-fit: contain;
+}
+
+.brand-logo--compact.brand-logo--custom .brand-logo__img {
+  max-height: 40px;
+  max-width: 160px;
+}
+
+.dashboard-hero {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  margin-bottom: 1.5rem;
+  padding: 1.25rem 1.5rem;
+}
+
+.dashboard-hero__logo.brand-logo {
+  flex-shrink: 0;
+}
+
+.dashboard-hero__title {
+  margin: 0 0 0.25rem;
+  font-size: 1.5rem;
+}
+
+.account-logo-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+  margin: 1rem 0;
+}
+
+.account-logo-preview {
+  min-width: 140px;
+  min-height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.75rem;
+  border: 1px dashed var(--border, #cbd5e1);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.account-logo-preview img {
+  max-height: 64px;
+  max-width: 200px;
+  object-fit: contain;
+}
+
+.account-logo-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
 .sign-page {
   min-height: 100vh;
   background: linear-gradient(160deg, #f0f4f8 0%, #e8eef5 100%);
@@ -2040,15 +2123,53 @@ code {
   margin-bottom: 1.5rem;
 }
 
+.sign-page-header .brand-logo--custom .brand-logo__img {
+  max-height: 72px;
+  max-width: 280px;
+}
+
 .sign-page-header h1 {
   margin: 0.75rem 0 0;
   font-size: 1.35rem;
 }
 
 .sign-page-main {
-  max-width: 520px;
+  max-width: 640px;
   margin: 0 auto;
   padding: 1.5rem;
+}
+
+.sign-page-footer {
+  max-width: 640px;
+  margin: 2rem auto 0;
+  padding: 1.25rem 1rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  border-top: 1px solid var(--border, #cbd5e1);
+  text-align: left;
+}
+
+.sign-page-footer__logo {
+  height: 36px;
+  width: auto;
+  flex-shrink: 0;
+  opacity: 0.9;
+}
+
+.sign-page-footer__text {
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
+.sign-page-footer__text strong {
+  display: block;
+  margin-bottom: 0.25rem;
+  color: var(--text, #12263a);
+}
+
+.sign-page-footer__tagline {
+  margin-top: 0.35rem;
 }
 
 .signature-canvas-wrap {
@@ -2059,6 +2180,7 @@ code {
   display: block;
   width: 100%;
   max-width: 100%;
+  min-height: 200px;
   border: 2px dashed var(--border, #cbd5e1);
   border-radius: 8px;
   background: #fff;

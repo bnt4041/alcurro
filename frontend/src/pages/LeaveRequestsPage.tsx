@@ -33,6 +33,8 @@ export default function LeaveRequestsPage() {
     review_notes: "",
   });
   const canWrite = user && canModule(user.permissions, "write", "leave");
+  const canCreate = user && canModule(user.permissions, "create", "leave");
+  const canUpdate = user && canModule(user.permissions, "update", "leave");
   const canAdmin = user && canModule(user.permissions, "admin", "leave");
 
   const load = useCallback(async () => {
@@ -95,7 +97,7 @@ export default function LeaveRequestsPage() {
         title="Vacaciones"
         subtitle="Solicitudes, aprobaciones y saldo"
         action={
-          canWrite ? (
+          canCreate ? (
             <button type="button" className="btn btn-primary" onClick={openCreate}>
               + Nueva solicitud
             </button>
@@ -126,7 +128,7 @@ export default function LeaveRequestsPage() {
               <th>Días</th>
               <th>Estado</th>
               <th>Motivo</th>
-              {canWrite && <th></th>}
+              {(canUpdate || canAdmin) && <th></th>}
             </tr>
           </thead>
           <tbody>
@@ -140,11 +142,13 @@ export default function LeaveRequestsPage() {
                   <span className={`badge badge-${r.status}`}>{r.status}</span>
                 </td>
                 <td>{r.reason ?? "—"}</td>
-                {canWrite && (
+                {(canUpdate || canAdmin) && (
                   <td className="actions">
-                    <button type="button" className="btn btn-sm" onClick={() => openEdit(r)}>
-                      Editar
-                    </button>
+                    {canUpdate && (
+                      <button type="button" className="btn btn-sm" onClick={() => openEdit(r)}>
+                        Editar
+                      </button>
+                    )}
                     {canAdmin && (
                       <button
                         type="button"
@@ -163,7 +167,7 @@ export default function LeaveRequestsPage() {
       </div>
       <Modal
         title={editing ? "Editar vacaciones" : "Nueva solicitud"}
-        open={open && !!canWrite}
+        open={open && !!(editing ? canUpdate : canCreate)}
         onClose={() => setOpen(false)}
         wide
       >

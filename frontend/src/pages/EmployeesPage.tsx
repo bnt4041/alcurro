@@ -60,10 +60,12 @@ interface OrgTreeCompany {
 
 type EmployeeForm = Partial<Employee> & {
   password?: string;
+  company_id?: string | null;
   work_center_id?: string | null;
 };
 
 const empty = (defaults?: {
+  company_id?: string | null;
   department_id?: string | null;
   work_center_id?: string | null;
 }): EmployeeForm => ({
@@ -76,9 +78,11 @@ const empty = (defaults?: {
   is_active: true,
   supervisor_id: null,
   password: "",
+  company_id: defaults?.company_id ?? null,
   department_id: defaults?.department_id ?? null,
   work_center_id: defaults?.work_center_id ?? null,
   shift_configuration_id: null,
+  rotating_shift: false,
   work_schedule_periods: defaultSchedulePeriods(),
 });
 
@@ -96,6 +100,7 @@ export default function EmployeesPage() {
   );
   const [orgTree, setOrgTree] = useState<OrgTreeCompany[]>([]);
   const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
 
   const [groups, setGroups] = useState<UserGroup[]>([]);
   const [selectedGroups, setSelectedGroups] = useState<string[]>([]);
@@ -130,31 +135,49 @@ export default function EmployeesPage() {
   }, [canGroups]);
 
   useEffect(() => {
-    if (open && canWrite) {
-      api
-        .get<ShiftConfiguration[]>("/shifts/configurations")
-        .then(setShiftConfigs)
-        .catch(() => setShiftConfigs([]));
+    if (canWrite) {
       api
         .get<OrgTreeCompany[]>("/org/tree")
         .then(setOrgTree)
         .catch(() => setOrgTree([]));
     }
-  }, [open, canWrite]);
+  }, [canWrite]);
 
-  const company = useMemo(
-    () => orgTree.find((c) => c.id === user?.company_id) ?? orgTree[0],
-    [orgTree, user?.company_id]
+  useEffect(() => {
+    if (open && canWrite && !orgTree.length) {
+      api
+        .get<OrgTreeCompany[]>("/org/tree")
+        .then(setOrgTree)
+        .catch(() => setOrgTree([]));
+    }
+  }, [open, canWrite, orgTree.length]);
+
+  useEffect(() => {
+    if (!open || !canWrite || !form.company_id) {
+      setShiftConfigs([]);
+      return;
+    }
+    api
+      .get<ShiftConfiguration[]>(
+        `/shifts/configurations?company_id=${encodeURIComponent(form.company_id)}`
+      )
+      .then(setShiftConfigs)
+      .catch(() => setShiftConfigs([]));
+  }, [open, canWrite, form.company_id]);
+
+  const selectedCompany = useMemo(
+    () => orgTree.find((c) => c.id === form.company_id) ?? orgTree[0],
+    [orgTree, form.company_id]
   );
-  const workCenters = company?.work_centers ?? [];
+  const workCenters = selectedCompany?.work_centers ?? [];
   const departments = useMemo(() => {
     const wc = workCenters.find((w) => w.id === form.work_center_id);
     return wc?.departments ?? [];
   }, [workCenters, form.work_center_id]);
 
   const resolveWorkCenterForDepartment = (departmentId: string | null | undefined) => {
-    if (!departmentId || !company) return null;
-    for (const wc of company.work_centers) {
+    if (!departmentId || !selectedCompany) return null;
+    for (const wc of selectedCompany.work_centers) {
       if (wc.departments.some((d) => d.id === departmentId)) return wc.id;
     }
     return null;
@@ -162,10 +185,15 @@ export default function EmployeesPage() {
 
   const openCreate = () => {
     setEditing(null);
-    const deptId = user?.department_id ?? null;
+    const companyId = user?.company_id ?? orgTree[0]?.id ?? null;
+    const comp = orgTree.find((c) => c.id === companyId) ?? orgTree[0];
+    const deptId = user?.department_id ?? comp?.work_centers[0]?.departments[0]?.id ?? null;
     const wcId =
-      user?.work_center_id ?? resolveWorkCenterForDepartment(deptId) ?? null;
-    setForm(empty({ department_id: deptId, work_center_id: wcId }));
+      user?.work_center_id ??
+      resolveWorkCenterForDepartment(deptId) ??
+      comp?.work_centers[0]?.id ??
+      null;
+    setForm(empty({ company_id: companyId, department_id: deptId, work_center_id: wcId }));
     setSchedulePeriods(defaultSchedulePeriods());
     setLegalStatus(null);
     setSelectedGroups(panelGroupId ? [panelGroupId] : []);
@@ -174,8 +202,9 @@ export default function EmployeesPage() {
 
   const openEdit = async (row: Employee) => {
     setEditing(row);
-    const periods = periodsFromEmployee(row);
-    setSchedulePeriods(periods);
+    setSchedulePeriods(
+      row.rotating_shift ? [] : periodsFromEmployee(row)
+    );
     let tree = orgTree;
     if (!tree.length) {
       try {
@@ -198,6 +227,7 @@ export default function EmployeesPage() {
     setForm({
       ...row,
       password: "",
+      company_id: row.company_id,
       work_center_id: wcId,
     });
     if (canGroups) {
@@ -220,16 +250,28 @@ export default function EmployeesPage() {
   const save = async (e: FormEvent) => {
     e.preventDefault();
     setError("");
+    if (!form.company_id) {
+      setError("Selecciona la empresa");
+      return;
+    }
     if (!form.department_id) {
       setError("Selecciona centro y departamento");
       return;
     }
-    const scheduleErr = validatePeriodsClient(schedulePeriods);
-    if (scheduleErr) {
-      setError(scheduleErr);
-      return;
+    if (form.rotating_shift) {
+      if (!form.shift_configuration_id) {
+        setError("Selecciona un turno complejo (o desmarca turno rotativo)");
+        return;
+      }
+    } else {
+      const scheduleErr = validatePeriodsClient(schedulePeriods);
+      if (scheduleErr) {
+        setError(scheduleErr);
+        return;
+      }
     }
     try {
+      setSaving(true);
       const body: Record<string, unknown> = {
         phone: form.phone,
         email: form.email,
@@ -240,8 +282,9 @@ export default function EmployeesPage() {
         is_active: form.is_active,
         supervisor_id: form.supervisor_id,
         department_id: form.department_id,
+        rotating_shift: form.rotating_shift ?? false,
         shift_configuration_id: form.shift_configuration_id,
-        work_schedule_periods: schedulePeriods,
+        work_schedule_periods: form.rotating_shift ? [] : schedulePeriods,
       };
       if (form.password) body.password = form.password;
       if (!editing) {
@@ -262,13 +305,15 @@ export default function EmployeesPage() {
       }
       if (canGroups && empId) {
         await api.put(`/groups/employees/${empId}/groups`, {
-          group_ids: selectedGroups,
+          group_ids: [...new Set(selectedGroups)],
         });
       }
       setOpen(false);
       load();
     } catch (err) {
       setError(String(err).replace(/^Error:\s*/i, ""));
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -432,6 +477,32 @@ export default function EmployeesPage() {
               ))}
             </select>
           </label>
+          <label className="form-grid-full">
+            Empresa
+            <select
+              required
+              value={form.company_id ?? ""}
+              onChange={(ev) => {
+                const company_id = ev.target.value || null;
+                const comp = orgTree.find((c) => c.id === company_id);
+                const firstWc = comp?.work_centers[0];
+                setForm({
+                  ...form,
+                  company_id,
+                  work_center_id: firstWc?.id ?? null,
+                  department_id: firstWc?.departments[0]?.id ?? null,
+                  shift_configuration_id: null,
+                });
+              }}
+            >
+              <option value="">Seleccionar empresa…</option>
+              {orgTree.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </label>
           <label>
             Centro de trabajo
             <select
@@ -446,6 +517,7 @@ export default function EmployeesPage() {
                   department_id: wc?.departments[0]?.id ?? null,
                 });
               }}
+              disabled={!form.company_id}
             >
               <option value="">Seleccionar centro…</option>
               {workCenters.map((wc) => (
@@ -473,13 +545,62 @@ export default function EmployeesPage() {
               ))}
             </select>
           </label>
-          <WorkScheduleEditor
-            periods={schedulePeriods}
-            onChange={setSchedulePeriods}
-            shiftConfigs={shiftConfigs}
-            shiftConfigurationId={form.shift_configuration_id}
-            onShiftChange={(id) => setForm({ ...form, shift_configuration_id: id })}
-          />
+          <div className="form-grid-full schedule-mode">
+            <label className="checkbox schedule-mode__toggle">
+              <input
+                type="checkbox"
+                checked={form.rotating_shift ?? false}
+                onChange={(ev) =>
+                  setForm({
+                    ...form,
+                    rotating_shift: ev.target.checked,
+                    shift_configuration_id: ev.target.checked
+                      ? form.shift_configuration_id
+                      : null,
+                  })
+                }
+              />
+              <strong>Turno rotativo</strong>
+              <span className="muted small">
+                El horario se define en Turnos complejos; no uses franjas aquí.
+              </span>
+            </label>
+            {form.rotating_shift ? (
+              <div className="card-inner rotating-shift-panel">
+                <label className="full">
+                  Turno complejo asignado
+                  <select
+                    required
+                    value={form.shift_configuration_id ?? ""}
+                    onChange={(ev) =>
+                      setForm({
+                        ...form,
+                        shift_configuration_id: ev.target.value || null,
+                      })
+                    }
+                  >
+                    <option value="">Seleccionar turno…</option>
+                    {shiftConfigs.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {shiftConfigs.length === 0 && (
+                  <p className="muted small">
+                    No hay turnos configurados. Crea uno en{" "}
+                    <a href="/app/turnos">Turnos</a>.
+                  </p>
+                )}
+              </div>
+            ) : (
+              <WorkScheduleEditor
+                periods={schedulePeriods}
+                onChange={setSchedulePeriods}
+              />
+            )}
+          </div>
           {editing && legalStatus && (
             <fieldset className="form-grid-full">
               <legend>Aceptación legal</legend>
@@ -566,8 +687,8 @@ export default function EmployeesPage() {
             <button type="button" className="btn" onClick={() => setOpen(false)}>
               Cancelar
             </button>
-            <button type="submit" className="btn btn-primary">
-              Guardar
+            <button type="submit" className="btn btn-primary" disabled={saving}>
+              {saving ? "Guardando…" : "Guardar"}
             </button>
           </div>
         </form>

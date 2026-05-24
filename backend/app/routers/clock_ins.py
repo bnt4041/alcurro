@@ -3,21 +3,24 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 
+from app.core.deps import get_current_user
 from app.core.org_context import OrgContext, get_org_context
-from app.core.permissions import Permission, require_permission
+from app.core.permissions import Permission, require_permission, require_write
 from app.database import get_session
 from app.models.models import ClockIn, ClockInType, Employee
 from app.routers.crud_helpers import get_or_404
 from app.schemas.crud import ClockInCreate, ClockInRead
-from app.services.org_service import employee_ids_in_scope
+from app.services.scope_service import read_scope_employee_ids, resolve_write_employee_id
 
 router = APIRouter(prefix="/clock-ins", tags=["clock-ins"])
 
 
-def _scope_ids(ctx: OrgContext, session: Session) -> list[UUID]:
-    return employee_ids_in_scope(
+def _scope_ids(ctx: OrgContext, session: Session, user: Employee) -> list[UUID]:
+    return read_scope_employee_ids(
         session,
+        user,
         ctx.tenant.id,
+        "clock_ins",
         company_id=ctx.company.id,
         work_center_id=ctx.work_center.id if ctx.work_center else None,
         department_id=ctx.department.id if ctx.department else None,
@@ -28,13 +31,14 @@ def _scope_ids(ctx: OrgContext, session: Session) -> list[UUID]:
 def list_clock_ins(
     ctx: OrgContext = Depends(get_org_context),
     session: Session = Depends(get_session),
+    user: Employee = Depends(get_current_user),
     employee_id: UUID | None = None,
     record_type: ClockInType | None = None,
     q: str | None = None,
     limit: int = 200,
     _: object = Depends(require_permission(Permission.READ, "clock_ins")),
 ) -> list[ClockIn]:
-    ids = _scope_ids(ctx, session)
+    ids = _scope_ids(ctx, session, user)
     if not ids:
         return []
     stmt = (
@@ -72,10 +76,11 @@ def get_clock_in(
     clock_in_id: UUID,
     ctx: OrgContext = Depends(get_org_context),
     session: Session = Depends(get_session),
+    user: Employee = Depends(get_current_user),
     _: object = Depends(require_permission(Permission.READ, "clock_ins")),
 ) -> ClockIn:
     row = get_or_404(session, ClockIn, clock_in_id)
-    if row.employee_id not in _scope_ids(ctx, session):
+    if row.employee_id not in _scope_ids(ctx, session, user):
         raise HTTPException(status_code=404, detail="Fichaje no encontrado")
     return row
 
@@ -85,11 +90,15 @@ def create_clock_in(
     data: ClockInCreate,
     ctx: OrgContext = Depends(get_org_context),
     session: Session = Depends(get_session),
-    _: object = Depends(require_permission(Permission.WRITE, "clock_ins")),
+    user: Employee = Depends(get_current_user),
+    _: object = Depends(require_write("clock_ins", "create")),
 ) -> ClockIn:
-    if data.employee_id not in _scope_ids(ctx, session):
-        raise HTTPException(status_code=400, detail="Empleado no válido en el ámbito")
-    row = ClockIn.model_validate({**data.model_dump(), "source": data.source or "panel"})
+    target = resolve_write_employee_id(
+        session, user, ctx, "clock_ins", data.employee_id, "create"
+    )
+    row = ClockIn.model_validate(
+        {**data.model_dump(), "employee_id": target, "source": data.source or "panel"}
+    )
     session.add(row)
     session.commit()
     session.refresh(row)

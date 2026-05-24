@@ -152,6 +152,10 @@ class Employee(SQLModel, table=True):
             "Periodos: [{valid_from, valid_to, blocks:[{work_days, slots:[...]}]}]"
         ),
     )
+    rotating_shift: bool = Field(
+        default=False,
+        description="Horario vía turno complejo; sin franjas fijas en este formulario",
+    )
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
