@@ -2,7 +2,9 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlmodel import Session
 
 from app.core.deps import get_current_user
@@ -29,6 +31,7 @@ from app.services.employee_onboarding_service import (
     build_welcome_message,
     list_inbound_documents,
     mark_welcome_sent,
+    receive_inbound_file,
     seed_inbound_documents,
 )
 from app.services.gowa_service import GoWAService
@@ -90,6 +93,35 @@ def employee_inbound_documents(
     row = get_or_404(session, Employee, employee_id)
     assert_employee_target(session, user, ctx, "employees", row.id, "update")
     return list_inbound_documents(session, employee_id)
+
+
+@router.post("/employees/{employee_id}/inbound-documents/upload")
+async def upload_employee_inbound_document(
+    employee_id: UUID,
+    document_code: str = Form(...),
+    file: UploadFile = File(...),
+    ctx: OrgContext = Depends(get_org_context),
+    session: Session = Depends(get_session),
+    user: Employee = Depends(get_current_user),
+    _: object = Depends(require_write("employees", "update")),
+) -> dict:
+    row = get_or_404(session, Employee, employee_id)
+    assert_employee_target(session, user, ctx, "employees", row.id, "update")
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="Archivo vacío")
+    ok, message = receive_inbound_file(
+        session,
+        row,
+        tenant_id=ctx.tenant.id,
+        file_bytes=data,
+        filename=file.filename or "documento.pdf",
+        document_code=document_code.strip(),
+    )
+    session.commit()
+    if not ok:
+        raise HTTPException(status_code=400, detail=message)
+    return {"ok": True, "message": message}
 
 
 @router.post("/employees/{employee_id}/resend-welcome")

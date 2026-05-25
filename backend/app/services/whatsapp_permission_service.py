@@ -110,16 +110,18 @@ def can_whatsapp_inbound_media(
 
 
 def denial_message(session: Session, employee: Employee, tenant_id: UUID) -> str:
+    from app.services.whatsapp_format import format_denial_list
+
     allowed = list_whatsapp_actions_for_employee(session, employee, tenant_id)
     if not allowed:
-        return (
-            "No tienes acciones habilitadas por WhatsApp. "
-            "Contacta con RRHH o tu responsable."
+        return format_denial_list(
+            "Sin acciones por WhatsApp",
+            ["Contacta con RRHH o tu responsable."],
         )
     labels = [ACTION_LABELS.get(c, c) for c in allowed[:8]]
-    return (
-        "No tienes permiso para esa acción por WhatsApp.\n\n"
-        "Puedes: " + "; ".join(labels) + "."
+    return format_denial_list(
+        "Acción no permitida",
+        labels,
     )
 
 

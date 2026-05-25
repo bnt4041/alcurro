@@ -59,6 +59,7 @@ def create_project(
         address=(data.address or "").strip() or None,
         planned_hours=data.planned_hours,
         is_active=data.is_active,
+        active_for_clock=data.active_for_clock if data.is_active else False,
     )
     session.add(row)
     session.commit()
@@ -85,6 +86,8 @@ def update_project(
         payload["address"] = (payload["address"] or "").strip() or None
     for key, value in payload.items():
         setattr(row, key, value)
+    if payload.get("is_active") is False:
+        row.active_for_clock = False
     row.updated_at = datetime.utcnow()
     session.add(row)
     session.commit()

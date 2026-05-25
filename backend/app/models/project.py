@@ -21,6 +21,10 @@ class Project(SQLModel, table=True):
         description="Horas previstas del proyecto (opcional)",
     )
     is_active: bool = Field(default=True)
+    active_for_clock: bool = Field(
+        default=True,
+        description="Si está activo, puede elegirse al fichar por WhatsApp o panel",
+    )
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 

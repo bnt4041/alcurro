@@ -9,6 +9,7 @@ class ProjectCreate(BaseModel):
     address: str | None = Field(default=None, max_length=500)
     planned_hours: float | None = Field(default=None, ge=0, le=100000)
     is_active: bool = True
+    active_for_clock: bool = True
 
 
 class ProjectUpdate(BaseModel):
@@ -16,6 +17,7 @@ class ProjectUpdate(BaseModel):
     address: str | None = Field(default=None, max_length=500)
     planned_hours: float | None = Field(default=None, ge=0, le=100000)
     is_active: bool | None = None
+    active_for_clock: bool | None = None
 
 
 class ProjectBulkImportRow(BaseModel):
@@ -44,5 +46,6 @@ class ProjectRead(BaseModel):
     address: str | None
     planned_hours: float | None
     is_active: bool
+    active_for_clock: bool
     created_at: datetime
     updated_at: datetime

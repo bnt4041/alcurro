@@ -18,12 +18,27 @@ from app.services.clock_settings_service import get_or_create_settings
 from app.services.daily_summary_service import build_daily_summary
 from app.services.employee_onboarding_service import (
     build_welcome_message,
+    complete_pending_upload,
     mark_welcome_sent,
     receive_inbound_file,
     seed_inbound_documents,
     should_send_welcome,
 )
 from app.services.gowa_service import GoWAService
+from app.services.inbound_pending_service import (
+    get_pending_upload,
+    pending_file_documents,
+    resolve_document_from_reply,
+    set_pending_upload,
+)
+from app.services.clock_settings_service import inbound_name
+from app.services.whatsapp_format import (
+    format_break_registered,
+    format_clock_registered,
+    format_geo_hint,
+    format_help_actions,
+    format_inbound_document_picker,
+)
 from app.services.leave_service import LeaveService
 from app.services.ai_conversation_service import append_message
 from app.services.ai_usage_service import profile_key_for_employee
@@ -84,7 +99,6 @@ class WebhookService:
             return {"ok": True, "action": "ignored_event", "event": payload.event}
 
         phone = payload.resolve_phone()
-        message = payload.resolve_message()
 
         if not phone:
             return {"ok": False, "error": "Teléfono no identificado en el webhook"}
@@ -118,7 +132,8 @@ class WebhookService:
             except Exception:
                 pass
 
-        if message and message.is_location and message.location:
+        message = payload.resolve_message()
+        if message and message.is_location:
             return await self._handle_location(employee.id, phone, message)
 
         if message and message.is_media:
@@ -139,11 +154,7 @@ class WebhookService:
         return {"ok": True, "action": "unsupported_message_type"}
 
     def _geo_hint(self) -> str:
-        if self._settings.require_geolocation:
-            return (
-                "\n\n📍 Recuerda: se recomienda compartir tu ubicación al fichar."
-            )
-        return ""
+        return format_geo_hint(self._settings.require_geolocation)
 
     def _next_record_type(self, employee_id: UUID) -> tuple[ClockInType, str]:
         last = self._clock.get_last_clock(employee_id)
@@ -157,17 +168,13 @@ class WebhookService:
         record,
         project_name: str | None = None,
     ) -> str:
-        msg = (
-            f"Fichaje {label} registrado a las "
-            f"{record.recorded_at.strftime('%H:%M:%S')} (hora servidor)."
+        return format_clock_registered(
+            label,
+            record.recorded_at.strftime("%H:%M:%S"),
+            project_name=project_name,
+            latitude=record.latitude,
+            longitude=record.longitude,
         )
-        if project_name:
-            msg += f"\nProyecto: {project_name}"
-        if record.latitude is not None and record.longitude is not None:
-            msg += (
-                f"\nUbicación: {record.latitude:.6f}, {record.longitude:.6f}"
-            )
-        return msg
 
     def _register_clock_with_project_flow(
         self,
@@ -253,6 +260,15 @@ class WebhookService:
     ) -> dict:
         loc = message.location
         if not loc:
+            reply = (
+                "📍 No he podido leer la ubicación.\n\n"
+                "En WhatsApp: *clip* (📎) → *Ubicación* → *Enviar tu ubicación actual*.\n"
+                "No uses solo texto; debe ser el adjunto de ubicación."
+            )
+            try:
+                await self._gowa.send_text(phone, reply)
+            except Exception:
+                pass
             return {"ok": False, "error": "Ubicación vacía"}
 
         employee = self._session.get(Employee, employee_id)
@@ -267,6 +283,7 @@ class WebhookService:
             record_type=record_type.value,
         ):
             reply = denial_message(self._session, employee, self._tenant_id)
+            # denial_message already formatted
             try:
                 await self._gowa.send_text(phone, reply)
             except Exception:
@@ -327,12 +344,42 @@ class WebhookService:
 
         file_bytes = path.read_bytes()
         filename = message.file_name or path.name
+        file_pending = pending_file_documents(self._session, employee.id)
+        if len(file_pending) > 1:
+            set_pending_upload(
+                self._session,
+                employee_id=employee.id,
+                file_bytes=file_bytes,
+                filename=filename,
+                whatsapp_message_id=message.id,
+            )
+            picker_rows = [
+                type(
+                    "Row",
+                    (),
+                    {
+                        "document_name": inbound_name(
+                            self._session, r.document_code
+                        )
+                    },
+                )()
+                for r in file_pending
+            ]
+            reply = format_inbound_document_picker(picker_rows)
+            self._session.commit()
+            try:
+                await self._gowa.send_text(phone, reply)
+            except Exception:
+                pass
+            return {"ok": True, "action": "inbound_pick_document"}
+
         ok, reply = receive_inbound_file(
             self._session,
             employee,
             tenant_id=self._tenant_id,
             file_bytes=file_bytes,
             filename=filename,
+            document_code=file_pending[0].document_code if len(file_pending) == 1 else None,
         )
         self._session.commit()
         try:
@@ -348,6 +395,37 @@ class WebhookService:
         text: str,
         message_id: str | None,
     ) -> dict:
+        upload_pending = get_pending_upload(self._session, employee.id)
+        if upload_pending:
+            doc_row = resolve_document_from_reply(self._session, employee.id, text)
+            if not doc_row:
+                file_pending = pending_file_documents(self._session, employee.id)
+                picker_rows = [
+                    type(
+                        "Row",
+                        (),
+                        {"document_name": inbound_name(self._session, r.document_code)},
+                    )()
+                    for r in file_pending
+                ]
+                reply = format_inbound_document_picker(picker_rows)
+                reply += "\n\n_No he reconocido tu respuesta. Indica el número o nombre._"
+            else:
+                ok, reply = complete_pending_upload(
+                    self._session,
+                    employee,
+                    tenant_id=self._tenant_id,
+                    document_code=doc_row.document_code,
+                )
+                if not ok:
+                    pass
+            self._session.commit()
+            try:
+                await self._gowa.send_text(phone, reply)
+            except Exception:
+                pass
+            return {"ok": True, "action": "inbound_document_assigned"}
+
         pending = get_pending(self._session, employee.id)
         if self._settings.require_project_on_clock_in and pending:
             rt = (
@@ -360,6 +438,7 @@ class WebhookService:
                 self._session, employee, self._tenant_id, code
             ):
                 reply = denial_message(self._session, employee, self._tenant_id)
+            # denial_message already formatted
                 self._session.commit()
                 try:
                     await self._gowa.send_text(phone, reply)
@@ -414,6 +493,7 @@ class WebhookService:
                     )
                 else:
                     reply = denial_message(self._session, employee, self._tenant_id)
+            # denial_message already formatted
                 self._session.commit()
                 try:
                     await self._gowa.send_text(phone, reply)
@@ -504,9 +584,9 @@ class WebhookService:
                     record_type=BreakType.INICIO,
                     whatsapp_message_id=message_id,
                 )
-                return (
-                    f"INICIO DE PARADA registrado a las "
-                    f"{record.recorded_at.strftime('%H:%M:%S')} (hora servidor)."
+                return format_break_registered(
+                    "INICIO DE PARADA",
+                    record.recorded_at.strftime("%H:%M:%S"),
                 )
 
             case "fin_parada":
@@ -515,9 +595,9 @@ class WebhookService:
                     record_type=BreakType.FIN,
                     whatsapp_message_id=message_id,
                 )
-                return (
-                    f"FIN DE PARADA registrado a las "
-                    f"{record.recorded_at.strftime('%H:%M:%S')} (hora servidor)."
+                return format_break_registered(
+                    "FIN DE PARADA",
+                    record.recorded_at.strftime("%H:%M:%S"),
                 )
 
             case "solicitar_vacaciones":
@@ -540,10 +620,6 @@ class WebhookService:
                 extra = []
                 if (
                     "fichar_entrada" in allowed or "fichar_salida" in allowed
-                ) and self._settings.require_geolocation:
-                    extra.append("compartir ubicación para fichar")
-                return (
-                    "No he entendido tu solicitud. Puedes: "
-                    + "; ".join(hints + extra)
-                    + "."
-                )
+                ):
+                    extra.append("Compartir ubicación (clip → Ubicación) para fichar")
+                return format_help_actions(hints + extra)

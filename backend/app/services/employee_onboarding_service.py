@@ -231,6 +231,8 @@ def receive_inbound_file(
     document_code: str | None = None,
 ) -> tuple[bool, str]:
     """Guarda archivo y marca documento inbound. Devuelve (ok, mensaje)."""
+    from app.services.whatsapp_format import format_inbound_received
+
     pending_rows = list(
         session.exec(
             select(EmployeeInboundDocument).where(
@@ -245,9 +247,10 @@ def receive_inbound_file(
         if sig_pending:
             return (
                 False,
-                "Tienes documentos pendientes de firma. Revisa el enlace enviado por WhatsApp.",
+                "✍️ Tienes documentos pendientes de *firma*. "
+                "Revisa el enlace enviado por WhatsApp.",
             )
-        return False, "No tienes documentación pendiente."
+        return False, "ℹ️ No tienes documentación pendiente."
 
     target: EmployeeInboundDocument | None = None
     if document_code and not is_signature_code(document_code):
@@ -255,6 +258,11 @@ def receive_inbound_file(
             (r for r in file_pending if r.document_code == document_code), None
         )
     if not target:
+        if len(file_pending) > 1:
+            return (
+                False,
+                "NEEDS_PICKER",
+            )
         target = file_pending[0]
 
     doc_type_map = {
@@ -283,13 +291,31 @@ def receive_inbound_file(
     session.add(target)
     session.flush()
 
+    doc_name = inbound_name(session, target.document_code)
     remaining = len(pending_inbound_codes(session, employee.id))
-    if remaining:
-        return True, (
-            f"Recibido: {inbound_name(session, target.document_code)}. "
-            f"Quedan {remaining} pendiente(s)."
-        )
-    return True, (
-        f"Recibido: {inbound_name(session, target.document_code)}. "
-        "Documentación de alta completada. ¡Gracias!"
+    return True, format_inbound_received(doc_name, remaining)
+
+
+def complete_pending_upload(
+    session: Session,
+    employee: Employee,
+    *,
+    tenant_id: UUID,
+    document_code: str,
+) -> tuple[bool, str]:
+    """Procesa archivo guardado en inbound_pending_uploads."""
+    from app.services.inbound_pending_service import clear_pending_upload, get_pending_upload
+
+    pending = get_pending_upload(session, employee.id)
+    if not pending or not Path(pending.file_path).is_file():
+        return False, "No hay archivo pendiente. Vuelve a enviar la foto o PDF."
+    data = Path(pending.file_path).read_bytes()
+    clear_pending_upload(session, employee.id)
+    return receive_inbound_file(
+        session,
+        employee,
+        tenant_id=tenant_id,
+        file_bytes=data,
+        filename=pending.filename,
+        document_code=document_code,
     )

@@ -128,6 +128,7 @@ export interface Project {
   address: string | null;
   planned_hours: number | null;
   is_active: boolean;
+  active_for_clock: boolean;
   created_at: string;
   updated_at: string;
 }

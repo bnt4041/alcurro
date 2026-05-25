@@ -42,6 +42,7 @@ from app.models.documents import (  # noqa: F401
 from app.models.clock_settings import (  # noqa: F401
     ClockSettings,
     EmployeeInboundDocument,
+    InboundPendingUpload,
 )
 from app.models.project import ClockPendingFichaje, Project  # noqa: F401
 from app.models.incident import Incident, IncidentAutoRule  # noqa: F401

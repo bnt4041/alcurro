@@ -93,7 +93,8 @@ Mapeo rol de empleado → perfil IA:
 | Texto → Ollama | Según intent detectado |
 | Atajo palabras "resumen del día" | `resumen_dia` |
 | Ubicación GPS | `fichar_entrada` o `fichar_salida` (según último fichaje) |
-| PDF / imagen (alta) | Config `inbound_documents_enabled` + permiso documentos |
+| PDF / imagen (alta) | Config `inbound_documents_enabled` + permiso documentos. Si hay varios tipos pendientes, el bot pide *número o nombre* del documento |
+| Ubicación GPS | `fichar_entrada` / `fichar_salida` según último fichaje. Usar adjunto *Ubicación*, no texto |
 | Respuesta selector de proyecto | `fichar_entrada` / `fichar_salida` |
 
 ## Catálogo de intenciones

@@ -5,6 +5,49 @@ from typing import Any
 from pydantic import BaseModel, Field, model_validator
 
 
+def _extract_location_dict(data: dict[str, Any]) -> dict[str, Any] | None:
+    """Normaliza ubicación desde distintos formatos de goWA / WhatsApp Web."""
+    if not isinstance(data, dict):
+        return None
+
+    candidates: list[dict[str, Any]] = [data]
+    for key in (
+        "location",
+        "live_location",
+        "locationMessage",
+        "liveLocationMessage",
+        "msg",
+        "message",
+    ):
+        nested = data.get(key)
+        if isinstance(nested, dict):
+            candidates.append(nested)
+
+    for block in candidates:
+        lat = (
+            block.get("latitude")
+            or block.get("degreesLatitude")
+            or block.get("lat")
+        )
+        lng = (
+            block.get("longitude")
+            or block.get("degreesLongitude")
+            or block.get("lng")
+            or block.get("lon")
+        )
+        if lat is not None and lng is not None:
+            try:
+                return {
+                    "latitude": float(lat),
+                    "longitude": float(lng),
+                    "name": block.get("name"),
+                    "address": block.get("address"),
+                }
+            except (TypeError, ValueError):
+                continue
+    return None
+
+
 class GoWALocation(BaseModel):
     latitude: float
     longitude: float
@@ -14,17 +57,10 @@ class GoWALocation(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def from_gowa_coords(cls, data: Any) -> Any:
-        if not isinstance(data, dict):
-            return data
-        lat = data.get("latitude") or data.get("degreesLatitude")
-        lng = data.get("longitude") or data.get("degreesLongitude")
-        if lat is not None and lng is not None:
-            return {
-                "latitude": float(lat),
-                "longitude": float(lng),
-                "name": data.get("name"),
-                "address": data.get("address"),
-            }
+        if isinstance(data, dict):
+            parsed = _extract_location_dict(data)
+            if parsed:
+                return parsed
         return data
 
 
@@ -48,17 +84,40 @@ class GoWAMessage(BaseModel):
 
     @property
     def is_location(self) -> bool:
-        return self.location is not None
+        if self.location is not None:
+            return True
+        t = (self.type or "").lower()
+        return any(
+            x in t
+            for x in (
+                "location",
+                "live_location",
+                "locationmessage",
+                "livelocation",
+            )
+        )
 
     @property
     def is_media(self) -> bool:
         if self.media_path:
             return True
-        return self.type in ("image", "document", "video", "sticker", "audio")
+        t = (self.type or "").lower()
+        return t in (
+            "image",
+            "document",
+            "video",
+            "sticker",
+            "audio",
+            "file",
+            "documentmessage",
+            "imagemessage",
+        )
 
     @property
     def is_text(self) -> bool:
-        return bool(self.plain_text) and not self.is_location and not self.is_media
+        if self.is_location or self.is_media:
+            return False
+        return bool(self.plain_text)
 
 
 class GoWAWebhookPayload(BaseModel):
@@ -76,20 +135,40 @@ class GoWAWebhookPayload(BaseModel):
     def adapt_gowa_event(cls, data: Any) -> Any:
         if not isinstance(data, dict):
             return data
+
+        # Evento dedicado de ubicación (algunas versiones de goWA)
+        if data.get("event") in ("location", "live_location", "message.location"):
+            p = data.get("payload") if isinstance(data.get("payload"), dict) else data
+            loc = _extract_location_dict(p or {})
+            sender = (
+                p.get("from") if isinstance(p, dict) else None
+            ) or data.get("sender") or data.get("phone")
+            if loc:
+                return {
+                    "event": "message",
+                    "message": {
+                        "from": sender or "",
+                        "id": (p or {}).get("id") if isinstance(p, dict) else None,
+                        "type": "location",
+                        "location": loc,
+                    },
+                }
+
         if data.get("event") == "message" and isinstance(data.get("payload"), dict):
             p = data["payload"]
-            loc = p.get("location") or p.get("live_location")
-            msg_type = p.get("type") or "text"
+            msg_type = (p.get("type") or "text").lower()
+            loc = _extract_location_dict(p)
             media_path = (
                 p.get("path")
                 or p.get("media_path")
                 or p.get("file_path")
-                or (p.get("image") or {}).get("path")
-                if isinstance(p.get("image"), dict)
-                else None
             )
+            if not media_path and isinstance(p.get("image"), dict):
+                media_path = p["image"].get("path")
             if not media_path and isinstance(p.get("document"), dict):
                 media_path = p["document"].get("path")
+            if not media_path and isinstance(p.get("documentMessage"), dict):
+                media_path = p["documentMessage"].get("path")
             return {
                 "event": data.get("event"),
                 "device_id": data.get("device_id"),
@@ -110,7 +189,24 @@ class GoWAWebhookPayload(BaseModel):
 
     def resolve_message(self) -> GoWAMessage | None:
         if self.message:
-            return self.message
+            msg = self.message
+            if msg.is_location and msg.location is None and self.payload:
+                loc = _extract_location_dict(self.payload)
+                if loc:
+                    return GoWAMessage.model_validate(
+                        {**msg.model_dump(by_alias=True), "location": loc, "type": "location"}
+                    )
+            return msg
+        if self.payload:
+            loc = _extract_location_dict(self.payload)
+            if loc:
+                return GoWAMessage.model_validate(
+                    {
+                        "from": self.payload.get("from", self.sender or self.phone or ""),
+                        "type": "location",
+                        "location": loc,
+                    }
+                )
         if self.sender or self.phone:
             return GoWAMessage.model_validate(
                 {"from": self.sender or self.phone or "", "body": ""}
@@ -128,8 +224,15 @@ class GoWAWebhookPayload(BaseModel):
         return None
 
     def should_process(self) -> bool:
-        if self.event and self.event != "message":
-            return False
+        if self.event and self.event not in (
+            "message",
+            "location",
+            "live_location",
+            "message.location",
+            None,
+        ):
+            if self.event in ("status", "ack", "receipt", "connection"):
+                return False
         return True
 
 
@@ -139,7 +242,6 @@ def normalize_phone(value: str) -> str:
     return "".join(c for c in local if c.isdigit())
 
 
-# Código de país ISO → prefijo internacional (ampliar según necesidad)
 DIAL_BY_COUNTRY: dict[str, str] = {
     "ES": "34",
     "PT": "351",
@@ -159,10 +261,6 @@ def dial_code(country_iso: str = "ES") -> str:
 
 
 def normalize_mobile_digits(phone: str, country_iso: str = "ES") -> str:
-    """
-    Devuelve dígitos con prefijo internacional.
-    Ej: 624230960 + ES → 34624230960
-    """
     digits = normalize_phone(phone)
     if not digits:
         return digits
@@ -171,10 +269,8 @@ def normalize_mobile_digits(phone: str, country_iso: str = "ES") -> str:
     dial = dial_code(country_iso)
     if len(digits) >= 11 and digits.startswith(dial):
         return digits
-    # Móvil español sin prefijo: 9 dígitos empezando por 6–9
     if len(digits) == 9 and digits[0] in "6789":
         return dial + digits
-    # 0624230960
     if len(digits) == 10 and digits[0] == "0" and digits[1] in "6789":
         return dial + digits[1:]
     return digits

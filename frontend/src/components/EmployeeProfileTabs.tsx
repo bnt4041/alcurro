@@ -82,6 +82,9 @@ export default function EmployeeProfileTabs({
   const [loadingDocs, setLoadingDocs] = useState(false);
   const [loadingSigs, setLoadingSigs] = useState(false);
   const [docsMsg, setDocsMsg] = useState("");
+  const [uploadCode, setUploadCode] = useState("");
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
 
   const deliveryColumns = useMemo<DataTableColumn<Record<string, unknown>>[]>(
     () => [
@@ -184,6 +187,73 @@ export default function EmployeeProfileTabs({
           ) : (
             <>
               <h4 className="employee-profile-subtitle">Alta / inbound</h4>
+              {inbound.some((r) => r.status === "pending") && (
+                <form
+                  className="form-grid inbound-upload-form"
+                  style={{ marginBottom: "1rem" }}
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    if (!uploadFile || !uploadCode) return;
+                    setUploading(true);
+                    setDocsMsg("");
+                    try {
+                      const fd = new FormData();
+                      fd.append("document_code", uploadCode);
+                      fd.append("file", uploadFile);
+                      const res = await api.upload<{ ok: boolean; message: string }>(
+                        `/clock-settings/employees/${employeeId}/inbound-documents/upload`,
+                        fd
+                      );
+                      setDocsMsg(res.message);
+                      setUploadFile(null);
+                      setUploadCode("");
+                      loadDocuments();
+                    } catch (err) {
+                      setDocsMsg(String(err));
+                    } finally {
+                      setUploading(false);
+                    }
+                  }}
+                >
+                  <label className="form-grid-full">
+                    Subir documentación (panel RRHH)
+                    <select
+                      required
+                      value={uploadCode}
+                      onChange={(ev) => setUploadCode(ev.target.value)}
+                    >
+                      <option value="">Tipo de documento…</option>
+                      {inbound
+                        .filter((r) => r.status === "pending")
+                        .map((r) => (
+                          <option key={r.document_code} value={r.document_code}>
+                            {r.document_name}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                  <label className="form-grid-full">
+                    Archivo (PDF o imagen)
+                    <input
+                      type="file"
+                      accept="image/*,.pdf"
+                      required
+                      onChange={(ev) =>
+                        setUploadFile(ev.target.files?.[0] ?? null)
+                      }
+                    />
+                  </label>
+                  <div className="form-actions form-grid-full">
+                    <button
+                      type="submit"
+                      className="btn btn-primary btn-sm"
+                      disabled={uploading}
+                    >
+                      {uploading ? "Subiendo…" : "Subir y asociar"}
+                    </button>
+                  </div>
+                </form>
+              )}
               <DataTable
                 data={inbound.map((r) => ({
                   ...r,

@@ -52,6 +52,18 @@ class ClockSettings(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class InboundPendingUpload(SQLModel, table=True):
+    """Archivo recibido por WhatsApp pendiente de indicar tipo de documento."""
+
+    __tablename__ = "inbound_pending_uploads"
+
+    employee_id: UUID = Field(foreign_key="employees.id", primary_key=True)
+    file_path: str = Field(max_length=500)
+    filename: str = Field(max_length=255)
+    whatsapp_message_id: str | None = Field(default=None, max_length=100)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 class EmployeeInboundDocument(SQLModel, table=True):
     """Documentación pendiente/recibida del empleado (alta / WhatsApp)."""
 

@@ -22,6 +22,7 @@ const emptyForm = () => ({
   address: "",
   planned_hours: "",
   is_active: true,
+  active_for_clock: true,
 });
 
 export default function ProjectsPage() {
@@ -53,7 +54,11 @@ export default function ProjectsPage() {
         ...p,
         hours_label:
           p.planned_hours != null ? `${p.planned_hours} h` : "—",
-        status_label: p.is_active ? "Activo" : "Inactivo",
+        status_label: p.active_for_clock
+          ? p.is_active
+            ? "Activo (fichaje)"
+            : "Solo fichaje"
+          : "Inactivo",
       })),
     [rows]
   );
@@ -112,6 +117,7 @@ export default function ProjectsPage() {
       address: p.address ?? "",
       planned_hours: p.planned_hours != null ? String(p.planned_hours) : "",
       is_active: p.is_active,
+      active_for_clock: p.active_for_clock,
     });
     setOpen(true);
   };
@@ -126,6 +132,7 @@ export default function ProjectsPage() {
         ? parseFloat(form.planned_hours.replace(",", "."))
         : null,
       is_active: form.is_active,
+      active_for_clock: form.is_active ? form.active_for_clock : false,
     };
     try {
       if (editing) {
@@ -234,16 +241,35 @@ export default function ProjectsPage() {
             />
           </label>
           {editing && (
-            <label className="checkbox" style={{ alignSelf: "end" }}>
-              <input
-                type="checkbox"
-                checked={form.is_active}
-                onChange={(ev) =>
-                  setForm({ ...form, is_active: ev.target.checked })
-                }
-              />
-              <span>Proyecto activo</span>
-            </label>
+            <>
+              <label className="checkbox" style={{ alignSelf: "end" }}>
+                <input
+                  type="checkbox"
+                  checked={form.is_active}
+                  onChange={(ev) =>
+                    setForm({
+                      ...form,
+                      is_active: ev.target.checked,
+                      active_for_clock: ev.target.checked
+                        ? form.active_for_clock
+                        : false,
+                    })
+                  }
+                />
+                <span>Proyecto activo</span>
+              </label>
+              <label className="checkbox" style={{ alignSelf: "end" }}>
+                <input
+                  type="checkbox"
+                  disabled={!form.is_active}
+                  checked={form.active_for_clock}
+                  onChange={(ev) =>
+                    setForm({ ...form, active_for_clock: ev.target.checked })
+                  }
+                />
+                <span>Disponible al fichar</span>
+              </label>
+            </>
           )}
           <div className="form-actions form-grid-full">
             <button type="button" className="btn" onClick={() => setOpen(false)}>
