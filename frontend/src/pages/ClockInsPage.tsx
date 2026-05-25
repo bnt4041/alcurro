@@ -1,4 +1,5 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { api, buildQuery } from "../api/client";
 import type { ClockIn, ClockInType } from "../api/types";
 import Modal from "../components/Modal";
@@ -21,6 +22,8 @@ export default function ClockInsPage() {
     notes: "",
   });
   const canCreate = user && canModule(user.permissions, "create", "clock_ins");
+  const canConfig =
+    user && canModule(user.permissions, "write", "clock_ins");
 
   const load = useCallback(async () => {
     const path = buildQuery({
@@ -53,11 +56,18 @@ export default function ClockInsPage() {
         title="Fichajes"
         subtitle="Registro inalterable — sin borrado (normativa española)"
         action={
-          canCreate ? (
-            <button type="button" className="btn btn-primary" onClick={() => setOpen(true)}>
-              + Fichaje manual
-            </button>
-          ) : undefined
+          <div className="header-actions">
+            {canConfig && (
+              <Link to="/app/fichajes/configuracion" className="btn">
+                Configuración
+              </Link>
+            )}
+            {canCreate && (
+              <button type="button" className="btn btn-primary" onClick={() => setOpen(true)}>
+                + Fichaje manual
+              </button>
+            )}
+          </div>
         }
       />
       <TableToolbar

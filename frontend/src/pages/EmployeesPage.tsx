@@ -16,6 +16,7 @@ import {
 import Modal from "../components/Modal";
 import PageHeader from "../components/PageHeader";
 import TableToolbar from "../components/TableToolbar";
+import EmployeeProfileTabs from "../components/EmployeeProfileTabs";
 import WorkScheduleEditor from "../components/WorkScheduleEditor";
 import { useAuth } from "../context/AuthContext";
 import {
@@ -132,6 +133,11 @@ export default function EmployeesPage() {
   const canAdmin = user && canModule(user.permissions, "admin", "employees");
   const canGroups = user && canModule(user.permissions, "write", "groups");
   const canLegalRead = user && canModule(user.permissions, "read", "legal");
+  const canDocumentsRead =
+    user && canModule(user.permissions, "read", "documents");
+  const canSignaturesRead =
+    user && canModule(user.permissions, "read", "signatures");
+  const [empTab, setEmpTab] = useState<"data" | "documents" | "signatures">("data");
 
   const panelGroupId = groups.find((g) => g.name === PANEL_GROUP_NAME)?.id;
 
@@ -229,11 +235,13 @@ export default function EmployeesPage() {
     setSchedulePeriods(defaultSchedulePeriods());
     setLegalStatus(null);
     setSelectedGroups(panelGroupId ? [panelGroupId] : []);
+    setEmpTab("data");
     setOpen(true);
   };
 
   const openEdit = async (row: Employee) => {
     setEditing(row);
+    setEmpTab("data");
     setSchedulePeriods(
       row.rotating_shift ? [] : periodsFromEmployee(row)
     );
@@ -661,9 +669,21 @@ export default function EmployeesPage() {
         xlarge
         tall
       >
-        <form onSubmit={save} className="form-grid employee-modal-form modal-form-scroll">
-          {error && <div className="alert alert-error">{error}</div>}
-          {editing && (
+        {editing && (canDocumentsRead || canSignaturesRead) ? (
+          <EmployeeProfileTabs
+            employeeId={editing.id}
+            employeeName={editing.full_name}
+            activeTab={empTab}
+            onTabChange={setEmpTab}
+            showDocuments={!!canDocumentsRead}
+            showSignatures={!!canSignaturesRead}
+          >
+            <form
+              onSubmit={save}
+              className="form-grid employee-modal-form modal-form-scroll"
+            >
+              {error && <div className="alert alert-error form-grid-full">{error}</div>}
+              {editing && (
             <label>
               Código (automático)
               <input value={editing.employee_code} readOnly disabled />
@@ -971,7 +991,324 @@ export default function EmployeesPage() {
               {saving ? "Guardando…" : "Guardar"}
             </button>
           </div>
-        </form>
+            </form>
+          </EmployeeProfileTabs>
+        ) : (
+          <form
+            onSubmit={save}
+            className="form-grid employee-modal-form modal-form-scroll"
+          >
+            {error && <div className="alert alert-error form-grid-full">{error}</div>}
+            {editing && (
+            <label>
+              Código (automático)
+              <input value={editing.employee_code} readOnly disabled />
+            </label>
+          )}
+          {!editing && (
+            <p className="muted small form-grid-full">
+              El código de empleado se asignará automáticamente (EMP-001, EMP-002…).
+            </p>
+          )}
+          <label>
+            DNI/NIE
+            <input
+              required
+              placeholder="12345678Z"
+              value={form.id_document ?? ""}
+              onChange={(ev) => setForm({ ...form, id_document: ev.target.value.toUpperCase() })}
+            />
+          </label>
+          <label>
+            Nombre completo
+            <input
+              required
+              value={form.full_name ?? ""}
+              onChange={(ev) => setForm({ ...form, full_name: ev.target.value })}
+            />
+          </label>
+          <label>
+            Teléfono (WhatsApp)
+            <input
+              required
+              value={form.phone ?? ""}
+              onChange={(ev) => setForm({ ...form, phone: ev.target.value })}
+            />
+          </label>
+          <label>
+            Email
+            <input
+              type="email"
+              value={form.email ?? ""}
+              onChange={(ev) => setForm({ ...form, email: ev.target.value })}
+            />
+          </label>
+          <label>
+            Rol
+            <select
+              value={form.role ?? "employee"}
+              onChange={(ev) => {
+                const role = ev.target.value as Role;
+                setForm({ ...form, role });
+                if (!editing && role === "employee" && panelGroupId) {
+                  setSelectedGroups([panelGroupId]);
+                }
+              }}
+            >
+              {USER_TYPE_OPTIONS.map((r) => (
+                <option key={r.value} value={r.value}>
+                  {r.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="form-grid-full">
+            Empresa
+            <select
+              required
+              value={form.company_id ?? ""}
+              onChange={(ev) => {
+                const company_id = ev.target.value || null;
+                const comp = orgTree.find((c) => c.id === company_id);
+                const firstWc = comp?.work_centers[0];
+                setForm({
+                  ...form,
+                  company_id,
+                  work_center_id: firstWc?.id ?? null,
+                  department_id: firstWc?.departments[0]?.id ?? null,
+                  shift_configuration_id: null,
+                });
+              }}
+            >
+              <option value="">Seleccionar empresa…</option>
+              {orgTree.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Centro de trabajo
+            <select
+              required
+              value={form.work_center_id ?? ""}
+              onChange={(ev) => {
+                const work_center_id = ev.target.value || null;
+                const wc = workCenters.find((w) => w.id === work_center_id);
+                setForm({
+                  ...form,
+                  work_center_id,
+                  department_id: wc?.departments[0]?.id ?? null,
+                });
+              }}
+              disabled={!form.company_id}
+            >
+              <option value="">Seleccionar centro…</option>
+              {workCenters.map((wc) => (
+                <option key={wc.id} value={wc.id}>
+                  {wc.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Departamento
+            <select
+              required
+              value={form.department_id ?? ""}
+              onChange={(ev) =>
+                setForm({ ...form, department_id: ev.target.value || null })
+              }
+              disabled={!form.work_center_id}
+            >
+              <option value="">Seleccionar departamento…</option>
+              {departments.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="form-grid-full schedule-mode">
+            <label className="checkbox schedule-mode__toggle">
+              <input
+                type="checkbox"
+                checked={form.rotating_shift ?? false}
+                onChange={(ev) =>
+                  setForm({
+                    ...form,
+                    rotating_shift: ev.target.checked,
+                    shift_configuration_id: ev.target.checked
+                      ? form.shift_configuration_id
+                      : null,
+                    weekly_hours: ev.target.checked ? form.weekly_hours : null,
+                  })
+                }
+              />
+              <strong>Turno rotativo</strong>
+              <span className="muted small">
+                El horario se define en Turnos complejos; no uses franjas aquí.
+              </span>
+            </label>
+            {form.rotating_shift ? (
+              <div className="card-inner rotating-shift-panel">
+                <label className="full">
+                  Turno complejo asignado
+                  <select
+                    required
+                    value={form.shift_configuration_id ?? ""}
+                    onChange={(ev) => {
+                      const id = ev.target.value || null;
+                      const cfg = shiftConfigs.find((s) => s.id === id);
+                      setForm({
+                        ...form,
+                        shift_configuration_id: id,
+                        weekly_hours:
+                          form.weekly_hours ??
+                          cfg?.weekly_hours ??
+                          null,
+                      });
+                    }}
+                  >
+                    <option value="">Seleccionar turno…</option>
+                    {shiftConfigs.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                        {s.weekly_hours != null ? ` (${s.weekly_hours} h/sem)` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Horas semanales
+                  <input
+                    type="number"
+                    required
+                    min={0.5}
+                    max={168}
+                    step={0.5}
+                    value={form.weekly_hours ?? ""}
+                    onChange={(ev) =>
+                      setForm({
+                        ...form,
+                        weekly_hours: ev.target.value
+                          ? parseFloat(ev.target.value)
+                          : null,
+                      })
+                    }
+                    placeholder="Ej. 40"
+                  />
+                  <span className="muted small">
+                    Jornada semanal pactada para este empleado con turno complejo.
+                  </span>
+                </label>
+                {shiftConfigs.length === 0 && (
+                  <p className="muted small">
+                    No hay turnos configurados. Crea uno en{" "}
+                    <a href="/app/turnos">Turnos</a>.
+                  </p>
+                )}
+              </div>
+            ) : (
+              <WorkScheduleEditor
+                periods={schedulePeriods}
+                onChange={setSchedulePeriods}
+              />
+            )}
+          </div>
+          {editing && legalStatus && (
+            <fieldset className="form-grid-full">
+              <legend>Aceptación legal</legend>
+              {legalStatus.all_required_accepted ? (
+                <p className="muted small">Todos los textos obligatorios están aceptados.</p>
+              ) : (
+                <p className="alert alert-warning small">
+                  Faltan aceptaciones obligatorias.
+                </p>
+              )}
+              <ul className="legal-status-list">
+                {legalStatus.items.map((item) => (
+                  <li key={item.document_id}>
+                    <strong>{item.title}</strong> (v{item.version})
+                    {" — "}
+                    {item.accepted && !item.needs_reaccept
+                      ? "Aceptado"
+                      : item.needs_reaccept
+                        ? "Debe volver a aceptar"
+                        : "Pendiente"}
+                  </li>
+                ))}
+              </ul>
+            </fieldset>
+          )}
+          {canGroups && groups.length > 0 && (
+            <fieldset className="form-grid-full">
+              <legend>Grupos de permisos</legend>
+              {!editing && (
+                <p className="muted small">
+                  Por defecto: <strong>{PANEL_GROUP_NAME}</strong>
+                </p>
+              )}
+              {groups.map((g) => (
+                <label key={g.id} className="checkbox">
+                  <input
+                    type="checkbox"
+                    checked={selectedGroups.includes(g.id)}
+                    onChange={() =>
+                      setSelectedGroups((prev) =>
+                        prev.includes(g.id)
+                          ? prev.filter((id) => id !== g.id)
+                          : [...prev, g.id]
+                      )
+                    }
+                  />
+                  {g.name}
+                </label>
+              ))}
+            </fieldset>
+          )}
+          <label>
+            Contraseña panel
+            <input
+              type="password"
+              placeholder={editing ? "Dejar vacío = sin cambio" : "Opcional"}
+              value={form.password ?? ""}
+              onChange={(ev) => setForm({ ...form, password: ev.target.value })}
+            />
+          </label>
+          <label>
+            Días vacaciones
+            <input
+              type="number"
+              step="0.5"
+              value={form.vacation_days_balance ?? 22}
+              onChange={(ev) =>
+                setForm({
+                  ...form,
+                  vacation_days_balance: parseFloat(ev.target.value),
+                })
+              }
+            />
+          </label>
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={form.is_active ?? true}
+              onChange={(ev) => setForm({ ...form, is_active: ev.target.checked })}
+            />
+            Activo
+          </label>
+          <div className="form-actions form-grid-full">
+            <button type="button" className="btn" onClick={() => setOpen(false)}>
+              Cancelar
+            </button>
+            <button type="submit" className="btn btn-primary" disabled={saving}>
+              {saving ? "Guardando…" : "Guardar"}
+            </button>
+          </div>
+          </form>
+        )}
       </Modal>
     </>
   );

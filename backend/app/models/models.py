@@ -162,6 +162,8 @@ class Employee(SQLModel, table=True):
         le=168,
         description="Horas semanales pactadas (turno rotativo/complejo)",
     )
+    welcome_sent_at: datetime | None = Field(default=None)
+    last_clock_reminder_at: datetime | None = Field(default=None)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 

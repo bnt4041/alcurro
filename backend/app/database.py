@@ -24,6 +24,12 @@ from app.models.signature import (  # noqa: F401
     SignatureSigner,
 )
 from app.models.models import Employee  # noqa: F401
+from app.models.ai import (  # noqa: F401
+    AiAction,
+    AiConversationRule,
+    AiProfileAction,
+    AiUsageRecord,
+)
 from app.models.documents import (  # noqa: F401
     DocumentDelivery,
     DocumentDeliveryTag,
@@ -31,6 +37,10 @@ from app.models.documents import (  # noqa: F401
     DocumentNotificationSettings,
     DocumentTag,
     DocumentType,
+)
+from app.models.clock_settings import (  # noqa: F401
+    ClockSettings,
+    EmployeeInboundDocument,
 )
 
 settings = get_settings()

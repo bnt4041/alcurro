@@ -8,6 +8,7 @@ import { ToastProvider } from "./context/ToastContext";
 import AccountPage from "./pages/AccountPage";
 import BreaksPage from "./pages/BreaksPage";
 import ClockInsPage from "./pages/ClockInsPage";
+import ClockSettingsPage from "./pages/ClockSettingsPage";
 import Dashboard from "./pages/Dashboard";
 import DocumentsPage from "./pages/DocumentsPage";
 import LegalPage from "./pages/LegalPage";
@@ -24,6 +25,7 @@ import PlatformPricingPage from "./pages/PlatformPricingPage";
 import PlatformStripePage from "./pages/PlatformStripePage";
 import PlatformWhatsAppPage from "./pages/PlatformWhatsAppPage";
 import PlatformMailPage from "./pages/PlatformMailPage";
+import PlatformAIPage from "./pages/PlatformAIPage";
 import ShiftsPage from "./pages/ShiftsPage";
 import SignupPage from "./pages/SignupPage";
 import SignupSimulatePaymentPage from "./pages/SignupSimulatePaymentPage";
@@ -60,6 +62,7 @@ export default function App() {
                 <Route path="cobros" element={<PlatformStripePage />} />
                 <Route path="whatsapp" element={<PlatformWhatsAppPage />} />
                 <Route path="mail" element={<PlatformMailPage />} />
+                <Route path="ia" element={<PlatformAIPage />} />
               </Route>
             </Route>
 
@@ -67,6 +70,7 @@ export default function App() {
               <Route path="/app" element={<Layout />}>
                 <Route index element={<Dashboard />} />
                 <Route path="fichajes" element={<ClockInsPage />} />
+                <Route path="fichajes/configuracion" element={<ClockSettingsPage />} />
                 <Route path="paradas" element={<BreaksPage />} />
                 <Route path="organizacion" element={<OrganizationPage />} />
                 <Route path="empleados" element={<EmployeesPage />} />

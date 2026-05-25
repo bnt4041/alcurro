@@ -36,6 +36,9 @@ class GoWAMessage(BaseModel):
     body: str | None = None
     location: GoWALocation | None = None
     caption: str | None = None
+    media_path: str | None = None
+    file_name: str | None = None
+    mimetype: str | None = None
 
     model_config = {"populate_by_name": True}
 
@@ -48,8 +51,14 @@ class GoWAMessage(BaseModel):
         return self.location is not None
 
     @property
+    def is_media(self) -> bool:
+        if self.media_path:
+            return True
+        return self.type in ("image", "document", "video", "sticker", "audio")
+
+    @property
     def is_text(self) -> bool:
-        return bool(self.plain_text) and not self.is_location
+        return bool(self.plain_text) and not self.is_location and not self.is_media
 
 
 class GoWAWebhookPayload(BaseModel):
@@ -70,15 +79,31 @@ class GoWAWebhookPayload(BaseModel):
         if data.get("event") == "message" and isinstance(data.get("payload"), dict):
             p = data["payload"]
             loc = p.get("location") or p.get("live_location")
+            msg_type = p.get("type") or "text"
+            media_path = (
+                p.get("path")
+                or p.get("media_path")
+                or p.get("file_path")
+                or (p.get("image") or {}).get("path")
+                if isinstance(p.get("image"), dict)
+                else None
+            )
+            if not media_path and isinstance(p.get("document"), dict):
+                media_path = p["document"].get("path")
             return {
                 "event": data.get("event"),
                 "device_id": data.get("device_id"),
                 "message": {
                     "from": p.get("from", ""),
                     "id": p.get("id"),
+                    "type": msg_type,
                     "body": p.get("body"),
                     "text": p.get("text"),
+                    "caption": p.get("caption"),
                     "location": loc,
+                    "media_path": media_path,
+                    "file_name": p.get("filename") or p.get("file_name"),
+                    "mimetype": p.get("mimetype") or p.get("mime_type"),
                 },
             }
         return data

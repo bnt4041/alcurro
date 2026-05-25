@@ -73,6 +73,57 @@ export interface WorkSchedulePeriod {
   blocks: WorkScheduleDayBlock[];
 }
 
+export interface InboundDocumentType {
+  code: string;
+  name: string;
+  description: string;
+  optional?: boolean;
+  kind?: string;
+}
+
+export interface CompanySignatureDocument {
+  id: string;
+  company_id: string | null;
+  company_name: string | null;
+  title: string;
+  file_name: string;
+  document_type: string;
+}
+
+export interface EmployeeInboundDocument {
+  id: string;
+  employee_id: string;
+  document_code: string;
+  document_name: string;
+  status: string;
+  document_delivery_id: string | null;
+  signature_envelope_id: string | null;
+  received_at: string | null;
+  created_at: string;
+}
+
+export interface ClockSettings {
+  tenant_id: string;
+  require_geolocation: boolean;
+  clock_reminder_minutes: number | null;
+  incident_reminder_enabled: boolean;
+  incident_reminder_minutes: number | null;
+  inbound_documents_enabled: boolean;
+  inbound_document_codes: string[];
+  inbound_signature_delivery_ids: string[];
+  send_welcome_with_documents: boolean;
+  welcome_message_extra: string | null;
+  updated_at: string;
+  available_inbound_types: InboundDocumentType[];
+  company_signature_documents: CompanySignatureDocument[];
+}
+
+export interface ClockReminderRunResult {
+  sent: number;
+  skipped: number;
+  errors: string[];
+}
+
 export interface ClockIn {
   id: string;
   employee_id: string;

@@ -52,6 +52,24 @@ class GoWAService:
                 return response.json()
             return {"ok": True}
 
+    def send_text_sync(self, phone: str, text: str) -> dict:
+        if not self._send_url:
+            raise RuntimeError("WhatsApp no configurado en la plataforma")
+        payload = {
+            "phone": format_phone_for_gowa(phone, self._country_iso),
+            "message": text,
+        }
+        with httpx.Client(timeout=30.0) as client:
+            response = client.post(
+                self._send_url,
+                json=payload,
+                headers=self._headers(),
+            )
+            response.raise_for_status()
+            if response.content:
+                return response.json()
+            return {"ok": True}
+
     async def send_link(self, phone: str, url: str, caption: str) -> dict:
         """Envía enlace clicable (goWA /send/link) con la URL también en el texto."""
         link_url = self._link_send_url()

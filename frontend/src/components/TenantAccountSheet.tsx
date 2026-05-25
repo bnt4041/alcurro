@@ -2,6 +2,7 @@ import { FormEvent, useState } from "react";
 import type { Role } from "../api/types";
 import InvoiceHistoryTable from "./InvoiceHistoryTable";
 import SubscriptionSummaryCard from "./SubscriptionSummaryCard";
+import TenantAIUsagePanel from "./TenantAIUsagePanel";
 import TenantBillingTab, { TenantBillingOverview } from "./TenantBillingTab";
 import { ROLE_LABELS } from "../lib/permissions";
 import { normalizeAccountCode } from "../lib/slug";
@@ -22,7 +23,7 @@ export type TenantFormState = {
   is_active: boolean;
 };
 
-export type AccountSheetTab = "general" | "billing" | "users";
+export type AccountSheetTab = "general" | "billing" | "users" | "ia";
 
 export interface TenantUserRow {
   id: string;
@@ -79,6 +80,7 @@ const TABS: { id: AccountSheetTab; label: string }[] = [
   { id: "general", label: "General" },
   { id: "billing", label: "Facturación" },
   { id: "users", label: "Usuarios" },
+  { id: "ia", label: "IA" },
 ];
 
 export default function TenantAccountSheet({
@@ -378,6 +380,20 @@ export default function TenantAccountSheet({
                 />
               )}
             </>
+          )}
+
+          {tab === "ia" && (
+            <div className="sheet-tab-panel" role="tabpanel">
+              {!isEdit || !tenantId ? (
+                <div className="sheet-placeholder">
+                  <p className="muted">
+                    El consumo de IA se muestra al editar una cuenta existente.
+                  </p>
+                </div>
+              ) : (
+                <TenantAIUsagePanel tenantId={tenantId} />
+              )}
+            </div>
           )}
 
           {tab === "users" && (

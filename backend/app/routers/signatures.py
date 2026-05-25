@@ -35,6 +35,7 @@ def list_envelopes(
     session: Session = Depends(get_session),
     user: Employee = Depends(get_current_user),
     status: str | None = None,
+    employee_id: UUID | None = None,
     _: object = Depends(require_permission(Permission.READ, "signatures")),
 ) -> list[SignatureEnvelopeRead]:
     stmt = (
@@ -53,6 +54,17 @@ def list_envelopes(
         stmt = stmt.where(SignatureEnvelope.id.in_(own_env_ids))  # type: ignore[attr-defined]
     if status:
         stmt = stmt.where(SignatureEnvelope.status == status)
+    if employee_id:
+        env_ids = list(
+            session.exec(
+                select(SignatureSigner.envelope_id).where(
+                    SignatureSigner.employee_id == employee_id
+                )
+            ).all()
+        )
+        if not env_ids:
+            return []
+        stmt = stmt.where(SignatureEnvelope.id.in_(env_ids))  # type: ignore[attr-defined]
     rows = list(session.exec(stmt).all())
     return [envelope_to_read(session, e) for e in rows]
 

@@ -5,6 +5,7 @@ from app.routers import (
     auth,
     breaks,
     clock_ins,
+    clock_settings,
     documents,
     employees,
     groups,
@@ -17,6 +18,7 @@ from app.routers import (
     platform_stripe,
     platform_whatsapp,
     platform_mail,
+    platform_ai,
     public,
     settings,
     shifts,
@@ -38,6 +40,7 @@ api_router.include_router(platform_catalog.router)
 api_router.include_router(platform_stripe.router)
 api_router.include_router(platform_whatsapp.router)
 api_router.include_router(platform_mail.router)
+api_router.include_router(platform_ai.router)
 api_router.add_api_route(
     "/tenants/public/{slug}/branding",
     tenants.public_branding,
@@ -50,6 +53,7 @@ protected = APIRouter(dependencies=[Depends(get_current_user)])
 protected.include_router(tenants.router)
 protected.include_router(employees.router)
 protected.include_router(clock_ins.router)
+protected.include_router(clock_settings.router)
 protected.include_router(breaks.router)
 protected.include_router(legal.router)
 protected.include_router(leave_requests.router)

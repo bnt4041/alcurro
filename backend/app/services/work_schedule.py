@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import date, time
+from datetime import date, datetime, time
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field, model_validator
+
+if TYPE_CHECKING:
+    from app.models.models import Employee
 
 
 class WorkScheduleTimeSlot(BaseModel):
@@ -195,3 +199,73 @@ def normalize_employee_schedule(payload: dict) -> dict:
         payload["work_schedule_blocks"] = legacy_blocks
 
     return payload
+
+
+def parse_schedule_time(value: str | time | None) -> time | None:
+    if value is None:
+        return None
+    if isinstance(value, time):
+        return value
+    parts = str(value).strip().split(":")
+    if len(parts) < 2:
+        return None
+    return time(int(parts[0]), int(parts[1]))
+
+
+def active_period_for_date(employee: Employee, on_date: date) -> dict | None:
+    periods = employee.work_schedule_periods or []
+    if not periods:
+        return None
+    candidates: list[dict] = []
+    for raw in periods:
+        vf = date.fromisoformat(str(raw["valid_from"]))
+        vt_raw = raw.get("valid_to")
+        vt = date.fromisoformat(str(vt_raw)) if vt_raw else None
+        if vf <= on_date and (vt is None or on_date <= vt):
+            candidates.append(raw)
+    if not candidates:
+        return None
+    return max(candidates, key=lambda p: date.fromisoformat(str(p["valid_from"])))
+
+
+def slots_for_day(employee: Employee, on_date: date) -> list[tuple[time, time]]:
+    """Franjas horarias del día (inicio, fin). Vacío si no trabaja ese día."""
+    weekday = on_date.weekday()
+    period = active_period_for_date(employee, on_date)
+    if period:
+        slots: list[tuple[time, time]] = []
+        for block in period.get("blocks") or []:
+            if weekday not in (block.get("work_days") or []):
+                continue
+            for slot in block.get("slots") or []:
+                start = parse_schedule_time(slot.get("work_start_time"))
+                end = parse_schedule_time(slot.get("work_end_time"))
+                if start and end and start < end:
+                    slots.append((start, end))
+        return slots
+
+    days = employee.work_days or []
+    if weekday in days and employee.work_start_time and employee.work_end_time:
+        if employee.work_start_time < employee.work_end_time:
+            return [(employee.work_start_time, employee.work_end_time)]
+    return []
+
+
+def is_work_day(employee: Employee, on_date: date) -> bool:
+    return bool(slots_for_day(employee, on_date))
+
+
+def is_within_working_hours(employee: Employee, at: datetime) -> bool:
+    """True si `at` cae dentro de alguna franja laboral del día."""
+    current = at.time()
+    for start, end in slots_for_day(employee, at.date()):
+        if start <= current <= end:
+            return True
+    return False
+
+
+def earliest_work_start(employee: Employee, on_date: date) -> time | None:
+    slots = slots_for_day(employee, on_date)
+    if not slots:
+        return None
+    return min(s[0] for s in slots)

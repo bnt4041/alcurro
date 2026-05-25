@@ -24,7 +24,13 @@ from app.schemas.whatsapp import normalize_mobile_digits
 from app.services.code_generator import next_employee_code
 from app.services.id_document import validate_id_document
 from app.services.rbac_service import assign_role_default_group
+from app.models.documents import DocumentDelivery
+from app.models.signature import SignatureEnvelope, SignatureSigner
+from app.schemas.documents import DocumentDeliveryRead
+from app.schemas.signature import SignatureEnvelopeRead
+from app.services.document_service import delivery_to_read
 from app.services.scope_service import assert_employee_target, read_scope_employee_ids
+from app.services.signature_service import envelope_to_read
 from app.services.work_schedule import normalize_employee_schedule
 
 router = APIRouter(prefix="/employees", tags=["employees"])
@@ -206,6 +212,59 @@ def bulk_update_schedule(
     return EmployeeBulkScheduleResult(updated=updated, skipped=skipped, errors=errors)
 
 
+@router.get("/{employee_id}/documents", response_model=list[DocumentDeliveryRead])
+def employee_documents(
+    employee_id: UUID,
+    ctx: OrgContext = Depends(get_org_context),
+    session: Session = Depends(get_session),
+    user: Employee = Depends(get_current_user),
+    _: object = Depends(require_permission(Permission.READ, "documents")),
+) -> list[DocumentDeliveryRead]:
+    row = get_or_404(session, Employee, employee_id)
+    if row.id not in _scope_ids(ctx, session, user):
+        raise HTTPException(status_code=404, detail="Empleado no encontrado")
+    docs = session.exec(
+        select(DocumentDelivery)
+        .where(
+            DocumentDelivery.tenant_id == ctx.tenant.id,
+            DocumentDelivery.employee_id == employee_id,
+        )
+        .order_by(DocumentDelivery.created_at.desc())  # type: ignore[attr-defined]
+    ).all()
+    return [delivery_to_read(session, d) for d in docs]
+
+
+@router.get("/{employee_id}/signatures", response_model=list[SignatureEnvelopeRead])
+def employee_signatures(
+    employee_id: UUID,
+    ctx: OrgContext = Depends(get_org_context),
+    session: Session = Depends(get_session),
+    user: Employee = Depends(get_current_user),
+    _: object = Depends(require_permission(Permission.READ, "signatures")),
+) -> list[SignatureEnvelopeRead]:
+    row = get_or_404(session, Employee, employee_id)
+    if row.id not in _scope_ids(ctx, session, user):
+        raise HTTPException(status_code=404, detail="Empleado no encontrado")
+    env_ids = list(
+        session.exec(
+            select(SignatureSigner.envelope_id).where(
+                SignatureSigner.employee_id == employee_id
+            )
+        ).all()
+    )
+    if not env_ids:
+        return []
+    rows = session.exec(
+        select(SignatureEnvelope)
+        .where(
+            SignatureEnvelope.tenant_id == ctx.tenant.id,
+            SignatureEnvelope.id.in_(env_ids),  # type: ignore[attr-defined]
+        )
+        .order_by(SignatureEnvelope.created_at.desc())  # type: ignore[attr-defined]
+    ).all()
+    return [envelope_to_read(session, e) for e in rows]
+
+
 @router.get("/{employee_id}", response_model=EmployeeRead)
 def get_employee(
     employee_id: UUID,
@@ -313,6 +372,27 @@ def create_employee(
     session.add(row)
     session.flush()
     assign_role_default_group(session, row, ctx.tenant.id)
+
+    from app.services.clock_settings_service import get_or_create_settings
+    from app.services.employee_onboarding_service import (
+        build_welcome_message,
+        mark_welcome_sent,
+        seed_inbound_documents,
+    )
+    from app.services.gowa_service import GoWAService
+
+    seed_inbound_documents(session, row.id, ctx.tenant.id)
+    clock_cfg = get_or_create_settings(session, ctx.tenant.id)
+    if clock_cfg.send_welcome_with_documents:
+        try:
+            GoWAService(session).send_text_sync(
+                row.phone,
+                build_welcome_message(session, row, ctx.tenant.name),
+            )
+            mark_welcome_sent(session, row)
+        except Exception:
+            pass
+
     session.commit()
     session.refresh(row)
     return row
