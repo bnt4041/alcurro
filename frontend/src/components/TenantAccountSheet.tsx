@@ -1,5 +1,6 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useMemo, useState } from "react";
 import type { Role } from "../api/types";
+import DataTable, { type DataTableColumn } from "./DataTable";
 import InvoiceHistoryTable from "./InvoiceHistoryTable";
 import SubscriptionSummaryCard from "./SubscriptionSummaryCard";
 import TenantAIUsagePanel from "./TenantAIUsagePanel";
@@ -135,6 +136,48 @@ export default function TenantAccountSheet({
       password: "",
     });
   };
+
+  type UserTableRow = TenantUserRow & { role_label: string; status_label: string };
+
+  const userTableData = useMemo<UserTableRow[]>(
+    () =>
+      users.map((u) => ({
+        ...u,
+        role_label: ROLE_LABELS[u.role as Role] ?? u.role,
+        status_label: u.is_active ? "Activo" : "Inactivo",
+      })),
+    [users]
+  );
+
+  const userColumns = useMemo<DataTableColumn<UserTableRow>[]>(
+    () => [
+      {
+        title: "Usuario",
+        field: "employee_code",
+        headerFilter: "input",
+        formatter: (c) => `<code>${String(c.getValue())}</code>`,
+        width: 110,
+      },
+      { title: "Nombre", field: "full_name", headerFilter: "input", minWidth: 140 },
+      { title: "Teléfono", field: "phone", headerFilter: "input", width: 120 },
+      { title: "Rol", field: "role_label", headerFilter: "input", width: 120 },
+      {
+        title: "Empresa",
+        field: "company_name",
+        headerFilter: "input",
+        formatter: (c) => `<span class="muted small">${String(c.getValue())}</span>`,
+        minWidth: 120,
+      },
+      {
+        title: "Estado",
+        field: "status_label",
+        headerFilter: "select",
+        headerFilterParams: { values: { "": "Todos", Activo: "Activo", Inactivo: "Inactivo" } },
+        width: 90,
+      },
+    ],
+    []
+  );
 
   if (!open) return null;
 
@@ -503,34 +546,13 @@ export default function TenantAccountSheet({
                   ) : users.length === 0 ? (
                     <p className="muted small">Aún no hay usuarios en esta cuenta.</p>
                   ) : (
-                    <div className="table-wrap">
-                      <table className="sheet-users-table">
-                        <thead>
-                          <tr>
-                            <th>Usuario</th>
-                            <th>Nombre</th>
-                            <th>Teléfono</th>
-                            <th>Rol</th>
-                            <th>Empresa</th>
-                            <th>Estado</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {users.map((u) => (
-                            <tr key={u.id} className={!u.is_active ? "row-inactive" : ""}>
-                              <td>
-                                <code>{u.employee_code}</code>
-                              </td>
-                              <td>{u.full_name}</td>
-                              <td>{u.phone}</td>
-                              <td>{ROLE_LABELS[u.role] ?? u.role}</td>
-                              <td className="muted small">{u.company_name}</td>
-                              <td>{u.is_active ? "Activo" : "Inactivo"}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                    <DataTable
+                      data={userTableData}
+                      columns={userColumns}
+                      loading={usersLoading}
+                      exportFilename="usuarios_cuenta"
+                      height="360px"
+                    />
                   )}
                 </>
               )}

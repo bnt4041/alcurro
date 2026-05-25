@@ -10,6 +10,7 @@ from sqlmodel import Session, select
 
 from app.models.models import Employee
 from app.models.organization import Department, WorkCenter
+from app.models.project import Project
 
 _CODE_SUFFIX = re.compile(r"^([A-Z]+)-(\d+)$", re.IGNORECASE)
 
@@ -44,6 +45,14 @@ def next_department_code(session: Session, work_center_id: UUID) -> str:
     ).all()
     n = _max_suffix(list(rows), "DEP") + 1
     return _format_code("DEP", n)
+
+
+def next_project_code(session: Session, company_id: UUID) -> str:
+    rows = session.exec(
+        select(Project.code).where(Project.company_id == company_id)
+    ).all()
+    n = _max_suffix(list(rows), "PRY") + 1
+    return _format_code("PRY", n)
 
 
 def next_employee_code(session: Session, company_id: UUID) -> str:

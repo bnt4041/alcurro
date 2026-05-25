@@ -14,7 +14,7 @@ from app.services.ai_config_service import build_rules_prompt
 BASE_SYSTEM_PROMPT = """Eres un clasificador de intenciones para un sistema HRM español por WhatsApp.
 Analiza el mensaje del empleado y responde ÚNICAMENTE con un JSON válido (sin markdown):
 {
-  "intent": "<una de: fichar_entrada, fichar_salida, inicio_parada, fin_parada, solicitar_vacaciones, consultar_saldo_vacaciones, confirmar_documento, desconocido>",
+  "intent": "<una de: fichar_entrada, fichar_salida, inicio_parada, fin_parada, solicitar_vacaciones, consultar_saldo_vacaciones, confirmar_documento, resumen_dia, desconocido>",
   "entities": { "fecha_inicio": "YYYY-MM-DD", "fecha_fin": "YYYY-MM-DD", "motivo": "..." },
   "confidence": 0.0-1.0
 }
@@ -26,6 +26,7 @@ Reglas base:
 - vacaciones, días libres, permiso -> solicitar_vacaciones (extrae fechas si las hay)
 - saldo vacaciones, cuántos días tengo -> consultar_saldo_vacaciones
 - "recibido", "acepto", "confirmo" documento/nómina -> confirmar_documento
+- resumen del día, resumen hoy, qué he fichado hoy -> resumen_dia
 - Si no encaja: desconocido con entities vacío
 """
 
@@ -133,6 +134,18 @@ class OllamaService:
             return OllamaIntentResponse(intent="consultar_saldo_vacaciones", confidence=0.6)
         if any(w in t for w in ("recibido", "acepto", "confirmo")):
             return OllamaIntentResponse(intent="confirmar_documento", confidence=0.6)
+        if any(
+            w in t
+            for w in (
+                "resumen del dia",
+                "resumen del día",
+                "resumen hoy",
+                "resumen de hoy",
+                "que he fichado",
+                "qué he fichado",
+            )
+        ):
+            return OllamaIntentResponse(intent="resumen_dia", confidence=0.75)
         return OllamaIntentResponse(intent="desconocido", confidence=0.3)
 
     @staticmethod

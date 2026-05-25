@@ -3,7 +3,7 @@ import { api, buildQuery } from "../api/client";
 import type { BreakType } from "../api/types";
 import Modal from "../components/Modal";
 import PageHeader from "../components/PageHeader";
-import TableToolbar from "../components/TableToolbar";
+import DataTable, { type DataTableColumn } from "../components/DataTable";
 import { useAuth } from "../context/AuthContext";
 import { useEmployees } from "../hooks/useEmployees";
 import { canModule } from "../lib/permissions";
@@ -49,6 +49,12 @@ const BREAK_LABELS: Record<BreakType, string> = {
   fin_parada: "Fin parada",
 };
 
+type BreakRow = WorkBreak & {
+  employee_name: string;
+  recorded_at_label: string;
+  type_label: string;
+};
+
 function formatDuration(minutes: number): string {
   const h = Math.floor(minutes / 60);
   const m = minutes % 60;
@@ -61,8 +67,7 @@ export default function BreaksPage() {
   const { employees, byId } = useEmployees();
   const [rows, setRows] = useState<WorkBreak[]>([]);
   const [summary, setSummary] = useState<BreakSummaryResponse | null>(null);
-  const [search, setSearch] = useState("");
-  const [typeFilter, setTypeFilter] = useState("");
+  const [loading, setLoading] = useState(true);
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [open, setOpen] = useState(false);
@@ -71,30 +76,68 @@ export default function BreaksPage() {
     record_type: "inicio_parada" as BreakType,
     notes: "",
   });
-  const canWrite = user && canModule(user.permissions, "write", "breaks");
   const canCreate = user && canModule(user.permissions, "create", "breaks");
 
   const load = useCallback(async () => {
-    const path = buildQuery({
-      q: search || undefined,
-      record_type: typeFilter || undefined,
-      limit: "300",
-    });
-    const summaryPath = buildQuery({
-      from: fromDate || undefined,
-      to: toDate || undefined,
-    });
-    const [list, sum] = await Promise.all([
-      api.get<WorkBreak[]>(`/breaks${path}`),
-      api.get<BreakSummaryResponse>(`/breaks/summary${summaryPath}`),
-    ]);
-    setRows(list);
-    setSummary(sum);
-  }, [search, typeFilter, fromDate, toDate]);
+    setLoading(true);
+    try {
+      const summaryPath = buildQuery({
+        from: fromDate || undefined,
+        to: toDate || undefined,
+      });
+      const [list, sum] = await Promise.all([
+        api.get<WorkBreak[]>(`/breaks?limit=2000`),
+        api.get<BreakSummaryResponse>(`/breaks/summary${summaryPath}`),
+      ]);
+      setRows(list);
+      setSummary(sum);
+    } finally {
+      setLoading(false);
+    }
+  }, [fromDate, toDate]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  const breakTableData = rows.map((r) => ({
+    ...r,
+    employee_name: byId(r.employee_id),
+    recorded_at_label: new Date(r.recorded_at).toLocaleString("es-ES"),
+    type_label: BREAK_LABELS[r.record_type],
+  }));
+
+  const breakColumns: DataTableColumn<BreakRow>[] = [
+    {
+      title: "Fecha/hora",
+      field: "recorded_at",
+      headerFilter: "input",
+      sorter: "datetime",
+      formatter: (c) => new Date(String(c.getValue())).toLocaleString("es-ES"),
+      minWidth: 160,
+    },
+    { title: "Empleado", field: "employee_name", headerFilter: "input", minWidth: 140 },
+    {
+      title: "Tipo",
+      field: "type_label",
+      headerFilter: "select",
+      headerFilterParams: {
+        values: {
+          "": "Todos",
+          "Inicio parada": "Inicio parada",
+          "Fin parada": "Fin parada",
+        },
+      },
+      width: 130,
+    },
+    { title: "Origen", field: "source", headerFilter: "input", width: 100 },
+    {
+      title: "Notas",
+      field: "notes",
+      headerFilter: "input",
+      formatter: (c) => String(c.getValue() ?? "—"),
+    },
+  ];
 
   const save = async (e: FormEvent) => {
     e.preventDefault();
@@ -139,26 +182,19 @@ export default function BreaksPage() {
           </div>
         </div>
         {summary && summary.by_company.length > 0 ? (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Empresa</th>
-                  <th>Empleados</th>
-                  <th>Tiempo en parada</th>
-                </tr>
-              </thead>
-              <tbody>
-                {summary.by_company.map((c) => (
-                  <tr key={c.company_id}>
-                    <td>{c.company_name}</td>
-                    <td>{c.employee_count}</td>
-                    <td>{formatDuration(c.total_minutes)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            data={summary.by_company.map((c) => ({
+              ...c,
+              duration_label: formatDuration(c.total_minutes),
+            }))}
+            columns={[
+              { title: "Empresa", field: "company_name", headerFilter: "input" },
+              { title: "Empleados", field: "employee_count", headerFilter: "number" },
+              { title: "Tiempo en parada", field: "duration_label", headerFilter: "input" },
+            ]}
+            exportFilename="resumen_paradas_empresa"
+            height="220px"
+          />
         ) : (
           <p className="muted small">Sin paradas en el periodo seleccionado.</p>
         )}
@@ -167,82 +203,41 @@ export default function BreaksPage() {
       {summary && summary.rows.length > 0 && (
         <section className="card settings-section">
           <h3>Detalle por empleado</h3>
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Empleado</th>
-                  <th>Código</th>
-                  <th>Tiempo parada</th>
-                  <th>Inicios</th>
-                  <th>Fines</th>
-                  <th>Abiertas</th>
-                </tr>
-              </thead>
-              <tbody>
-                {summary.rows
-                  .filter((r) => r.total_minutes > 0 || r.break_starts > 0)
-                  .map((r) => (
-                    <tr key={r.employee_id}>
-                      <td>{r.employee_name}</td>
-                      <td>
-                        <code>{r.employee_code}</code>
-                      </td>
-                      <td>{formatDuration(r.total_minutes)}</td>
-                      <td>{r.break_starts}</td>
-                      <td>{r.break_ends}</td>
-                      <td>{r.open_breaks > 0 ? r.open_breaks : "—"}</td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            data={summary.rows
+              .filter((r) => r.total_minutes > 0 || r.break_starts > 0)
+              .map((r) => ({
+                ...r,
+                duration_label: formatDuration(r.total_minutes),
+                open_label: r.open_breaks > 0 ? String(r.open_breaks) : "—",
+              }))}
+            columns={[
+              { title: "Empleado", field: "employee_name", headerFilter: "input" },
+              {
+                title: "Código",
+                field: "employee_code",
+                headerFilter: "input",
+                formatter: (c) => `<code>${c.getValue()}</code>`,
+              },
+              { title: "Tiempo parada", field: "duration_label", headerFilter: "input" },
+              { title: "Inicios", field: "break_starts", headerFilter: "number" },
+              { title: "Fines", field: "break_ends", headerFilter: "number" },
+              { title: "Abiertas", field: "open_label", headerFilter: "input" },
+            ]}
+            exportFilename="resumen_paradas_empleados"
+            height="280px"
+          />
         </section>
       )}
 
-      <TableToolbar
-        search={search}
-        onSearchChange={setSearch}
-        onSubmit={load}
-        placeholder="Buscar por empleado…"
-        filters={[
-          {
-            label: "Tipo",
-            value: typeFilter,
-            onChange: setTypeFilter,
-            options: [
-              { value: "inicio_parada", label: "Inicio parada" },
-              { value: "fin_parada", label: "Fin parada" },
-            ],
-          },
-        ]}
+      <h3 className="employee-profile-subtitle">Registro de paradas</h3>
+      <DataTable
+        data={breakTableData}
+        columns={breakColumns}
+        loading={loading}
+        exportFilename="paradas"
+        height="480px"
       />
-      <div className="table-wrap card">
-        <table>
-          <thead>
-            <tr>
-              <th>Fecha/hora</th>
-              <th>Empleado</th>
-              <th>Tipo</th>
-              <th>Origen</th>
-              <th>Notas</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr key={r.id}>
-                <td>{new Date(r.recorded_at).toLocaleString("es-ES")}</td>
-                <td>{byId(r.employee_id)}</td>
-                <td>
-                  <span className="badge">{BREAK_LABELS[r.record_type]}</span>
-                </td>
-                <td>{r.source}</td>
-                <td>{r.notes ?? "—"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
 
       <Modal title="Parada manual" open={open && !!canCreate} onClose={() => setOpen(false)}>
         <form onSubmit={save} className="form-grid">

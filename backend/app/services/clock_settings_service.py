@@ -153,6 +153,8 @@ def settings_to_read(session: Session, row: ClockSettings) -> ClockSettingsRead:
         inbound_signature_delivery_ids=sig_ids,
         send_welcome_with_documents=row.send_welcome_with_documents,
         welcome_message_extra=row.welcome_message_extra,
+        daily_summary_enabled=row.daily_summary_enabled,
+        require_project_on_clock_in=row.require_project_on_clock_in,
         updated_at=row.updated_at,
         available_inbound_types=catalog_reads(),
         company_signature_documents=list_company_signature_documents(

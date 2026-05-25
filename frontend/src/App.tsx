@@ -18,6 +18,9 @@ import HomePage from "./pages/HomePage";
 import LeaveRequestsPage from "./pages/LeaveRequestsPage";
 import LoginPage from "./pages/LoginPage";
 import OrganizationPage from "./pages/OrganizationPage";
+import ProjectsPage from "./pages/ProjectsPage";
+import IncidentsPage from "./pages/IncidentsPage";
+import JustifyIncidentPage from "./pages/JustifyIncidentPage";
 import PlatformDiscountsPage from "./pages/PlatformDiscountsPage";
 import PlatformPage from "./pages/PlatformPage";
 import PlatformUsersPage from "./pages/PlatformUsersPage";
@@ -47,6 +50,10 @@ export default function App() {
             </Route>
 
             <Route path="/firmar/:token" element={<SignDocumentPage />} />
+            <Route
+              path="/justificar-incidencia/:token"
+              element={<JustifyIncidentPage />}
+            />
 
             <Route path="/acceso" element={<LoginPage />} />
             <Route path="/login" element={<Navigate to="/acceso" replace />} />
@@ -71,8 +78,10 @@ export default function App() {
                 <Route index element={<Dashboard />} />
                 <Route path="fichajes" element={<ClockInsPage />} />
                 <Route path="fichajes/configuracion" element={<ClockSettingsPage />} />
+                <Route path="incidencias" element={<IncidentsPage />} />
                 <Route path="paradas" element={<BreaksPage />} />
                 <Route path="organizacion" element={<OrganizationPage />} />
+                <Route path="proyectos" element={<ProjectsPage />} />
                 <Route path="empleados" element={<EmployeesPage />} />
                 <Route path="vacaciones" element={<LeaveRequestsPage />} />
                 <Route path="turnos" element={<ShiftsPage />} />

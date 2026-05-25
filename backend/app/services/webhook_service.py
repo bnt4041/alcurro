@@ -8,8 +8,14 @@ from app.models.tenant import Tenant
 from app.schemas.ollama import OllamaIntentResponse
 from app.schemas.whatsapp import GoWAMessage, GoWAWebhookPayload
 from app.services.break_service import BreakService
+from app.services.clock_pending_service import clear_pending, get_pending, set_pending
+from app.services.clock_incident_hook import (
+    should_notify_whatsapp,
+    whatsapp_message_for_incident,
+)
 from app.services.clock_service import ClockService
 from app.services.clock_settings_service import get_or_create_settings
+from app.services.daily_summary_service import build_daily_summary
 from app.services.employee_onboarding_service import (
     build_welcome_message,
     mark_welcome_sent,
@@ -22,6 +28,11 @@ from app.services.leave_service import LeaveService
 from app.services.ai_config_service import is_action_allowed_for_role
 from app.services.ai_usage_service import profile_key_for_employee
 from app.services.ollama_service import OllamaService
+from app.services.project_service import (
+    format_project_picker_message,
+    list_active_projects,
+    resolve_project_from_reply,
+)
 
 
 class WebhookService:
@@ -43,6 +54,20 @@ class WebhookService:
         )
         self._gowa = GoWAService(session)
         self._settings = get_or_create_settings(session, tenant_id)
+
+    async def _notify_incident_if_needed(self, phone: str) -> None:
+        inc = self._clock.last_incident
+        self._clock.last_incident = None
+        if not inc or not should_notify_whatsapp(
+            self._session, self._tenant_id, inc
+        ):
+            return
+        try:
+            await self._gowa.send_text(
+                phone, whatsapp_message_for_incident(self._session, inc)
+            )
+        except Exception:
+            pass
 
     async def process(self, payload: GoWAWebhookPayload) -> dict:
         if not payload.should_process():
@@ -110,6 +135,109 @@ class WebhookService:
             )
         return ""
 
+    def _next_record_type(self, employee_id: UUID) -> tuple[ClockInType, str]:
+        last = self._clock.get_last_clock(employee_id)
+        if last and last.record_type == ClockInType.ENTRADA:
+            return ClockInType.SALIDA, "SALIDA"
+        return ClockInType.ENTRADA, "ENTRADA"
+
+    def _format_clock_reply(
+        self,
+        label: str,
+        record,
+        project_name: str | None = None,
+    ) -> str:
+        msg = (
+            f"Fichaje {label} registrado a las "
+            f"{record.recorded_at.strftime('%H:%M:%S')} (hora servidor)."
+        )
+        if project_name:
+            msg += f"\nProyecto: {project_name}"
+        if record.latitude is not None and record.longitude is not None:
+            msg += (
+                f"\nUbicación: {record.latitude:.6f}, {record.longitude:.6f}"
+            )
+        return msg
+
+    def _register_clock_with_project_flow(
+        self,
+        employee: Employee,
+        record_type: ClockInType,
+        label: str,
+        *,
+        latitude: float | None = None,
+        longitude: float | None = None,
+        whatsapp_message_id: str | None = None,
+        picker_text: str | None = None,
+    ) -> str:
+        if not self._settings.require_project_on_clock_in:
+            record = self._clock.register_clock(
+                employee_id=employee.id,
+                record_type=record_type,
+                latitude=latitude,
+                longitude=longitude,
+                whatsapp_message_id=whatsapp_message_id,
+                commit=False,
+            )
+            return self._format_clock_reply(label, record)
+
+        if picker_text:
+            direct = resolve_project_from_reply(
+                self._session, employee.company_id, picker_text
+            )
+            if direct:
+                record = self._clock.register_clock(
+                    employee_id=employee.id,
+                    record_type=record_type,
+                    latitude=latitude,
+                    longitude=longitude,
+                    whatsapp_message_id=whatsapp_message_id,
+                    project_id=direct.id,
+                    commit=False,
+                )
+                clear_pending(self._session, employee.id)
+                return self._format_clock_reply(label, record, direct.name)
+
+        pending = get_pending(self._session, employee.id)
+        if pending:
+            project = resolve_project_from_reply(
+                self._session, employee.company_id, picker_text or ""
+            )
+            if not project:
+                projects = list_active_projects(self._session, employee.company_id)
+                return (
+                    format_project_picker_message(projects, label)
+                    + "\n\nNo he reconocido el proyecto. Responde con el número o nombre."
+                )
+            rt = (
+                ClockInType.SALIDA
+                if pending.record_type == ClockInType.SALIDA.value
+                else ClockInType.ENTRADA
+            )
+            lbl = "SALIDA" if rt == ClockInType.SALIDA else "ENTRADA"
+            record = self._clock.register_clock(
+                employee_id=employee.id,
+                record_type=rt,
+                latitude=pending.latitude,
+                longitude=pending.longitude,
+                whatsapp_message_id=pending.whatsapp_message_id or whatsapp_message_id,
+                project_id=project.id,
+                commit=False,
+            )
+            clear_pending(self._session, employee.id)
+            return self._format_clock_reply(lbl, record, project.name)
+
+        projects = list_active_projects(self._session, employee.company_id)
+        set_pending(
+            self._session,
+            employee_id=employee.id,
+            record_type=record_type,
+            latitude=latitude,
+            longitude=longitude,
+            whatsapp_message_id=whatsapp_message_id,
+        )
+        return format_project_picker_message(projects, label)
+
     async def _handle_location(
         self, employee_id: UUID, phone: str, message: GoWAMessage
     ) -> dict:
@@ -117,36 +245,28 @@ class WebhookService:
         if not loc:
             return {"ok": False, "error": "Ubicación vacía"}
 
-        last = self._clock.get_last_clock(employee_id)
-        if last and last.record_type == ClockInType.ENTRADA:
-            record_type = ClockInType.SALIDA
-            label = "SALIDA"
-        else:
-            record_type = ClockInType.ENTRADA
-            label = "ENTRADA"
+        employee = self._session.get(Employee, employee_id)
+        if not employee:
+            return {"ok": False, "error": "Empleado no encontrado"}
 
-        record = self._clock.register_clock(
-            employee_id=employee_id,
-            record_type=record_type,
+        record_type, label = self._next_record_type(employee_id)
+        reply = self._register_clock_with_project_flow(
+            employee,
+            record_type,
+            label,
             latitude=loc.latitude,
             longitude=loc.longitude,
             whatsapp_message_id=message.id,
-            notes="Fichaje con geolocalización WhatsApp",
         )
-
-        reply = (
-            f"Fichaje {label} registrado a las "
-            f"{record.recorded_at.strftime('%H:%M:%S')} (hora servidor). "
-            f"Ubicación: {loc.latitude:.6f}, {loc.longitude:.6f}"
-        )
+        self._session.commit()
         try:
-            await self._gowa.send_text(phone, reply)
+            await self._gowa.send_text(phone, reply + self._geo_hint())
+            await self._notify_incident_if_needed(phone)
         except Exception:
             pass
         return {
             "ok": True,
             "action": f"fichar_{record_type.value}",
-            "clock_in_id": str(record.id),
         }
 
     async def _handle_media(
@@ -196,6 +316,47 @@ class WebhookService:
         text: str,
         message_id: str | None,
     ) -> dict:
+        pending = get_pending(self._session, employee.id)
+        if self._settings.require_project_on_clock_in and pending:
+            rt = (
+                ClockInType.SALIDA
+                if pending.record_type == ClockInType.SALIDA.value
+                else ClockInType.ENTRADA
+            )
+            lbl = "SALIDA" if rt == ClockInType.SALIDA else "ENTRADA"
+            reply = self._register_clock_with_project_flow(
+                employee,
+                rt,
+                lbl,
+                whatsapp_message_id=message_id,
+                picker_text=text,
+            )
+            self._session.commit()
+            try:
+                await self._gowa.send_text(phone, reply)
+                await self._notify_incident_if_needed(phone)
+            except Exception:
+                pass
+            return {"ok": True, "action": "select_project"}
+
+        if self._settings.daily_summary_enabled:
+            lower = text.lower().strip()
+            if any(
+                k in lower
+                for k in (
+                    "resumen del dia",
+                    "resumen del día",
+                    "resumen hoy",
+                    "resumen de hoy",
+                )
+            ):
+                reply = build_daily_summary(self._session, employee.id)
+                try:
+                    await self._gowa.send_text(phone, reply)
+                except Exception:
+                    pass
+                return {"ok": True, "action": "resumen_dia"}
+
         self._ollama.profile_key = profile_key_for_employee(employee.role)
         intent_data = await self._ollama.extract_intent(text)
         if not is_action_allowed_for_role(
@@ -209,10 +370,13 @@ class WebhookService:
             reply = await self._execute_intent(
                 employee, intent_data, text, message_id
             )
-            reply += self._geo_hint()
+            if intent_data.intent in ("fichar_entrada", "fichar_salida"):
+                reply += self._geo_hint()
         self._session.commit()
         try:
             await self._gowa.send_text(phone, reply)
+            if intent_data.intent in ("fichar_entrada", "fichar_salida"):
+                await self._notify_incident_if_needed(phone)
         except Exception:
             pass
         return {"ok": True, "action": intent_data.intent, "reply": reply}
@@ -226,26 +390,30 @@ class WebhookService:
     ) -> str:
         match intent.intent:
             case "fichar_entrada":
-                record = self._clock.register_clock(
-                    employee_id=employee.id,
-                    record_type=ClockInType.ENTRADA,
+                return self._register_clock_with_project_flow(
+                    employee,
+                    ClockInType.ENTRADA,
+                    "ENTRADA",
                     whatsapp_message_id=message_id,
-                )
-                return (
-                    f"ENTRADA registrada a las "
-                    f"{record.recorded_at.strftime('%H:%M:%S')} (hora servidor)."
+                    picker_text=raw_text,
                 )
 
             case "fichar_salida":
-                record = self._clock.register_clock(
-                    employee_id=employee.id,
-                    record_type=ClockInType.SALIDA,
+                return self._register_clock_with_project_flow(
+                    employee,
+                    ClockInType.SALIDA,
+                    "SALIDA",
                     whatsapp_message_id=message_id,
+                    picker_text=raw_text,
                 )
-                return (
-                    f"SALIDA registrada a las "
-                    f"{record.recorded_at.strftime('%H:%M:%S')} (hora servidor)."
-                )
+
+            case "resumen_dia":
+                if not self._settings.daily_summary_enabled:
+                    return (
+                        "La consulta de resumen del día no está activada "
+                        "en tu empresa."
+                    )
+                return build_daily_summary(self._session, employee.id)
 
             case "inicio_parada":
                 record = self._breaks.register_break(
@@ -280,8 +448,18 @@ class WebhookService:
                 return self._leave.acknowledge_document(employee.id, raw_text)
 
             case _:
+                hints = [
+                    "fichar entrada/salida",
+                    "iniciar o finalizar parada",
+                    "solicitar vacaciones",
+                    "consultar saldo",
+                    "enviar documentación",
+                    "compartir ubicación para fichar",
+                ]
+                if self._settings.daily_summary_enabled:
+                    hints.append("pedir resumen del día")
                 return (
-                    "No he entendido tu solicitud. Puedes: fichar entrada/salida, "
-                    "iniciar o finalizar parada, solicitar vacaciones, consultar saldo, "
-                    "enviar documentación pendiente o compartir ubicación para fichar."
+                    "No he entendido tu solicitud. Puedes: "
+                    + ", ".join(hints)
+                    + "."
                 )

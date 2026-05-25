@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { api, buildQuery } from "../api/client";
+import { api } from "../api/client";
 import type {
   Employee,
   EmployeeBulkScheduleResult,
@@ -15,7 +15,8 @@ import {
 } from "../lib/workSchedule";
 import Modal from "../components/Modal";
 import PageHeader from "../components/PageHeader";
-import TableToolbar from "../components/TableToolbar";
+import DataTable, { type DataTableColumn } from "../components/DataTable";
+import { tableActionButtons } from "../lib/tableFormatters";
 import EmployeeProfileTabs from "../components/EmployeeProfileTabs";
 import WorkScheduleEditor from "../components/WorkScheduleEditor";
 import { useAuth } from "../context/AuthContext";
@@ -31,6 +32,22 @@ interface UserGroup {
 }
 
 const PANEL_GROUP_NAME = "Empleados con panel";
+
+const EMPLOYEE_IMPORT_COLUMNS = [
+  { key: "full_name", header: "Nombre completo", example: "Ana García López" },
+  { key: "id_document", header: "DNI/NIE", example: "12345678Z" },
+  { key: "phone", header: "Teléfono (WhatsApp)", example: "612345678" },
+  { key: "email", header: "Email", example: "ana@empresa.com" },
+  { key: "role", header: "Rol", example: "employee" },
+  { key: "vacation_days_balance", header: "Días vacaciones", example: "22" },
+  { key: "is_active", header: "Activo (si/no)", example: "si" },
+];
+
+type EmployeeTableRow = Employee & {
+  role_label: string;
+  schedule_label: string;
+  active_label: string;
+};
 
 interface LegalStatusItem {
   document_id: string;
@@ -65,10 +82,16 @@ interface OrgTreeCompany {
   work_centers: OrgWorkCenter[];
 }
 
-type EmployeeForm = Partial<Employee> & {
+type EmployeeForm = Omit<
+  Partial<Employee>,
+  "company_id" | "department_id" | "work_center_id" | "shift_configuration_id" | "supervisor_id"
+> & {
   password?: string;
   company_id?: string | null;
+  department_id?: string | null;
   work_center_id?: string | null;
+  shift_configuration_id?: string | null;
+  supervisor_id?: string | null;
 };
 
 const empty = (defaults?: {
@@ -98,8 +121,6 @@ export default function EmployeesPage() {
   const { user } = useAuth();
   const [rows, setRows] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState("");
-  const [roleFilter, setRoleFilter] = useState("");
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Employee | null>(null);
   const [form, setForm] = useState<EmployeeForm>(empty());
@@ -141,15 +162,97 @@ export default function EmployeesPage() {
 
   const panelGroupId = groups.find((g) => g.name === PANEL_GROUP_NAME)?.id;
 
+  const tableData = useMemo<EmployeeTableRow[]>(
+    () =>
+      rows.map((e) => ({
+        ...e,
+        role_label: ROLE_LABELS[e.role] ?? e.role,
+        schedule_label: formatWorkSchedule(e),
+        active_label: e.is_active ? "Sí" : "No",
+      })),
+    [rows]
+  );
+
+  const employeeColumns = useMemo<DataTableColumn<EmployeeTableRow>[]>(() => {
+    const cols: DataTableColumn<EmployeeTableRow>[] = [
+      {
+        title: "Código",
+        field: "employee_code",
+        headerFilter: "input",
+        width: 100,
+        formatter: (c) => `<code>${c.getValue()}</code>`,
+      },
+      {
+        title: "DNI/NIE",
+        field: "id_document",
+        headerFilter: "input",
+        minWidth: 110,
+        formatter: (c) => String(c.getValue() ?? "—"),
+      },
+      { title: "Nombre", field: "full_name", headerFilter: "input", minWidth: 160 },
+      { title: "Teléfono", field: "phone", headerFilter: "input", width: 120 },
+      {
+        title: "Rol",
+        field: "role_label",
+        headerFilter: "select",
+        headerFilterParams: {
+          values: Object.fromEntries(
+            USER_TYPE_OPTIONS.map((r) => [r.label, r.label])
+          ),
+        },
+        width: 130,
+      },
+      {
+        title: "Horario",
+        field: "schedule_label",
+        headerFilter: "input",
+        minWidth: 140,
+      },
+      {
+        title: "Vacaciones",
+        field: "vacation_days_balance",
+        headerFilter: "number",
+        width: 100,
+      },
+      {
+        title: "Activo",
+        field: "active_label",
+        headerFilter: "select",
+        headerFilterParams: { values: { "": "Todos", Sí: "Sí", No: "No" } },
+        width: 90,
+      },
+    ];
+    if (canWrite) {
+      cols.push({
+        title: "",
+        field: "id",
+        headerFilter: false,
+        sorter: false,
+        download: false,
+        width: 150,
+        formatter: () =>
+          tableActionButtons([
+            { id: "edit", label: "Editar" },
+            ...(canAdmin ? [{ id: "delete", label: "Borrar", className: "btn-danger" }] : []),
+          ]),
+      });
+    }
+    return cols;
+  }, [canWrite, canAdmin]);
+
+  const handleCellAction = (action: string, row: EmployeeTableRow) => {
+    if (action === "edit") openEdit(row);
+    else if (action === "delete") remove(row.id);
+  };
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const path = buildQuery({ q: search || undefined, role: roleFilter || undefined });
-      setRows(await api.get<Employee[]>(`/employees${path}`));
+      setRows(await api.get<Employee[]>(`/employees?limit=3000`));
     } finally {
       setLoading(false);
     }
-  }, [search, roleFilter]);
+  }, []);
 
   useEffect(() => {
     load();
@@ -372,20 +475,6 @@ export default function EmployeesPage() {
     load();
   };
 
-  const toggleSelect = (id: string) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
-  const toggleSelectAll = () => {
-    if (selected.size === rows.length) setSelected(new Set());
-    else setSelected(new Set(rows.map((r) => r.id)));
-  };
-
   const openBulkSchedule = () => {
     if (selected.size === 0) return;
     setBulkMsg("");
@@ -466,116 +555,54 @@ export default function EmployeesPage() {
           ) : undefined
         }
       />
-      <TableToolbar
-        search={search}
-        onSearchChange={setSearch}
-        onSubmit={load}
-        placeholder="Nombre, código, DNI, teléfono, email…"
-        filters={[
-          {
-            label: "Rol",
-            value: roleFilter,
-            onChange: setRoleFilter,
-            options: USER_TYPE_OPTIONS.map((r) => ({ value: r.value, label: r.label })),
-          },
-        ]}
-      />
-      {canUpdate && rows.length > 0 && (
+      {canUpdate && selected.size > 0 && (
         <div className="toolbar" style={{ marginBottom: "0.5rem" }}>
           <button
             type="button"
-            className="btn btn-sm"
-            onClick={toggleSelectAll}
-          >
-            {selected.size === rows.length && rows.length > 0
-              ? "Quitar selección"
-              : `Seleccionar visibles (${rows.length})`}
-          </button>
-          <button
-            type="button"
             className="btn btn-sm btn-primary"
-            disabled={selected.size === 0}
             onClick={openBulkSchedule}
           >
             Cambio masivo de horario ({selected.size})
           </button>
         </div>
       )}
-      {loading ? (
-        <p className="muted">Cargando…</p>
-      ) : (
-        <div className="table-wrap card">
-          <table>
-            <thead>
-              <tr>
-                {canUpdate && (
-                  <th>
-                    <input
-                      type="checkbox"
-                      checked={rows.length > 0 && selected.size === rows.length}
-                      onChange={toggleSelectAll}
-                      aria-label="Seleccionar todos los visibles"
-                    />
-                  </th>
-                )}
-                <th>Código</th>
-                <th>DNI/NIE</th>
-                <th>Nombre</th>
-                <th>Teléfono</th>
-                <th>Rol</th>
-                <th>Horario</th>
-                <th>Vacaciones</th>
-                <th>Activo</th>
-                {canWrite && <th></th>}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((e) => (
-                <tr key={e.id}>
-                  {canUpdate && (
-                    <td>
-                      <input
-                        type="checkbox"
-                        checked={selected.has(e.id)}
-                        onChange={() => toggleSelect(e.id)}
-                        aria-label={`Seleccionar ${e.full_name}`}
-                      />
-                    </td>
-                  )}
-                  <td>
-                    <code>{e.employee_code}</code>
-                  </td>
-                  <td>{e.id_document ?? "—"}</td>
-                  <td>{e.full_name}</td>
-                  <td>{e.phone}</td>
-                  <td>
-                    <span className="badge">{ROLE_LABELS[e.role]}</span>
-                  </td>
-                  <td className="muted small">{formatWorkSchedule(e)}</td>
-                  <td>{e.vacation_days_balance}</td>
-                  <td>{e.is_active ? "Sí" : "No"}</td>
-                  {canWrite && (
-                    <td className="actions">
-                      <button type="button" className="btn btn-sm" onClick={() => openEdit(e)}>
-                        Editar
-                      </button>
-                      {canAdmin && (
-                        <button
-                          type="button"
-                          className="btn btn-sm btn-danger"
-                          onClick={() => remove(e.id)}
-                        >
-                          Borrar
-                        </button>
-                      )}
-                    </td>
-                  )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <DataTable
+        data={tableData}
+        columns={employeeColumns}
+        loading={loading}
+        exportFilename="empleados"
+        height="520px"
+        selectable={!!canUpdate}
+        onRowSelectionChange={(ids) => setSelected(new Set(ids))}
+        onCellAction={handleCellAction}
+        importConfig={
+          canWrite
+            ? {
+                templateFilename: "plantilla_empleados",
+                columns: EMPLOYEE_IMPORT_COLUMNS,
+                hint: "Usa el departamento seleccionado en la barra superior",
+                onImport: async (mapped) => {
+                  const res = await api.post<{ created: number; errors: string[] }>(
+                    "/employees/bulk-import",
+                    {
+                      rows: mapped.map((r) => ({
+                        full_name: r.full_name,
+                        id_document: r.id_document,
+                        phone: r.phone,
+                        email: r.email || null,
+                        role: r.role || "employee",
+                        vacation_days_balance: r.vacation_days_balance,
+                        is_active: r.is_active,
+                      })),
+                    }
+                  );
+                  return { created: res.created, errors: res.errors };
+                },
+              }
+            : undefined
+        }
+        onImportComplete={load}
+      />
       <Modal
         title={`Cambio masivo de horario (${selected.size} empleado${selected.size === 1 ? "" : "s"})`}
         open={bulkOpen && !!canUpdate}

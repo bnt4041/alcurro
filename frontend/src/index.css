@@ -17,6 +17,13 @@
   --sidebar-border: #e8eef4;
   --card: #ffffff;
   --border: #e8eef4;
+  /* Tablas: bordes muy suaves (sin rejilla marcada) */
+  --table-border: #f0f3f7;
+  --table-border-subtle: #f6f8fb;
+  --table-header-bg: #f8fafc;
+  --table-row-alt: #fbfcfd;
+  --table-row-hover: rgba(37, 211, 102, 0.05);
+  --table-filter-border: #e2e8f0;
   --text: #12263a;
   --muted: #5c7080;
   --primary: var(--primary-custom, #25d366);
@@ -403,7 +410,7 @@ th,
 td {
   padding: 0.75rem 1rem;
   text-align: left;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--table-border);
 }
 
 th {
@@ -412,6 +419,20 @@ th {
   font-size: 0.8rem;
   text-transform: uppercase;
   letter-spacing: 0.03em;
+  background: var(--table-header-bg);
+  border-bottom-color: var(--table-border-subtle);
+}
+
+tbody tr:hover td {
+  background: var(--table-row-hover);
+}
+
+tbody tr:nth-child(even) td {
+  background: var(--table-row-alt);
+}
+
+tbody tr:nth-child(even):hover td {
+  background: var(--table-row-hover);
 }
 
 .actions {
@@ -2451,4 +2472,42 @@ code {
   align-items: center;
   gap: 0.5rem;
   font-size: 0.9rem;
+}
+
+.day-report-timeline {
+  list-style: none;
+  padding: 0;
+  margin: 0.75rem 0 0;
+}
+.day-report-timeline li {
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+}
+.day-report-timeline li.is-break .day-report-label {
+  color: var(--muted, #6b7280);
+}
+.day-report-time {
+  display: inline-block;
+  min-width: 3.5rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.incident-diff-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-top: 0.5rem;
+}
+@media (max-width: 720px) {
+  .incident-diff-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.incident-diff-pre {
+  font-size: 0.75rem;
+  background: #f8fafc;
+  padding: 0.5rem;
+  border-radius: 6px;
+  overflow: auto;
+  max-height: 200px;
 }

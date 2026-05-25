@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import type { DocumentDelivery } from "../api/types";
+import DataTable, { type DataTableColumn } from "./DataTable";
 
 interface InboundDoc {
   id: string;
@@ -63,15 +64,6 @@ const INBOUND_STATUS: Record<string, string> = {
   waived: "No aplica",
 };
 
-const SIGN_STATUS: Record<string, string> = {
-  borrador: "Borrador",
-  enviado: "Enviado",
-  parcial: "Parcial",
-  completado: "Completado",
-  cancelado: "Cancelado",
-  expirado: "Expirado",
-};
-
 export default function EmployeeProfileTabs({
   employeeId,
   employeeName,
@@ -90,6 +82,36 @@ export default function EmployeeProfileTabs({
   const [loadingDocs, setLoadingDocs] = useState(false);
   const [loadingSigs, setLoadingSigs] = useState(false);
   const [docsMsg, setDocsMsg] = useState("");
+
+  const deliveryColumns = useMemo<DataTableColumn<Record<string, unknown>>[]>(
+    () => [
+      { title: "Título", field: "title_label", headerFilter: "input" },
+      { title: "Tipo", field: "type_label", headerFilter: "input" },
+      { title: "Caducidad", field: "expires_label", headerFilter: "input" },
+      {
+        title: "",
+        field: "id",
+        headerFilter: false,
+        sorter: false,
+        download: false,
+        width: 110,
+        formatter: () =>
+          `<button type="button" class="btn btn-sm" data-action="dl">Descargar</button>`,
+      },
+    ],
+    []
+  );
+
+  const signatureColumns = useMemo<DataTableColumn<Record<string, unknown>>[]>(
+    () => [
+      { title: "Referencia", field: "reference", headerFilter: "input" },
+      { title: "Título", field: "title", headerFilter: "input" },
+      { title: "Estado", field: "status", headerFilter: "input" },
+      { title: "Firmante", field: "signer_status", headerFilter: "input" },
+      { title: "Firmado", field: "signed_label", headerFilter: "input" },
+    ],
+    []
+  );
 
   const loadDocuments = useCallback(async () => {
     setLoadingDocs(true);
@@ -162,87 +184,45 @@ export default function EmployeeProfileTabs({
           ) : (
             <>
               <h4 className="employee-profile-subtitle">Alta / inbound</h4>
-              {inbound.length === 0 ? (
-                <p className="muted small">Sin requisitos de alta registrados.</p>
-              ) : (
-                <div className="table-wrap">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Documento</th>
-                        <th>Estado</th>
-                        <th>Fecha</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {inbound.map((r) => (
-                        <tr key={r.id}>
-                          <td>{r.document_name}</td>
-                          <td>
-                            <span
-                              className={`badge ${
-                                r.status === "received" ? "badge-ok" : "badge-pending"
-                              }`}
-                            >
-                              {INBOUND_STATUS[r.status] ?? r.status}
-                            </span>
-                          </td>
-                          <td>
-                            {r.received_at
-                              ? new Date(r.received_at).toLocaleString("es-ES")
-                              : "—"}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+              <DataTable
+                data={inbound.map((r) => ({
+                  ...r,
+                  status_label: INBOUND_STATUS[r.status] ?? r.status,
+                  date_label: r.received_at
+                    ? new Date(r.received_at).toLocaleString("es-ES")
+                    : "—",
+                }))}
+                columns={[
+                  { title: "Documento", field: "document_name", headerFilter: "input" },
+                  { title: "Estado", field: "status_label", headerFilter: "input" },
+                  { title: "Fecha", field: "date_label", headerFilter: "input" },
+                ]}
+                exportFilename="inbound_empleado"
+                height="220px"
+                emptyMessage="Sin requisitos de alta registrados."
+              />
 
               <h4 className="employee-profile-subtitle">Entregas</h4>
-              {deliveries.length === 0 ? (
-                <p className="muted small">No hay documentos asociados.</p>
-              ) : (
-                <div className="table-wrap">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Título</th>
-                        <th>Tipo</th>
-                        <th>Caducidad</th>
-                        <th></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {deliveries.map((d) => (
-                        <tr key={d.id}>
-                          <td>{d.title ?? d.file_name}</td>
-                          <td>{d.document_type_name ?? d.document_type}</td>
-                          <td>
-                            {d.expires_at
-                              ? new Date(d.expires_at).toLocaleDateString("es-ES")
-                              : "—"}
-                          </td>
-                          <td>
-                            <button
-                              type="button"
-                              className="btn btn-sm"
-                              onClick={() =>
-                                api.download(
-                                  `/documents/${d.id}/download`,
-                                  d.file_name
-                                )
-                              }
-                            >
-                              Descargar
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+              <DataTable
+                data={deliveries.map((d) => ({
+                  ...d,
+                  title_label: d.title ?? d.file_name,
+                  type_label: d.document_type_name ?? d.document_type,
+                  expires_label: d.expires_at
+                    ? new Date(d.expires_at).toLocaleDateString("es-ES")
+                    : "—",
+                }))}
+                columns={deliveryColumns}
+                exportFilename="documentos_empleado"
+                height="280px"
+                emptyMessage="No hay documentos asociados."
+                onCellAction={(action, row) => {
+                  if (action === "dl") {
+                    const d = row as DocumentDelivery;
+                    api.download(`/documents/${d.id}/download`, d.file_name);
+                  }
+                }}
+              />
               <p className="muted small">
                 <Link to="/app/documentos">Ver módulo Documentos</Link>
               </p>
@@ -256,61 +236,24 @@ export default function EmployeeProfileTabs({
           <p className="muted small">
             Solicitudes de firma donde {employeeName} es firmante.
           </p>
-          {loadingSigs ? (
-            <p className="muted">Cargando firmas…</p>
-          ) : envelopes.length === 0 ? (
-            <p className="muted small">Sin firmas asociadas.</p>
-          ) : (
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Referencia</th>
-                    <th>Título</th>
-                    <th>Estado</th>
-                    <th>Firmante</th>
-                    <th>Firmado</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {envelopes.map((e) => {
-                    const signer = e.signers.find(
-                      (s) => s.full_name === employeeName
-                    ) ?? e.signers[0];
-                    return (
-                      <tr key={e.id}>
-                        <td>
-                          <code>{e.reference}</code>
-                        </td>
-                        <td>{e.title}</td>
-                        <td>
-                          <span className="badge">{SIGN_STATUS[e.status] ?? e.status}</span>
-                        </td>
-                        <td>
-                          {signer ? (
-                            <span
-                              className={`badge ${
-                                signer.status === "firmado" ? "badge-ok" : "badge-pending"
-                              }`}
-                            >
-                              {signer.status}
-                            </span>
-                          ) : (
-                            "—"
-                          )}
-                        </td>
-                        <td>
-                          {signer?.signed_at
-                            ? new Date(signer.signed_at).toLocaleString("es-ES")
-                            : "—"}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
+          <DataTable
+            data={envelopes.map((e) => {
+              const signer =
+                e.signers.find((s) => s.full_name === employeeName) ?? e.signers[0];
+              return {
+                ...e,
+                signer_status: signer?.status ?? "—",
+                signed_label: signer?.signed_at
+                  ? new Date(signer.signed_at).toLocaleString("es-ES")
+                  : "—",
+              };
+            })}
+            columns={signatureColumns}
+            loading={loadingSigs}
+            exportFilename="firmas_empleado"
+            height="280px"
+            emptyMessage="Sin firmas asociadas."
+          />
           <p className="muted small">
             <Link to="/app/firmas">Ver módulo Firmas</Link>
           </p>

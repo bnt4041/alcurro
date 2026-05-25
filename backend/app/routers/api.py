@@ -6,12 +6,15 @@ from app.routers import (
     breaks,
     clock_ins,
     clock_settings,
+    incidents,
+    incidents_public,
     documents,
     employees,
     groups,
     leave_requests,
     legal,
     organization,
+    projects,
     platform,
     platform_billing,
     platform_catalog,
@@ -32,6 +35,7 @@ from app.schemas.tenant import TenantBrandingRead
 api_router = APIRouter(prefix="/api")
 api_router.include_router(auth.router)
 api_router.include_router(public.router)
+api_router.include_router(incidents_public.router)
 api_router.include_router(signatures_public.router)
 api_router.include_router(stripe_webhook.router)
 api_router.include_router(platform.router)
@@ -54,6 +58,7 @@ protected.include_router(tenants.router)
 protected.include_router(employees.router)
 protected.include_router(clock_ins.router)
 protected.include_router(clock_settings.router)
+protected.include_router(incidents.router)
 protected.include_router(breaks.router)
 protected.include_router(legal.router)
 protected.include_router(leave_requests.router)
@@ -63,4 +68,5 @@ protected.include_router(signatures.router)
 protected.include_router(settings.router)
 protected.include_router(groups.router)
 protected.include_router(organization.router)
+protected.include_router(projects.router)
 api_router.include_router(protected)

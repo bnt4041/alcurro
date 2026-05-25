@@ -1,8 +1,10 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
+import DataTable, { type DataTableColumn } from "../components/DataTable";
 import PageHeader from "../components/PageHeader";
 import { useToast } from "../context/ToastContext";
 import { centsToEurosInput, formatMoney, parseEurosToCents } from "../lib/money";
+import { tableActionButtons } from "../lib/tableFormatters";
 
 interface PricingPlan {
   id: string;
@@ -16,6 +18,12 @@ interface PricingPlan {
   is_active: boolean;
   sort_order: number;
 }
+
+type PlanTableRow = PricingPlan & {
+  monthly_label: string;
+  annual_label: string;
+  status_label: string;
+};
 
 const empty = () => ({
   code: "",
@@ -103,6 +111,77 @@ export default function PlatformPricingPage() {
     }
   };
 
+  const tableData = useMemo<PlanTableRow[]>(
+    () =>
+      plans.map((p) => ({
+        ...p,
+        monthly_label: `${formatMoney(p.monthly_price_cents, p.currency)}/mes`,
+        annual_label: `${formatMoney(p.annual_price_per_month_cents, p.currency)}/mes (${formatMoney(p.annual_price_per_month_cents * 12, p.currency)}/año)`,
+        status_label: p.is_active ? "Activa" : "Inactiva",
+      })),
+    [plans]
+  );
+
+  const columns = useMemo<DataTableColumn<PlanTableRow>[]>(
+    () => [
+      {
+        title: "Código",
+        field: "code",
+        headerFilter: "input",
+        formatter: (c) => `<code>${String(c.getValue())}</code>`,
+        width: 100,
+      },
+      {
+        title: "Nombre",
+        field: "name",
+        headerFilter: "input",
+        minWidth: 160,
+        formatter: (cell) => {
+          const r = cell.getRow().getData() as PlanTableRow;
+          const desc = r.description ? `<div class="muted small">${r.description}</div>` : "";
+          return `<strong>${r.name}</strong>${desc}`;
+        },
+      },
+      { title: "Mensual", field: "monthly_label", headerFilter: "input", width: 120 },
+      { title: "Anual (€/mes)", field: "annual_label", headerFilter: "input", minWidth: 140 },
+      { title: "Usuarios", field: "max_active_users", headerFilter: "number", width: 90 },
+      {
+        title: "Estado",
+        field: "status_label",
+        headerFilter: "select",
+        headerFilterParams: {
+          values: { "": "Todos", Activa: "Activa", Inactiva: "Inactiva" },
+        },
+        formatter: (cell) => {
+          const r = cell.getRow().getData() as PlanTableRow;
+          const cls = r.is_active ? "badge--ok" : "badge--muted";
+          return `<span class="badge ${cls}">${r.status_label}</span>`;
+        },
+        width: 100,
+      },
+      {
+        title: "",
+        field: "id",
+        headerFilter: false,
+        download: false,
+        width: 220,
+        formatter: () =>
+          tableActionButtons([
+            { id: "toggle", label: "Activar/Desactivar" },
+            { id: "edit", label: "Editar" },
+            { id: "delete", label: "Eliminar" },
+          ]),
+      },
+    ],
+    []
+  );
+
+  const onCellAction = (action: string, row: PlanTableRow) => {
+    if (action === "toggle") void toggleActive(row);
+    if (action === "edit") openEdit(row);
+    if (action === "delete") void remove(row);
+  };
+
   const remove = async (p: PricingPlan) => {
     if (!confirm(`¿Eliminar la tarifa «${p.name}»?`)) return;
     try {
@@ -126,77 +205,12 @@ export default function PlatformPricingPage() {
         }
       />
 
-      <div className="table-wrap card">
-        <table>
-          <thead>
-            <tr>
-              <th>Código</th>
-              <th>Nombre</th>
-              <th>Mensual</th>
-              <th>Anual (€/mes)</th>
-              <th>Usuarios</th>
-              <th>Estado</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {plans.map((p) => (
-              <tr key={p.id} className={!p.is_active ? "row-inactive" : ""}>
-                <td>
-                  <code>{p.code}</code>
-                </td>
-                <td>
-                  <strong>{p.name}</strong>
-                  {p.description && (
-                    <div className="muted small">{p.description}</div>
-                  )}
-                </td>
-                <td>{formatMoney(p.monthly_price_cents, p.currency)}/mes</td>
-                <td>
-                  {formatMoney(p.annual_price_per_month_cents, p.currency)}/mes
-                  <div className="muted small">
-                    ({formatMoney(p.annual_price_per_month_cents * 12, p.currency)}
-                    /año)
-                  </div>
-                </td>
-                <td>{p.max_active_users}</td>
-                <td>
-                  <span
-                    className={`badge ${p.is_active ? "badge--ok" : "badge--muted"}`}
-                  >
-                    {p.is_active ? "Activa" : "Inactiva"}
-                  </span>
-                </td>
-                <td>
-                  <div className="table-actions">
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-sm"
-                      onClick={() => toggleActive(p)}
-                    >
-                      {p.is_active ? "Desactivar" : "Activar"}
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-sm"
-                      onClick={() => openEdit(p)}
-                    >
-                      Editar
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-sm"
-                      onClick={() => remove(p)}
-                    >
-                      Eliminar
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <DataTable
+        data={tableData}
+        columns={columns}
+        exportFilename="tarifas"
+        onCellAction={onCellAction}
+      />
 
       {open && (
         <div

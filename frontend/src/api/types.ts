@@ -113,9 +113,79 @@ export interface ClockSettings {
   inbound_signature_delivery_ids: string[];
   send_welcome_with_documents: boolean;
   welcome_message_extra: string | null;
+  daily_summary_enabled: boolean;
+  require_project_on_clock_in: boolean;
   updated_at: string;
   available_inbound_types: InboundDocumentType[];
   company_signature_documents: CompanySignatureDocument[];
+}
+
+export interface Project {
+  id: string;
+  company_id: string;
+  name: string;
+  code: string;
+  address: string | null;
+  planned_hours: number | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface IncidentAutoRule {
+  tenant_id: string;
+  late_entrada_enabled: boolean;
+  late_entrada_grace_minutes: number;
+  late_entrada_notify_whatsapp: boolean;
+  late_entrada_require_justification: boolean;
+  updated_at: string;
+}
+
+export interface Incident {
+  id: string;
+  tenant_id: string;
+  employee_id: string;
+  employee_name?: string | null;
+  category: "fichaje" | "vacaciones" | "permiso";
+  incident_type: string;
+  status: string;
+  source: string;
+  title: string;
+  description: string | null;
+  clock_in_id: string | null;
+  leave_request_id: string | null;
+  minutes_late: number | null;
+  original_data: Record<string, unknown>;
+  modified_data: Record<string, unknown> | null;
+  employee_justification: string | null;
+  internal_notes: string | null;
+  public_token: string | null;
+  justify_url: string | null;
+  whatsapp_notified_at: string | null;
+  justified_at: string | null;
+  resolved_at: string | null;
+  resolved_by_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ReportTimelineItem {
+  time_label: string;
+  kind: string;
+  label: string;
+  detail: string | null;
+}
+
+export interface EmployeeDayReport {
+  employee_id: string;
+  employee_name: string;
+  report_date: string;
+  timeline: ReportTimelineItem[];
+  worked_minutes: number;
+  break_minutes: number;
+  open_clock: boolean;
+  open_break: boolean;
+  text_summary: string;
 }
 
 export interface ClockReminderRunResult {
@@ -133,6 +203,8 @@ export interface ClockIn {
   longitude: number | null;
   source: string;
   notes: string | null;
+  project_id?: string | null;
+  project_name?: string | null;
 }
 
 export interface LeaveRequest {

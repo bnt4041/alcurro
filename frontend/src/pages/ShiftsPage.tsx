@@ -1,5 +1,6 @@
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { api, buildQuery } from "../api/client";
+import DataTable, { type DataTableColumn } from "../components/DataTable";
 import TableToolbar from "../components/TableToolbar";
 import { useAuth } from "../context/AuthContext";
 import { canModule } from "../lib/permissions";
@@ -7,6 +8,7 @@ import type { ShiftAssignment, ShiftConfiguration, ShiftPatternType } from "../a
 import Modal from "../components/Modal";
 import PageHeader from "../components/PageHeader";
 import { useEmployees } from "../hooks/useEmployees";
+import { tableActionButtons, type TableAction } from "../lib/tableFormatters";
 
 const PATTERNS: { value: ShiftPatternType; label: string }[] = [
   { value: "rigid", label: "Rígido" },
@@ -94,6 +96,114 @@ export default function ShiftsPage() {
   const configName = (id: string) =>
     configs.find((c) => c.id === id)?.name ?? id.slice(0, 8);
 
+  const patternLabel = (v: string) =>
+    PATTERNS.find((p) => p.value === v)?.label ?? v;
+
+  type ConfigRow = ShiftConfiguration & { pattern_label: string; active_label: string };
+  type AssignRow = ShiftAssignment & {
+    employee_name: string;
+    config_name: string;
+    valid_to_label: string;
+  };
+
+  const configTableData = useMemo<ConfigRow[]>(
+    () =>
+      configs.map((c) => ({
+        ...c,
+        pattern_label: patternLabel(c.pattern_type),
+        active_label: c.is_active ? "Sí" : "No",
+      })),
+    [configs]
+  );
+
+  const assignTableData = useMemo<AssignRow[]>(
+    () =>
+      assignments.map((a) => ({
+        ...a,
+        employee_name: byId(a.employee_id),
+        config_name: configName(a.shift_configuration_id),
+        valid_to_label: a.valid_to ?? "—",
+      })),
+    [assignments, byId, configs]
+  );
+
+  const configColumns = useMemo<DataTableColumn<ConfigRow>[]>(() => {
+    const cols: DataTableColumn<ConfigRow>[] = [
+      { title: "Nombre", field: "name", headerFilter: "input", minWidth: 140 },
+      {
+        title: "Tipo",
+        field: "pattern_label",
+        headerFilter: "select",
+        headerFilterParams: {
+          values: { "": "Todos", ...Object.fromEntries(PATTERNS.map((p) => [p.label, p.label])) },
+        },
+        width: 110,
+      },
+      { title: "Horas/sem", field: "weekly_hours", headerFilter: "number", formatter: (c) => String(c.getValue() ?? "—"), width: 100 },
+      { title: "Activo", field: "active_label", headerFilter: "select", headerFilterParams: { values: { "": "Todos", Sí: "Sí", No: "No" } }, width: 80 },
+    ];
+    if (canWrite) {
+      cols.push({
+        title: "",
+        field: "id",
+        headerFilter: false,
+        download: false,
+        width: 160,
+        formatter: () => {
+          const actions: TableAction[] = [{ id: "edit", label: "Editar" }];
+          if (canAdmin) actions.push({ id: "delete", label: "Borrar", className: "btn-danger" });
+          return tableActionButtons(actions);
+        },
+      });
+    }
+    return cols;
+  }, [canWrite, canAdmin]);
+
+  const assignColumns = useMemo<DataTableColumn<AssignRow>[]>(() => {
+    const cols: DataTableColumn<AssignRow>[] = [
+      { title: "Empleado", field: "employee_name", headerFilter: "input", minWidth: 160 },
+      { title: "Turno", field: "config_name", headerFilter: "input", minWidth: 140 },
+      { title: "Desde", field: "valid_from", headerFilter: "input", width: 110 },
+      { title: "Hasta", field: "valid_to_label", headerFilter: "input", width: 110 },
+    ];
+    if (canAdmin) {
+      cols.push({
+        title: "",
+        field: "id",
+        headerFilter: false,
+        download: false,
+        width: 90,
+        formatter: () => tableActionButtons([{ id: "delete", label: "Borrar", className: "btn-danger" }]),
+      });
+    }
+    return cols;
+  }, [canAdmin]);
+
+  const onConfigAction = (action: string, row: ConfigRow) => {
+    if (action === "edit") {
+      setEditConfig(row);
+      setCfgForm({
+        name: row.name,
+        pattern_type: row.pattern_type,
+        description: row.description ?? "",
+        weekly_hours: row.weekly_hours ?? 40,
+        pattern_definition: JSON.stringify(row.pattern_definition, null, 2),
+        is_active: row.is_active,
+      });
+      setModal("config");
+      return;
+    }
+    if (action === "delete" && confirm("¿Eliminar?")) {
+      void api.delete(`/shifts/configurations/${row.id}`).then(load);
+    }
+  };
+
+  const onAssignAction = (action: string, row: AssignRow) => {
+    if (action === "delete" && confirm("¿Eliminar?")) {
+      void api.delete(`/shifts/assignments/${row.id}`).then(load);
+    }
+  };
+
   return (
     <>
       <PageHeader title="Turnos" subtitle="Configuraciones y asignaciones de calendario" />
@@ -157,69 +267,12 @@ export default function ShiftsPage() {
             </button>
             )}
           </div>
-          <div className="table-wrap card">
-            <table>
-              <thead>
-                <tr>
-                  <th>Nombre</th>
-                  <th>Tipo</th>
-                  <th>Horas/sem</th>
-                  <th>Activo</th>
-                  {canWrite && <th></th>}
-                </tr>
-              </thead>
-              <tbody>
-                {configs.map((c) => (
-                  <tr key={c.id}>
-                    <td>{c.name}</td>
-                    <td>{c.pattern_type}</td>
-                    <td>{c.weekly_hours ?? "—"}</td>
-                    <td>{c.is_active ? "Sí" : "No"}</td>
-                    {canWrite && (
-                    <td className="actions">
-                      <button
-                        type="button"
-                        className="btn btn-sm"
-                        onClick={() => {
-                          setEditConfig(c);
-                          setCfgForm({
-                            name: c.name,
-                            pattern_type: c.pattern_type,
-                            description: c.description ?? "",
-                            weekly_hours: c.weekly_hours ?? 40,
-                            pattern_definition: JSON.stringify(
-                              c.pattern_definition,
-                              null,
-                              2
-                            ),
-                            is_active: c.is_active,
-                          });
-                          setModal("config");
-                        }}
-                      >
-                        Editar
-                      </button>
-                      {canAdmin && (
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-danger"
-                        onClick={async () => {
-                          if (confirm("¿Eliminar?")) {
-                            await api.delete(`/shifts/configurations/${c.id}`);
-                            load();
-                          }
-                        }}
-                      >
-                        Borrar
-                      </button>
-                      )}
-                    </td>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            data={configTableData}
+            columns={configColumns}
+            exportFilename="turnos_configuraciones"
+            onCellAction={onConfigAction}
+          />
         </>
       )}
       {tab === "assign" && (
@@ -245,45 +298,12 @@ export default function ShiftsPage() {
             </button>
             )}
           </div>
-          <div className="table-wrap card">
-            <table>
-              <thead>
-                <tr>
-                  <th>Empleado</th>
-                  <th>Turno</th>
-                  <th>Desde</th>
-                  <th>Hasta</th>
-                  {canAdmin && <th></th>}
-                </tr>
-              </thead>
-              <tbody>
-                {assignments.map((a) => (
-                  <tr key={a.id}>
-                    <td>{byId(a.employee_id)}</td>
-                    <td>{configName(a.shift_configuration_id)}</td>
-                    <td>{a.valid_from}</td>
-                    <td>{a.valid_to ?? "—"}</td>
-                    {canAdmin && (
-                    <td className="actions">
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-danger"
-                        onClick={async () => {
-                          if (confirm("¿Eliminar?")) {
-                            await api.delete(`/shifts/assignments/${a.id}`);
-                            load();
-                          }
-                        }}
-                      >
-                        Borrar
-                      </button>
-                    </td>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            data={assignTableData}
+            columns={assignColumns}
+            exportFilename="turnos_asignaciones"
+            onCellAction={onAssignAction}
+          />
         </>
       )}
       <Modal

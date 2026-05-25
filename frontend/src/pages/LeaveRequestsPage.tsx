@@ -1,12 +1,13 @@
-import { FormEvent, useCallback, useEffect, useState } from "react";
-import { api, buildQuery } from "../api/client";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { api } from "../api/client";
 import type { LeaveRequest, LeaveStatus } from "../api/types";
+import DataTable, { type DataTableColumn } from "../components/DataTable";
 import Modal from "../components/Modal";
 import PageHeader from "../components/PageHeader";
-import TableToolbar from "../components/TableToolbar";
 import { useAuth } from "../context/AuthContext";
 import { useEmployees } from "../hooks/useEmployees";
 import { canModule } from "../lib/permissions";
+import { tableActionButtons } from "../lib/tableFormatters";
 
 const STATUSES: { value: LeaveStatus; label: string }[] = [
   { value: "pending", label: "Pendiente" },
@@ -15,12 +16,13 @@ const STATUSES: { value: LeaveStatus; label: string }[] = [
   { value: "cancelled", label: "Cancelada" },
 ];
 
+type LeaveRow = LeaveRequest & { employee_name: string; status_label: string };
+
 export default function LeaveRequestsPage() {
   const { user } = useAuth();
   const { employees, byId } = useEmployees();
   const [rows, setRows] = useState<LeaveRequest[]>([]);
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("");
+  const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<LeaveRequest | null>(null);
   const [form, setForm] = useState({
@@ -32,22 +34,72 @@ export default function LeaveRequestsPage() {
     reason: "",
     review_notes: "",
   });
-  const canWrite = user && canModule(user.permissions, "write", "leave");
   const canCreate = user && canModule(user.permissions, "create", "leave");
   const canUpdate = user && canModule(user.permissions, "update", "leave");
   const canAdmin = user && canModule(user.permissions, "admin", "leave");
 
   const load = useCallback(async () => {
-    const path = buildQuery({
-      q: search || undefined,
-      status: statusFilter || undefined,
-    });
-    setRows(await api.get<LeaveRequest[]>(`/leave-requests${path}`));
-  }, [search, statusFilter]);
+    setLoading(true);
+    try {
+      setRows(await api.get<LeaveRequest[]>("/leave-requests"));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  const tableData = useMemo<LeaveRow[]>(
+    () =>
+      rows.map((r) => ({
+        ...r,
+        employee_name: byId(r.employee_id),
+        status_label: STATUSES.find((s) => s.value === r.status)?.label ?? r.status,
+      })),
+    [rows, byId]
+  );
+
+  const columns = useMemo<DataTableColumn<LeaveRow>[]>(() => {
+    const cols: DataTableColumn<LeaveRow>[] = [
+      { title: "Empleado", field: "employee_name", headerFilter: "input", minWidth: 150 },
+      { title: "Inicio", field: "start_date", headerFilter: "input", width: 120 },
+      { title: "Fin", field: "end_date", headerFilter: "input", width: 120 },
+      { title: "Días", field: "days_requested", headerFilter: "number", width: 80 },
+      {
+        title: "Estado",
+        field: "status_label",
+        headerFilter: "select",
+        headerFilterParams: {
+          values: Object.fromEntries(STATUSES.map((s) => [s.label, s.label])),
+        },
+        width: 120,
+      },
+      {
+        title: "Motivo",
+        field: "reason",
+        headerFilter: "input",
+        formatter: (c) => String(c.getValue() ?? "—"),
+        minWidth: 140,
+      },
+    ];
+    if (canUpdate || canAdmin) {
+      const actions: { id: string; label: string; className?: string }[] = [];
+      if (canUpdate) actions.push({ id: "edit", label: "Editar" });
+      if (canAdmin) actions.push({ id: "delete", label: "Borrar", className: "btn-danger" });
+      cols.push({
+        title: "",
+        field: "id",
+        headerFilter: false,
+        sorter: false,
+        download: false,
+        width: 140,
+        formatter: () => tableActionButtons(actions),
+      });
+    }
+    return cols;
+  }, [canUpdate, canAdmin]);
 
   const openCreate = () => {
     setEditing(null);
@@ -91,6 +143,11 @@ export default function LeaveRequestsPage() {
     load();
   };
 
+  const onCellAction = (action: string, row: LeaveRow) => {
+    if (action === "edit") openEdit(row);
+    else if (action === "delete") remove(row.id);
+  };
+
   return (
     <>
       <PageHeader
@@ -104,67 +161,14 @@ export default function LeaveRequestsPage() {
           ) : undefined
         }
       />
-      <TableToolbar
-        search={search}
-        onSearchChange={setSearch}
-        onSubmit={load}
-        placeholder="Buscar empleado…"
-        filters={[
-          {
-            label: "Estado",
-            value: statusFilter,
-            onChange: setStatusFilter,
-            options: STATUSES.map((s) => ({ value: s.value, label: s.label })),
-          },
-        ]}
+      <DataTable
+        data={tableData}
+        columns={columns}
+        loading={loading}
+        exportFilename="vacaciones"
+        height="520px"
+        onCellAction={onCellAction}
       />
-      <div className="table-wrap card">
-        <table>
-          <thead>
-            <tr>
-              <th>Empleado</th>
-              <th>Inicio</th>
-              <th>Fin</th>
-              <th>Días</th>
-              <th>Estado</th>
-              <th>Motivo</th>
-              {(canUpdate || canAdmin) && <th></th>}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr key={r.id}>
-                <td>{byId(r.employee_id)}</td>
-                <td>{r.start_date}</td>
-                <td>{r.end_date}</td>
-                <td>{r.days_requested}</td>
-                <td>
-                  <span className={`badge badge-${r.status}`}>{r.status}</span>
-                </td>
-                <td>{r.reason ?? "—"}</td>
-                {(canUpdate || canAdmin) && (
-                  <td className="actions">
-                    {canUpdate && (
-                      <button type="button" className="btn btn-sm" onClick={() => openEdit(r)}>
-                        Editar
-                      </button>
-                    )}
-                    {canAdmin && (
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-danger"
-                        onClick={() => remove(r.id)}
-                      >
-                        Borrar
-                      </button>
-                    )}
-                  </td>
-                )}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
       <Modal
         title={editing ? "Editar vacaciones" : "Nueva solicitud"}
         open={open && !!(editing ? canUpdate : canCreate)}

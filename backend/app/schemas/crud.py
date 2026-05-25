@@ -49,6 +49,26 @@ class EmployeeBulkScheduleItemError(BaseModel):
     message: str
 
 
+class EmployeeBulkImportRow(BaseModel):
+    full_name: str | None = None
+    id_document: str | None = None
+    phone: str | None = None
+    email: str | None = None
+    role: str | None = None
+    employee_code: str | None = None
+    vacation_days_balance: str | None = None
+    is_active: str | None = None
+
+
+class EmployeeBulkImportRequest(BaseModel):
+    rows: list[EmployeeBulkImportRow] = Field(min_length=1, max_length=500)
+
+
+class EmployeeBulkImportResponse(BaseModel):
+    created: int
+    errors: list[str] = Field(default_factory=list)
+
+
 class EmployeeBulkScheduleResult(BaseModel):
     updated: int
     skipped: int
@@ -109,6 +129,7 @@ class ClockInCreate(BaseModel):
     longitude: float | None = None
     source: str = "panel"
     notes: str | None = None
+    project_id: UUID | None = None
 
 
 class ClockInRead(ClockInCreate):
@@ -116,6 +137,7 @@ class ClockInRead(ClockInCreate):
     id: UUID
     recorded_at: datetime
     whatsapp_message_id: str | None = None
+    project_name: str | None = None
 
 
 class BreakCreate(BaseModel):

@@ -41,6 +41,14 @@ class ClockSettings(SQLModel, table=True):
         description="Incluir solicitud de documentos en mensaje de bienvenida",
     )
     welcome_message_extra: str | None = Field(default=None, max_length=1000)
+    daily_summary_enabled: bool = Field(
+        default=True,
+        description="Permite solicitar resumen del día por WhatsApp",
+    )
+    require_project_on_clock_in: bool = Field(
+        default=False,
+        description="Al fichar, el empleado debe indicar el proyecto (WhatsApp y panel)",
+    )
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 

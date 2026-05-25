@@ -1,9 +1,11 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
+import DataTable, { type DataTableColumn } from "../components/DataTable";
 import Modal from "../components/Modal";
 import PageHeader from "../components/PageHeader";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../context/ToastContext";
+import { tableActionButtons } from "../lib/tableFormatters";
 
 interface PlatformUserRow {
   id: string;
@@ -12,6 +14,11 @@ interface PlatformUserRow {
   is_active: boolean;
   created_at: string;
 }
+
+type UserTableRow = PlatformUserRow & {
+  status_label: string;
+  created_label: string;
+};
 
 const emptyForm = () => ({
   email: "",
@@ -40,6 +47,46 @@ export default function PlatformUsersPage() {
   useEffect(() => {
     load();
   }, []);
+
+  const tableData = useMemo<UserTableRow[]>(
+    () =>
+      rows.map((u) => ({
+        ...u,
+        status_label: u.is_active ? "Activo" : "Inactivo",
+        created_label: new Date(u.created_at).toLocaleDateString("es-ES"),
+      })),
+    [rows]
+  );
+
+  const columns = useMemo<DataTableColumn<UserTableRow>[]>(
+    () => [
+      { title: "Nombre", field: "full_name", headerFilter: "input", minWidth: 160 },
+      { title: "Email", field: "email", headerFilter: "input", minWidth: 180 },
+      {
+        title: "Estado",
+        field: "status_label",
+        headerFilter: "select",
+        headerFilterParams: {
+          values: { "": "Todos", Activo: "Activo", Inactivo: "Inactivo" },
+        },
+        width: 100,
+      },
+      { title: "Alta", field: "created_label", headerFilter: "input", width: 110 },
+      {
+        title: "",
+        field: "id",
+        headerFilter: false,
+        download: false,
+        width: 200,
+        formatter: () =>
+          tableActionButtons([
+            { id: "password", label: "Contraseña" },
+            { id: "toggle", label: "Activar/Desactivar" },
+          ]),
+      },
+    ],
+    []
+  );
 
   const create = async (e: FormEvent) => {
     e.preventDefault();
@@ -81,6 +128,11 @@ export default function PlatformUsersPage() {
     }
   };
 
+  const onCellAction = (action: string, row: UserTableRow) => {
+    if (action === "password") void resetPassword(row);
+    if (action === "toggle") void toggleActive(row);
+  };
+
   return (
     <>
       <PageHeader
@@ -93,41 +145,13 @@ export default function PlatformUsersPage() {
         }
       />
 
-      {loading ? (
-        <p className="muted">Cargando…</p>
-      ) : (
-        <div className="table-wrap card">
-          <table>
-            <thead>
-              <tr>
-                <th>Nombre</th>
-                <th>Email</th>
-                <th>Estado</th>
-                <th>Alta</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((u) => (
-                <tr key={u.id} className={!u.is_active ? "row-inactive" : ""}>
-                  <td>{u.full_name}</td>
-                  <td>{u.email}</td>
-                  <td>{u.is_active ? "Activo" : "Inactivo"}</td>
-                  <td>{new Date(u.created_at).toLocaleDateString("es-ES")}</td>
-                  <td className="actions">
-                    <button type="button" className="btn btn-sm" onClick={() => resetPassword(u)}>
-                      Contraseña
-                    </button>
-                    <button type="button" className="btn btn-sm" onClick={() => toggleActive(u)}>
-                      {u.is_active ? "Desactivar" : "Activar"}
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <DataTable
+        data={tableData}
+        columns={columns}
+        loading={loading}
+        exportFilename="administradores"
+        onCellAction={onCellAction}
+      />
 
       <Modal title="Nuevo administrador" open={open} onClose={() => setOpen(false)}>
         <form onSubmit={create} className="form-grid">

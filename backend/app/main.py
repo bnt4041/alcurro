@@ -130,6 +130,18 @@ def _run_startup_migrations() -> None:
         migrate_clock_settings_v2()
     except Exception as exc:
         print(f"migrate_clock_settings_v2: {exc}")
+    try:
+        from scripts.migrate_clock_settings_v3 import main as migrate_clock_settings_v3
+
+        migrate_clock_settings_v3()
+    except Exception as exc:
+        print(f"migrate_clock_settings_v3: {exc}")
+    try:
+        from scripts.migrate_incidents_v4 import main as migrate_incidents_v4
+
+        migrate_incidents_v4()
+    except Exception as exc:
+        print(f"migrate_incidents_v4: {exc}")
 
 
 @asynccontextmanager

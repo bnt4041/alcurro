@@ -32,6 +32,8 @@ class ClockSettingsRead(BaseModel):
     inbound_signature_delivery_ids: list[UUID] = Field(default_factory=list)
     send_welcome_with_documents: bool
     welcome_message_extra: str | None
+    daily_summary_enabled: bool
+    require_project_on_clock_in: bool
     updated_at: datetime
     available_inbound_types: list[InboundDocumentTypeRead] = Field(default_factory=list)
     company_signature_documents: list[CompanySignatureDocumentRead] = Field(
@@ -49,6 +51,8 @@ class ClockSettingsUpdate(BaseModel):
     inbound_signature_delivery_ids: list[UUID] | None = None
     send_welcome_with_documents: bool | None = None
     welcome_message_extra: str | None = Field(default=None, max_length=1000)
+    daily_summary_enabled: bool | None = None
+    require_project_on_clock_in: bool | None = None
 
 
 class EmployeeInboundDocumentRead(BaseModel):

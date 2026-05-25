@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
+import DataTable, { type DataTableColumn } from "./DataTable";
 
 interface UsageDetail {
   tenant_id: string;
@@ -27,6 +28,12 @@ function formatDuration(ms: number): string {
   return `${Math.floor(s / 60)} min ${s % 60} s`;
 }
 
+type ActionRow = UsageDetail["by_action"][number] & { tokens_label: string };
+type RecentRow = UsageDetail["recent"][number] & {
+  date_label: string;
+  duration_label: string;
+};
+
 export default function TenantAIUsagePanel({ tenantId }: { tenantId: string }) {
   const [days, setDays] = useState(30);
   const [data, setData] = useState<UsageDetail | null>(null);
@@ -35,13 +42,62 @@ export default function TenantAIUsagePanel({ tenantId }: { tenantId: string }) {
   useEffect(() => {
     setLoading(true);
     api
-      .get<UsageDetail>(
-        `/platform/ai/usage/tenants/${tenantId}?days=${days}`
-      )
+      .get<UsageDetail>(`/platform/ai/usage/tenants/${tenantId}?days=${days}`)
       .then(setData)
       .catch(() => setData(null))
       .finally(() => setLoading(false));
   }, [tenantId, days]);
+
+  const actionData = useMemo<ActionRow[]>(
+    () =>
+      (data?.by_action ?? []).map((a) => ({
+        ...a,
+        tokens_label: a.tokens.toLocaleString("es-ES"),
+      })),
+    [data]
+  );
+
+  const recentData = useMemo<RecentRow[]>(
+    () =>
+      (data?.recent ?? []).map((r) => ({
+        ...r,
+        date_label: new Date(r.created_at).toLocaleString("es-ES"),
+        duration_label: formatDuration(r.duration_ms),
+      })),
+    [data]
+  );
+
+  const actionColumns = useMemo<DataTableColumn<ActionRow>[]>(
+    () => [
+      { title: "Acción", field: "action_code", headerFilter: "input", minWidth: 140 },
+      { title: "Peticiones", field: "count", headerFilter: "number", width: 110 },
+      { title: "Tokens", field: "tokens_label", headerFilter: "input", width: 110 },
+    ],
+    []
+  );
+
+  const recentColumns = useMemo<DataTableColumn<RecentRow>[]>(
+    () => [
+      { title: "Fecha", field: "date_label", headerFilter: "input", minWidth: 150 },
+      {
+        title: "Acción",
+        field: "action_code",
+        headerFilter: "input",
+        formatter: (c) => String(c.getValue() ?? "—"),
+        width: 120,
+      },
+      {
+        title: "Perfil",
+        field: "profile_key",
+        headerFilter: "input",
+        formatter: (c) => String(c.getValue() ?? "—"),
+        width: 120,
+      },
+      { title: "Tokens", field: "total_tokens", headerFilter: "number", width: 90 },
+      { title: "Tiempo", field: "duration_label", headerFilter: "input", width: 100 },
+    ],
+    []
+  );
 
   if (loading) return <p className="muted">Cargando uso de IA…</p>;
   if (!data) return <p className="muted">Sin datos de uso de IA.</p>;
@@ -72,60 +128,26 @@ export default function TenantAIUsagePanel({ tenantId }: { tenantId: string }) {
           <strong>{formatDuration(data.total_duration_ms)}</strong>
         </div>
       </div>
-      {data.by_action.length > 0 && (
+      {actionData.length > 0 && (
         <>
           <h4>Por acción</h4>
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Acción</th>
-                  <th>Peticiones</th>
-                  <th>Tokens</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.by_action.map((a) => (
-                  <tr key={a.action_code}>
-                    <td>{a.action_code}</td>
-                    <td>{a.count}</td>
-                    <td>{a.tokens.toLocaleString("es-ES")}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            data={actionData}
+            columns={actionColumns}
+            exportFilename="ia_por_accion"
+            height="280px"
+          />
         </>
       )}
-      {data.recent.length > 0 && (
+      {recentData.length > 0 && (
         <>
           <h4>Últimas peticiones</h4>
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Fecha</th>
-                  <th>Acción</th>
-                  <th>Perfil</th>
-                  <th>Tokens</th>
-                  <th>Tiempo</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.recent.map((r, i) => (
-                  <tr key={i}>
-                    <td>
-                      {new Date(r.created_at).toLocaleString("es-ES")}
-                    </td>
-                    <td>{r.action_code ?? "—"}</td>
-                    <td>{r.profile_key ?? "—"}</td>
-                    <td>{r.total_tokens}</td>
-                    <td>{formatDuration(r.duration_ms)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            data={recentData}
+            columns={recentColumns}
+            exportFilename="ia_recientes"
+            height="320px"
+          />
         </>
       )}
     </div>

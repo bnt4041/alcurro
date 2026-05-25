@@ -13,6 +13,8 @@ from app.models.models import Employee, Role, ShiftConfiguration
 from app.routers.crud_helpers import get_or_404
 from app.routers.search_helpers import ilike_filter
 from app.schemas.crud import (
+    EmployeeBulkImportRequest,
+    EmployeeBulkImportResponse,
     EmployeeBulkScheduleResult,
     EmployeeBulkScheduleUpdate,
     EmployeeBulkScheduleItemError,
@@ -22,6 +24,7 @@ from app.schemas.crud import (
 )
 from app.schemas.whatsapp import normalize_mobile_digits
 from app.services.code_generator import next_employee_code
+from app.services.employee_bulk_import_service import bulk_import_employees
 from app.services.id_document import validate_id_document
 from app.services.rbac_service import assign_role_default_group
 from app.models.documents import DocumentDelivery
@@ -210,6 +213,46 @@ def bulk_update_schedule(
         session.rollback()
 
     return EmployeeBulkScheduleResult(updated=updated, skipped=skipped, errors=errors)
+
+
+@router.post("/bulk-import", response_model=EmployeeBulkImportResponse)
+def bulk_import_employees_route(
+    data: EmployeeBulkImportRequest,
+    ctx: OrgContext = Depends(get_org_context),
+    session: Session = Depends(get_session),
+    user: Employee = Depends(get_current_user),
+    _: object = Depends(require_write("employees", "create")),
+) -> EmployeeBulkImportResponse:
+    from app.services.scope_service import is_write_own_only
+
+    if is_write_own_only(session, user, ctx.tenant.id, "employees", "create"):
+        raise HTTPException(
+            status_code=403,
+            detail="No puedes importar empleados",
+        )
+    dept_id = ctx.department.id if ctx.department else None
+    if not dept_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Selecciona departamento en el selector de organización",
+        )
+    try:
+        _d, _w, company = resolve_department_chain(session, dept_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Departamento no válido") from None
+    if company.tenant_id != ctx.tenant.id:
+        raise HTTPException(status_code=403, detail="Departamento fuera de la cuenta")
+    try:
+        return bulk_import_employees(
+            session,
+            tenant_id=ctx.tenant.id,
+            company_id=company.id,
+            department_id=dept_id,
+            country_iso=_country_iso(ctx),
+            rows=data.rows,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/{employee_id}/documents", response_model=list[DocumentDeliveryRead])

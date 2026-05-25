@@ -1,13 +1,12 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
+import DataTable, { type DataTableColumn } from "../components/DataTable";
 import TenantAccountSheet, {
   AccountSheetTab,
   TenantFormState,
   TenantUserCreateForm,
   TenantUserRow,
 } from "../components/TenantAccountSheet";
-import InvoiceHistoryTable from "../components/InvoiceHistoryTable";
-import SubscriptionSummaryCard from "../components/SubscriptionSummaryCard";
 import { TenantBillingOverview } from "../components/TenantBillingTab";
 import PageHeader from "../components/PageHeader";
 import { useToast } from "../context/ToastContext";
@@ -45,6 +44,13 @@ interface TenantRow {
   created_at: string;
   subscription: SubscriptionSummary | null;
 }
+
+type TenantTableRow = TenantRow & {
+  plan_label: string;
+  subscription_label: string;
+  amount_label: string;
+  account_label: string;
+};
 
 const emptyForm = (): TenantFormState => ({
   accountCode: "",
@@ -97,6 +103,77 @@ export default function PlatformPage() {
   const [invoicesLoading, setInvoicesLoading] = useState(false);
 
   const sheetMode = editingId ? "edit" : "create";
+
+  const tenantTableData = useMemo<TenantTableRow[]>(
+    () =>
+      tenants.map((t) => ({
+        ...t,
+        plan_label: t.subscription?.plan_name ?? "—",
+        subscription_label: t.subscription
+          ? SUBSCRIPTION_STATUS_LABELS[t.subscription.status] ?? t.subscription.status
+          : "—",
+        amount_label: t.subscription
+          ? formatMoney(t.subscription.amount_cents, t.subscription.currency)
+          : "—",
+        account_label: t.is_active ? "Activa" : "Inactiva",
+      })),
+    [tenants]
+  );
+
+  const tenantColumns = useMemo<DataTableColumn<TenantTableRow>[]>(
+    () => [
+      {
+        title: "Código",
+        field: "slug",
+        headerFilter: "input",
+        formatter: (c) => `<code>${String(c.getValue())}</code>`,
+        width: 110,
+      },
+      { title: "Nombre", field: "name", headerFilter: "input", minWidth: 160 },
+      {
+        title: "CIF",
+        field: "tax_id",
+        headerFilter: "input",
+        formatter: (c) => String(c.getValue() ?? "—"),
+        width: 110,
+      },
+      { title: "Tarifa", field: "plan_label", headerFilter: "input", minWidth: 120 },
+      {
+        title: "Suscripción",
+        field: "subscription_label",
+        headerFilter: "select",
+        headerFilterParams: {
+          values: {
+            "": "Todos",
+            ...Object.fromEntries(
+              Object.values(SUBSCRIPTION_STATUS_LABELS).map((v) => [v, v])
+            ),
+          } as Record<string, string>,
+        },
+        formatter: (cell) => {
+          const r = cell.getRow().getData() as TenantTableRow;
+          if (!r.subscription) return "—";
+          const cls =
+            r.subscription.status === "active"
+              ? "badge--ok"
+              : r.subscription.status === "past_due"
+                ? "badge--danger"
+                : "";
+          return `<span class="badge ${cls}">${r.subscription_label}</span>`;
+        },
+        width: 130,
+      },
+      { title: "Importe", field: "amount_label", headerFilter: "input", width: 100 },
+      {
+        title: "Cuenta",
+        field: "account_label",
+        headerFilter: "select",
+        headerFilterParams: { values: { "": "Todos", Activa: "Activa", Inactiva: "Inactiva" } },
+        width: 100,
+      },
+    ],
+    []
+  );
 
   const loadInvoices = async (tenantId: string) => {
     setInvoicesLoading(true);
@@ -398,68 +475,15 @@ export default function PlatformPage() {
         </ul>
       </section>
 
-      <div className="table-wrap card">
-        <table>
-          <thead>
-            <tr>
-              <th>Código</th>
-              <th>Nombre</th>
-              <th>CIF</th>
-              <th>Tarifa</th>
-              <th>Suscripción</th>
-              <th>Importe</th>
-              <th>Cuenta</th>
-            </tr>
-          </thead>
-          <tbody>
-            {tenants.map((t) => (
-              <tr
-                key={t.id}
-                className={`row-clickable ${!t.is_active ? "row-inactive" : ""}`}
-                onClick={() => openSheet(t)}
-                title="Abrir ficha de la cuenta"
-              >
-                <td>
-                  <code>{t.slug}</code>
-                </td>
-                <td>{t.name}</td>
-                <td>{t.tax_id ?? "—"}</td>
-                <td>{t.subscription?.plan_name ?? "—"}</td>
-                <td>
-                  {t.subscription ? (
-                    <span
-                      className={`badge ${
-                        t.subscription.status === "active"
-                          ? "badge--ok"
-                          : t.subscription.status === "past_due"
-                            ? "badge--danger"
-                            : ""
-                      }`}
-                    >
-                      {SUBSCRIPTION_STATUS_LABELS[t.subscription.status] ??
-                        t.subscription.status}
-                    </span>
-                  ) : (
-                    "—"
-                  )}
-                </td>
-                <td>
-                  {t.subscription
-                    ? formatMoney(
-                        t.subscription.amount_cents,
-                        t.subscription.currency
-                      )
-                    : "—"}
-                </td>
-                <td>{t.is_active ? "Activa" : "Inactiva"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        <p className="muted small table-foot-hint">
-          Haz clic en una fila para abrir la ficha de la cuenta.
-        </p>
-      </div>
+      <DataTable
+        data={tenantTableData}
+        columns={tenantColumns}
+        exportFilename="cuentas_cliente"
+        onRowClick={(row) => void openSheet(row)}
+      />
+      <p className="muted small table-foot-hint">
+        Haz clic en una fila para abrir la ficha de la cuenta.
+      </p>
 
       <TenantAccountSheet
         open={sheetOpen}

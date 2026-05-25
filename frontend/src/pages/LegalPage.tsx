@@ -1,9 +1,11 @@
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
+import DataTable, { type DataTableColumn } from "../components/DataTable";
 import Modal from "../components/Modal";
 import PageHeader from "../components/PageHeader";
 import { useAuth } from "../context/AuthContext";
 import { canModule } from "../lib/permissions";
+import { tableActionButtons } from "../lib/tableFormatters";
 
 export interface LegalDocument {
   id: string;
@@ -97,6 +99,74 @@ export default function LegalPage() {
     load();
   };
 
+  type LegalRow = LegalDocument & {
+    version_label: string;
+    required_label: string;
+    active_label: string;
+  };
+
+  const tableData = useMemo<LegalRow[]>(
+    () =>
+      rows.map((r) => ({
+        ...r,
+        version_label: `v${r.version}`,
+        required_label: r.is_required ? "Sí" : "No",
+        active_label: r.is_active ? "Sí" : "No",
+      })),
+    [rows]
+  );
+
+  const columns = useMemo<DataTableColumn<LegalRow>[]>(() => {
+    const cols: DataTableColumn<LegalRow>[] = [
+      {
+        title: "Código",
+        field: "code",
+        headerFilter: "input",
+        formatter: (c) => `<code>${c.getValue()}</code>`,
+        width: 120,
+      },
+      { title: "Título", field: "title", headerFilter: "input", minWidth: 180 },
+      { title: "Versión", field: "version_label", headerFilter: "input", width: 90 },
+      {
+        title: "Obligatorio",
+        field: "required_label",
+        headerFilter: "select",
+        headerFilterParams: { values: { "": "Todos", Sí: "Sí", No: "No" } },
+        width: 100,
+      },
+      {
+        title: "Activo",
+        field: "active_label",
+        headerFilter: "select",
+        headerFilterParams: { values: { "": "Todos", Sí: "Sí", No: "No" } },
+        width: 90,
+      },
+    ];
+    if (canWrite) {
+      cols.push({
+        title: "",
+        field: "id",
+        headerFilter: false,
+        sorter: false,
+        download: false,
+        width: 200,
+        formatter: () =>
+          tableActionButtons([
+            { id: "view", label: "Ver" },
+            { id: "edit", label: "Editar" },
+            { id: "delete", label: "Borrar", className: "btn-danger" },
+          ]),
+      });
+    }
+    return cols;
+  }, [canWrite]);
+
+  const onCellAction = (action: string, row: LegalRow) => {
+    if (action === "view") setPreview(row);
+    else if (action === "edit") openEdit(row);
+    else if (action === "delete") remove(row.id);
+  };
+
   return (
     <>
       <PageHeader
@@ -110,56 +180,14 @@ export default function LegalPage() {
           ) : undefined
         }
       />
-      {loading ? (
-        <p className="muted">Cargando…</p>
-      ) : (
-        <div className="table-wrap card">
-          <table>
-            <thead>
-              <tr>
-                <th>Código</th>
-                <th>Título</th>
-                <th>Versión</th>
-                <th>Obligatorio</th>
-                <th>Activo</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <tr key={row.id}>
-                  <td>
-                    <code>{row.code}</code>
-                  </td>
-                  <td>{row.title}</td>
-                  <td>v{row.version}</td>
-                  <td>{row.is_required ? "Sí" : "No"}</td>
-                  <td>{row.is_active ? "Sí" : "No"}</td>
-                  <td className="actions">
-                    <button type="button" className="btn btn-sm" onClick={() => setPreview(row)}>
-                      Ver
-                    </button>
-                    {canWrite && (
-                      <>
-                        <button type="button" className="btn btn-sm" onClick={() => openEdit(row)}>
-                          Editar
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-sm btn-danger"
-                          onClick={() => remove(row.id)}
-                        >
-                          Borrar
-                        </button>
-                      </>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <DataTable
+        data={tableData}
+        columns={columns}
+        loading={loading}
+        exportFilename="textos_legales"
+        height="480px"
+        onCellAction={onCellAction}
+      />
 
       <Modal title={preview?.title ?? ""} open={!!preview} onClose={() => setPreview(null)}>
         {preview && (

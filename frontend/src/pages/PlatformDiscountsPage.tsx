@@ -1,6 +1,8 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
+import DataTable, { type DataTableColumn } from "../components/DataTable";
 import PageHeader from "../components/PageHeader";
+import { tableActionButtons } from "../lib/tableFormatters";
 import { useToast } from "../context/ToastContext";
 import { formatMoney, parseEurosToCents } from "../lib/money";
 
@@ -144,6 +146,82 @@ export default function PlatformDiscountsPage() {
   const planName = (id: string | null) =>
     id ? plans.find((p) => p.id === id)?.name ?? "—" : "Todas las tarifas";
 
+  type DiscountTableRow = Discount & {
+    type_label: string;
+    value_label: string;
+    validity_label: string;
+    plan_label: string;
+    status_label: string;
+  };
+
+  const tableData = useMemo<DiscountTableRow[]>(
+    () =>
+      discounts.map((d) => ({
+        ...d,
+        type_label: d.discount_type === "percent" ? "%" : "Fijo",
+        value_label: formatDiscountValue(d),
+        validity_label: `${d.valid_from} → ${d.valid_until}`,
+        plan_label: planName(d.pricing_plan_id),
+        status_label: d.is_active ? "Activo" : "Inactivo",
+      })),
+    [discounts, plans]
+  );
+
+  const columns = useMemo(
+    (): DataTableColumn<DiscountTableRow>[] => [
+      {
+        title: "Código",
+        field: "code",
+        headerFilter: "input",
+        formatter: (c) => `<code>${String(c.getValue())}</code>`,
+        width: 100,
+      },
+      { title: "Nombre", field: "name", headerFilter: "input", minWidth: 140 },
+      {
+        title: "Tipo",
+        field: "type_label",
+        headerFilter: "select",
+        headerFilterParams: { values: { "": "Todos", "%": "%", Fijo: "Fijo" } as Record<string, string> },
+        width: 80,
+      },
+      { title: "Valor", field: "value_label", headerFilter: "input", width: 90 },
+      { title: "Vigencia", field: "validity_label", headerFilter: "input", minWidth: 180 },
+      { title: "Tarifa", field: "plan_label", headerFilter: "input", minWidth: 120 },
+      {
+        title: "Estado",
+        field: "status_label",
+        headerFilter: "select",
+        headerFilterParams: { values: { "": "Todos", Activo: "Activo", Inactivo: "Inactivo" } },
+        formatter: (cell) => {
+          const r = cell.getRow().getData() as DiscountTableRow;
+          const cls = r.is_active ? "badge--ok" : "badge--muted";
+          return `<span class="badge ${cls}">${r.status_label}</span>`;
+        },
+        width: 100,
+      },
+      {
+        title: "",
+        field: "id",
+        headerFilter: false,
+        download: false,
+        width: 220,
+        formatter: () =>
+          tableActionButtons([
+            { id: "toggle", label: "Activar/Desactivar" },
+            { id: "edit", label: "Editar" },
+            { id: "delete", label: "Eliminar" },
+          ]),
+      },
+    ],
+    []
+  );
+
+  const onCellAction = (action: string, row: DiscountTableRow) => {
+    if (action === "toggle") void toggleActive(row);
+    if (action === "edit") openEdit(row);
+    if (action === "delete") void remove(row);
+  };
+
   return (
     <>
       <PageHeader
@@ -156,70 +234,12 @@ export default function PlatformDiscountsPage() {
         }
       />
 
-      <div className="table-wrap card">
-        <table>
-          <thead>
-            <tr>
-              <th>Código</th>
-              <th>Nombre</th>
-              <th>Tipo</th>
-              <th>Valor</th>
-              <th>Vigencia</th>
-              <th>Tarifa</th>
-              <th>Estado</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {discounts.map((d) => (
-              <tr key={d.id} className={!d.is_active ? "row-inactive" : ""}>
-                <td>
-                  <code>{d.code}</code>
-                </td>
-                <td>{d.name}</td>
-                <td>{d.discount_type === "percent" ? "%" : "Fijo"}</td>
-                <td>{formatDiscountValue(d)}</td>
-                <td className="small">
-                  {d.valid_from} → {d.valid_until}
-                </td>
-                <td>{planName(d.pricing_plan_id)}</td>
-                <td>
-                  <span
-                    className={`badge ${d.is_active ? "badge--ok" : "badge--muted"}`}
-                  >
-                    {d.is_active ? "Activo" : "Inactivo"}
-                  </span>
-                </td>
-                <td>
-                  <div className="table-actions">
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-sm"
-                      onClick={() => toggleActive(d)}
-                    >
-                      {d.is_active ? "Desactivar" : "Activar"}
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-sm"
-                      onClick={() => openEdit(d)}
-                    >
-                      Editar
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-sm"
-                      onClick={() => remove(d)}
-                    >
-                      Eliminar
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <DataTable
+        data={tableData}
+        columns={columns}
+        exportFilename="descuentos"
+        onCellAction={onCellAction}
+      />
 
       {open && (
         <div

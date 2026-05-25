@@ -44,6 +44,13 @@ DEFAULT_ACTIONS: list[tuple[str, str, str, str, int]] = [
         "documentos",
         6,
     ),
+    (
+        "resumen_dia",
+        "Resumen del día",
+        "Muestra fichajes y paradas del día actual",
+        "fichajes",
+        7,
+    ),
 ]
 
 # Perfil -> códigos habilitados por defecto
@@ -56,6 +63,7 @@ DEFAULT_PROFILE_MATRIX: dict[str, set[str]] = {
         "solicitar_vacaciones",
         "consultar_saldo_vacaciones",
         "confirmar_documento",
+        "resumen_dia",
     },
     "manager": {code for code, *_ in DEFAULT_ACTIONS},
     "tenant_admin": {code for code, *_ in DEFAULT_ACTIONS},

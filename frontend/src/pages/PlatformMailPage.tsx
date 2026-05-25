@@ -1,6 +1,7 @@
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
 import type { ConnectionTest, MailLog, MailSettings } from "../api/types";
+import DataTable, { type DataTableColumn } from "../components/DataTable";
 import PageHeader from "../components/PageHeader";
 
 type LogFilter = "all" | "ok" | "fail";
@@ -97,6 +98,59 @@ export default function PlatformMailPage() {
       setError(String(err).replace(/^Error:\s*/i, ""));
     }
   };
+
+  type LogRow = MailLog & { date_label: string; status_label: string };
+
+  const logTableData = useMemo<LogRow[]>(
+    () =>
+      logs.map((row) => ({
+        ...row,
+        date_label: new Date(row.created_at).toLocaleString("es-ES"),
+        status_label: row.success ? "OK" : "Error",
+      })),
+    [logs]
+  );
+
+  const logColumns = useMemo<DataTableColumn<LogRow>[]>(
+    () => [
+      { title: "Fecha", field: "date_label", headerFilter: "input", minWidth: 150 },
+      {
+        title: "Destino",
+        field: "to_address",
+        headerFilter: "input",
+        formatter: (c) => `<span class="mono small">${String(c.getValue())}</span>`,
+        minWidth: 160,
+      },
+      { title: "Asunto", field: "subject", headerFilter: "input", minWidth: 180 },
+      {
+        title: "Tipo",
+        field: "event_type",
+        headerFilter: "input",
+        formatter: (c) => `<span class="badge">${String(c.getValue())}</span>`,
+        width: 120,
+      },
+      {
+        title: "Estado",
+        field: "status_label",
+        headerFilter: "select",
+        headerFilterParams: { values: { "": "Todos", OK: "OK", Error: "Error" } },
+        formatter: (cell) => {
+          const r = cell.getRow().getData() as LogRow;
+          const cls = r.success ? "test-ok" : "test-fail";
+          return `<span class="${cls}">${r.status_label}</span>`;
+        },
+        width: 90,
+      },
+      {
+        title: "Detalle",
+        field: "detail",
+        headerFilter: "input",
+        formatter: (c) => `<span class="small muted">${String(c.getValue() ?? "—")}</span>`,
+        minWidth: 160,
+      },
+    ],
+    []
+  );
 
   if (!form) {
     return <p className="muted">Cargando correo…</p>;
@@ -263,38 +317,13 @@ export default function PlatformMailPage() {
           <p className="muted">Aún no hay envíos registrados.</p>
         )}
         {logs.length > 0 && (
-          <div className="table-wrap">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Fecha</th>
-                  <th>Destino</th>
-                  <th>Asunto</th>
-                  <th>Tipo</th>
-                  <th>Estado</th>
-                  <th>Detalle</th>
-                </tr>
-              </thead>
-              <tbody>
-                {logs.map((row) => (
-                  <tr key={row.id}>
-                    <td>{new Date(row.created_at).toLocaleString("es-ES")}</td>
-                    <td className="mono small">{row.to_address}</td>
-                    <td>{row.subject}</td>
-                    <td>
-                      <span className="badge">{row.event_type}</span>
-                    </td>
-                    <td>
-                      <span className={row.success ? "test-ok" : "test-fail"}>
-                        {row.success ? "OK" : "Error"}
-                      </span>
-                    </td>
-                    <td className="small muted">{row.detail || "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            data={logTableData}
+            columns={logColumns}
+            loading={loadingLogs}
+            exportFilename="logs_correo"
+            height="420px"
+          />
         )}
       </div>
     </>

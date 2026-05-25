@@ -1,3 +1,4 @@
+from datetime import date
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -8,8 +9,13 @@ from app.core.org_context import OrgContext, get_org_context
 from app.core.permissions import Permission, require_permission, require_write
 from app.database import get_session
 from app.models.models import ClockIn, ClockInType, Employee
+from app.models.project import Project
 from app.routers.crud_helpers import get_or_404
 from app.schemas.crud import ClockInCreate, ClockInRead
+from app.services.clock_incident_hook import process_clock_in_incidents
+from app.services.clock_report_service import EmployeeDayReport, build_employee_day_report
+from app.services.clock_settings_service import get_or_create_settings
+from app.services.project_service import get_project_for_company
 from app.services.scope_service import read_scope_employee_ids, resolve_write_employee_id
 
 router = APIRouter(prefix="/clock-ins", tags=["clock-ins"])
@@ -27,6 +33,20 @@ def _scope_ids(ctx: OrgContext, session: Session, user: Employee) -> list[UUID]:
     )
 
 
+def _enrich_reads(session: Session, rows: list[ClockIn]) -> list[ClockInRead]:
+    project_names: dict[UUID, str] = {}
+    result: list[ClockInRead] = []
+    for row in rows:
+        data = ClockInRead.model_validate(row)
+        if row.project_id:
+            if row.project_id not in project_names:
+                p = session.get(Project, row.project_id)
+                project_names[row.project_id] = p.name if p else "—"
+            data.project_name = project_names[row.project_id]
+        result.append(data)
+    return result
+
+
 @router.get("", response_model=list[ClockInRead])
 def list_clock_ins(
     ctx: OrgContext = Depends(get_org_context),
@@ -37,7 +57,7 @@ def list_clock_ins(
     q: str | None = None,
     limit: int = 200,
     _: object = Depends(require_permission(Permission.READ, "clock_ins")),
-) -> list[ClockIn]:
+) -> list[ClockInRead]:
     ids = _scope_ids(ctx, session, user)
     if not ids:
         return []
@@ -68,7 +88,23 @@ def list_clock_ins(
         if not emp_ids:
             return []
         stmt = stmt.where(ClockIn.employee_id.in_(emp_ids))  # type: ignore[attr-defined]
-    return list(session.exec(stmt.limit(limit)).all())
+    rows = list(session.exec(stmt.limit(limit)).all())
+    return _enrich_reads(session, rows)
+
+
+@router.get("/reports/day", response_model=EmployeeDayReport)
+def employee_day_report(
+    employee_id: UUID,
+    report_date: date | None = None,
+    ctx: OrgContext = Depends(get_org_context),
+    session: Session = Depends(get_session),
+    user: Employee = Depends(get_current_user),
+    _: object = Depends(require_permission(Permission.READ, "clock_ins")),
+) -> EmployeeDayReport:
+    ids = _scope_ids(ctx, session, user)
+    if employee_id not in ids:
+        raise HTTPException(status_code=404, detail="Empleado no encontrado")
+    return build_employee_day_report(session, employee_id, report_date)
 
 
 @router.get("/{clock_in_id}", response_model=ClockInRead)
@@ -78,11 +114,11 @@ def get_clock_in(
     session: Session = Depends(get_session),
     user: Employee = Depends(get_current_user),
     _: object = Depends(require_permission(Permission.READ, "clock_ins")),
-) -> ClockIn:
+) -> ClockInRead:
     row = get_or_404(session, ClockIn, clock_in_id)
     if row.employee_id not in _scope_ids(ctx, session, user):
         raise HTTPException(status_code=404, detail="Fichaje no encontrado")
-    return row
+    return _enrich_reads(session, [row])[0]
 
 
 @router.post("", response_model=ClockInRead, status_code=201)
@@ -92,14 +128,45 @@ def create_clock_in(
     session: Session = Depends(get_session),
     user: Employee = Depends(get_current_user),
     _: object = Depends(require_write("clock_ins", "create")),
-) -> ClockIn:
+) -> ClockInRead:
     target = resolve_write_employee_id(
         session, user, ctx, "clock_ins", data.employee_id, "create"
     )
+    emp = session.get(Employee, target)
+    if not emp:
+        raise HTTPException(status_code=404, detail="Empleado no encontrado")
+
+    settings = get_or_create_settings(session, ctx.tenant.id)
+    project_id = data.project_id
+    if settings.require_project_on_clock_in:
+        if not project_id:
+            raise HTTPException(
+                status_code=400,
+                detail="Debes seleccionar un proyecto para fichar",
+            )
+        if not get_project_for_company(session, project_id, emp.company_id):
+            raise HTTPException(status_code=400, detail="Proyecto no válido")
+    elif project_id and not get_project_for_company(
+        session, project_id, emp.company_id
+    ):
+        raise HTTPException(status_code=400, detail="Proyecto no válido")
+
     row = ClockIn.model_validate(
-        {**data.model_dump(), "employee_id": target, "source": data.source or "panel"}
+        {
+            **data.model_dump(),
+            "employee_id": target,
+            "source": data.source or "panel",
+            "project_id": project_id,
+        }
     )
     session.add(row)
+    session.flush()
+    process_clock_in_incidents(
+        session,
+        tenant_id=ctx.tenant.id,
+        employee=emp,
+        clock=row,
+    )
     session.commit()
     session.refresh(row)
-    return row
+    return _enrich_reads(session, [row])[0]

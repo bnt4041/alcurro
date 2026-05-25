@@ -1,7 +1,11 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
-import type { ClockReminderRunResult, ClockSettings } from "../api/types";
+import type {
+  ClockReminderRunResult,
+  ClockSettings,
+  IncidentAutoRule,
+} from "../api/types";
 import PageHeader from "../components/PageHeader";
 import { useAuth } from "../context/AuthContext";
 import { canModule } from "../lib/permissions";
@@ -16,10 +20,18 @@ export default function ClockSettingsPage() {
     null
   );
   const [runningReminders, setRunningReminders] = useState(false);
+  const [incidentRules, setIncidentRules] = useState<IncidentAutoRule | null>(null);
 
   const load = useCallback(async () => {
     setForm(await api.get<ClockSettings>("/clock-settings"));
-  }, []);
+    if (canWrite) {
+      try {
+        setIncidentRules(await api.get<IncidentAutoRule>("/incidents/rules"));
+      } catch {
+        setIncidentRules(null);
+      }
+    }
+  }, [canWrite]);
 
   useEffect(() => {
     load();
@@ -57,6 +69,8 @@ export default function ClockSettingsPage() {
         inbound_signature_delivery_ids: form.inbound_signature_delivery_ids,
         send_welcome_with_documents: form.send_welcome_with_documents,
         welcome_message_extra: form.welcome_message_extra || null,
+        daily_summary_enabled: form.daily_summary_enabled,
+        require_project_on_clock_in: form.require_project_on_clock_in,
       });
       setForm(updated);
       setMsg("Configuración de fichajes guardada");
@@ -129,6 +143,48 @@ export default function ClockSettingsPage() {
           </section>
 
           <section className="card clock-settings-card">
+            <h3>Resumen del día (WhatsApp)</h3>
+            <p className="muted small">
+              Permite al empleado pedir por WhatsApp un resumen de fichajes y paradas del
+              día (p. ej. «resumen del día»).
+            </p>
+            <label className="checkbox">
+              <input
+                type="checkbox"
+                disabled={!canWrite}
+                checked={form.daily_summary_enabled}
+                onChange={(ev) =>
+                  setForm({ ...form, daily_summary_enabled: ev.target.checked })
+                }
+              />
+              <span>Permitir solicitar resumen del día</span>
+            </label>
+          </section>
+
+          <section className="card clock-settings-card">
+            <h3>Proyecto al fichar</h3>
+            <p className="muted small">
+              Si está activo, el empleado debe elegir un proyecto al fichar por WhatsApp o
+              desde el panel. Gestiona los proyectos en{" "}
+              <Link to="/app/proyectos">Proyectos</Link>.
+            </p>
+            <label className="checkbox">
+              <input
+                type="checkbox"
+                disabled={!canWrite}
+                checked={form.require_project_on_clock_in}
+                onChange={(ev) =>
+                  setForm({
+                    ...form,
+                    require_project_on_clock_in: ev.target.checked,
+                  })
+                }
+              />
+              <span>Solicitar proyecto al fichar</span>
+            </label>
+          </section>
+
+          <section className="card clock-settings-card">
             <h3>Recordatorio de fichaje</h3>
             <div className="form-grid clock-settings-fields">
               <label>
@@ -176,10 +232,107 @@ export default function ClockSettingsPage() {
             )}
           </section>
 
+          {incidentRules && (
+            <section className="card clock-settings-card">
+              <h3>Incidencias automáticas</h3>
+              <p className="muted small">
+                Si un empleado ficha entrada más tarde del margen, se crea una incidencia.
+                Puede enviarse WhatsApp con enlace para justificar.
+              </p>
+              <label className="checkbox">
+                <input
+                  type="checkbox"
+                  disabled={!canWrite}
+                  checked={incidentRules.late_entrada_enabled}
+                  onChange={(ev) =>
+                    setIncidentRules({
+                      ...incidentRules,
+                      late_entrada_enabled: ev.target.checked,
+                    })
+                  }
+                />
+                <span>Entrada tardía (respecto al horario del empleado)</span>
+              </label>
+              <div className="form-grid clock-settings-fields">
+                <label>
+                  Margen de gracia (minutos)
+                  <input
+                    type="number"
+                    min={0}
+                    max={240}
+                    disabled={!canWrite || !incidentRules.late_entrada_enabled}
+                    value={incidentRules.late_entrada_grace_minutes}
+                    onChange={(ev) =>
+                      setIncidentRules({
+                        ...incidentRules,
+                        late_entrada_grace_minutes: parseInt(ev.target.value, 10) || 0,
+                      })
+                    }
+                  />
+                </label>
+              </div>
+              <label className="checkbox">
+                <input
+                  type="checkbox"
+                  disabled={!canWrite || !incidentRules.late_entrada_enabled}
+                  checked={incidentRules.late_entrada_notify_whatsapp}
+                  onChange={(ev) =>
+                    setIncidentRules({
+                      ...incidentRules,
+                      late_entrada_notify_whatsapp: ev.target.checked,
+                    })
+                  }
+                />
+                <span>Notificar por WhatsApp con enlace de justificación</span>
+              </label>
+              <label className="checkbox">
+                <input
+                  type="checkbox"
+                  disabled={!canWrite || !incidentRules.late_entrada_enabled}
+                  checked={incidentRules.late_entrada_require_justification}
+                  onChange={(ev) =>
+                    setIncidentRules({
+                      ...incidentRules,
+                      late_entrada_require_justification: ev.target.checked,
+                    })
+                  }
+                />
+                <span>Requerir justificación del empleado (enlace público)</span>
+              </label>
+              {canWrite && (
+                <div className="test-row">
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    onClick={async () => {
+                      if (!incidentRules) return;
+                      const updated = await api.put<IncidentAutoRule>(
+                        "/incidents/rules",
+                        {
+                          late_entrada_enabled: incidentRules.late_entrada_enabled,
+                          late_entrada_grace_minutes:
+                            incidentRules.late_entrada_grace_minutes,
+                          late_entrada_notify_whatsapp:
+                            incidentRules.late_entrada_notify_whatsapp,
+                          late_entrada_require_justification:
+                            incidentRules.late_entrada_require_justification,
+                        }
+                      );
+                      setIncidentRules(updated);
+                      setMsg("Reglas de incidencias guardadas");
+                    }}
+                  >
+                    Guardar reglas de incidencias
+                  </button>
+                </div>
+              )}
+            </section>
+          )}
+
           <section className="card clock-settings-card clock-settings-card--muted">
-            <h3>Recordatorio de incidencias</h3>
+            <h3>Recordatorio de incidencias (futuro)</h3>
             <p className="muted small">
-              Opción reservada; el envío automático se activará en una versión futura.
+              Recordatorio adicional aparte de la incidencia automática por entrada tardía.
             </p>
             <label className="checkbox">
               <input

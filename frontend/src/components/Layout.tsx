@@ -11,8 +11,10 @@ import LegalAcceptanceModal from "./LegalAcceptanceModal";
 const nav = [
   { to: "/app", label: "Inicio", always: true as const },
   { to: "/app/organizacion", label: "Organización", module: "companies" as const },
+  { to: "/app/proyectos", label: "Proyectos", module: "companies" as const },
   { to: "/app/empleados", label: "Empleados", module: "employees" as const },
   { to: "/app/fichajes", label: "Fichajes", module: "clock_ins" as const },
+  { to: "/app/incidencias", label: "Incidencias", module: "clock_ins" as const },
   { to: "/app/paradas", label: "Paradas", module: "breaks" as const },
   { to: "/app/vacaciones", label: "Vacaciones", module: "leave" as const },
   { to: "/app/turnos", label: "Turnos", module: "shifts" as const },

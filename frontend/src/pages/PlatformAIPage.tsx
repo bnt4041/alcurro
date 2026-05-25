@@ -1,5 +1,6 @@
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
+import DataTable, { type DataTableColumn } from "../components/DataTable";
 import PageHeader from "../components/PageHeader";
 import { useToast } from "../context/ToastContext";
 
@@ -160,6 +161,51 @@ export default function PlatformAIPage() {
   };
 
   const profiles = overview?.profiles ?? [];
+
+  type UsageTableRow = TenantUsage & {
+    tokens_label: string;
+    prompt_label: string;
+    completion_label: string;
+    duration_label: string;
+    last_used_label: string;
+  };
+
+  const usageTableData = useMemo<UsageTableRow[]>(
+    () =>
+      usage.map((u) => ({
+        ...u,
+        tokens_label: u.total_tokens.toLocaleString("es-ES"),
+        prompt_label: u.prompt_tokens.toLocaleString("es-ES"),
+        completion_label: u.completion_tokens.toLocaleString("es-ES"),
+        duration_label: formatDuration(u.total_duration_ms),
+        last_used_label: u.last_used_at
+          ? new Date(u.last_used_at).toLocaleString("es-ES")
+          : "—",
+      })),
+    [usage]
+  );
+
+  const usageColumns = useMemo<DataTableColumn<UsageTableRow>[]>(
+    () => [
+      {
+        title: "Cuenta",
+        field: "tenant_name",
+        headerFilter: "input",
+        minWidth: 160,
+        formatter: (cell) => {
+          const r = cell.getRow().getData() as UsageTableRow;
+          return `<strong>${r.tenant_name}</strong><div class="muted small">${r.tenant_slug}</div>`;
+        },
+      },
+      { title: "Peticiones", field: "request_count", headerFilter: "number", width: 100 },
+      { title: "Tokens", field: "tokens_label", headerFilter: "input", width: 100 },
+      { title: "Prompt", field: "prompt_label", headerFilter: "input", width: 100 },
+      { title: "Respuesta", field: "completion_label", headerFilter: "input", width: 100 },
+      { title: "Tiempo IA", field: "duration_label", headerFilter: "input", width: 110 },
+      { title: "Último uso", field: "last_used_label", headerFilter: "input", minWidth: 150 },
+    ],
+    []
+  );
 
   return (
     <>
@@ -356,41 +402,11 @@ export default function PlatformAIPage() {
             Consumo agregado por cuenta: peticiones, tokens (prompt + respuesta) y
             tiempo de inferencia.
           </p>
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Cuenta</th>
-                  <th>Peticiones</th>
-                  <th>Tokens</th>
-                  <th>Prompt</th>
-                  <th>Respuesta</th>
-                  <th>Tiempo IA</th>
-                  <th>Último uso</th>
-                </tr>
-              </thead>
-              <tbody>
-                {usage.map((u) => (
-                  <tr key={u.tenant_id}>
-                    <td>
-                      <strong>{u.tenant_name}</strong>
-                      <div className="muted small">{u.tenant_slug}</div>
-                    </td>
-                    <td>{u.request_count}</td>
-                    <td>{u.total_tokens.toLocaleString("es-ES")}</td>
-                    <td>{u.prompt_tokens.toLocaleString("es-ES")}</td>
-                    <td>{u.completion_tokens.toLocaleString("es-ES")}</td>
-                    <td>{formatDuration(u.total_duration_ms)}</td>
-                    <td>
-                      {u.last_used_at
-                        ? new Date(u.last_used_at).toLocaleString("es-ES")
-                        : "—"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            data={usageTableData}
+            columns={usageColumns}
+            exportFilename="uso_ia_cuentas"
+          />
         </section>
       )}
     </>

@@ -1,12 +1,14 @@
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
 import type { DocumentDelivery } from "../api/types";
+import DataTable, { type DataTableColumn } from "../components/DataTable";
 import FileDropzone from "../components/FileDropzone";
 import Modal from "../components/Modal";
 import PageHeader from "../components/PageHeader";
 import { useAuth } from "../context/AuthContext";
 import { useEmployees } from "../hooks/useEmployees";
 import { canModule } from "../lib/permissions";
+import { tableActionButtons, type TableAction } from "../lib/tableFormatters";
 
 interface SignerRow {
   kind: "employee" | "external";
@@ -37,6 +39,11 @@ interface SignatureEnvelope {
   completed_at: string | null;
   signers: SignatureSigner[];
 }
+
+type SignatureRow = SignatureEnvelope & {
+  status_label: string;
+  hash_short: string;
+};
 
 type DocSource = "upload" | "existing";
 
@@ -189,8 +196,89 @@ export default function SignaturesPage() {
     load();
   };
 
+  const tableData = useMemo<SignatureRow[]>(
+    () =>
+      rows.map((r) => ({
+        ...r,
+        status_label: STATUS_LABELS[r.status] ?? r.status,
+        hash_short: `${r.original_hash.slice(0, 16)}…`,
+      })),
+    [rows]
+  );
+
+  const columns = useMemo<DataTableColumn<SignatureRow>[]>(() => {
+    const cols: DataTableColumn<SignatureRow>[] = [
+      {
+        title: "Referencia",
+        field: "reference",
+        headerFilter: "input",
+        formatter: (c) => `<code>${String(c.getValue())}</code>`,
+        minWidth: 120,
+      },
+      { title: "Documento", field: "title", headerFilter: "input", minWidth: 160 },
+      {
+        title: "Estado",
+        field: "status_label",
+        headerFilter: "select",
+        headerFilterParams: {
+          values: { "": "Todos", ...Object.fromEntries(Object.values(STATUS_LABELS).map((v) => [v, v])) },
+        },
+        formatter: (c) => `<span class="badge">${String(c.getValue())}</span>`,
+        width: 120,
+      },
+      {
+        title: "Firmantes",
+        field: "signers",
+        headerFilter: false,
+        download: false,
+        minWidth: 220,
+        formatter: (cell) => {
+          const r = cell.getRow().getData() as SignatureRow;
+          return r.signers
+            .map((s) => {
+              const resendBtn =
+                canUpdate && s.status !== "firmado"
+                  ? `<button type="button" class="btn btn-sm" data-action="resend" data-signer-id="${s.id}">Reenviar</button>`
+                  : "";
+              return `<div class="signers-inline-item">${s.full_name} — ${s.status} ${resendBtn}</div>`;
+            })
+            .join("");
+        },
+      },
+      {
+        title: "Hash original",
+        field: "hash_short",
+        headerFilter: "input",
+        formatter: (c) => `<code class="muted small">${String(c.getValue())}</code>`,
+        width: 130,
+      },
+    ];
+    if (canUpdate) {
+      cols.push({
+        title: "",
+        field: "id",
+        headerFilter: false,
+        download: false,
+        width: 200,
+        formatter: (cell) => {
+          const r = cell.getRow().getData() as SignatureRow;
+          const actions: TableAction[] = [];
+          if (r.status === "completado") {
+            actions.push({ id: "signed", label: "PDF firmado" });
+            actions.push({ id: "certificate", label: "Certificado" });
+          }
+          if (!["completado", "cancelado"].includes(r.status)) {
+            actions.push({ id: "cancel", label: "Cancelar", className: "btn-danger" });
+          }
+          return actions.length ? tableActionButtons(actions) : "";
+        },
+      });
+    }
+    return cols;
+  }, [canUpdate]);
+
   const resend = async (envelopeId: string, signerId: string) => {
-    const { data } = await api.post<{ message: string; whatsapp_sent?: boolean; detail?: string }>(
+    const data = await api.post<{ message: string; whatsapp_sent?: boolean; detail?: string }>(
       `/signatures/${envelopeId}/signers/${signerId}/resend`,
       {}
     );
@@ -199,6 +287,22 @@ export default function SignaturesPage() {
       return;
     }
     alert(data.message || "Enlace reenviado por WhatsApp");
+  };
+
+  const onCellAction = (action: string, row: SignatureRow, ctx?: { signerId?: string }) => {
+    if (action === "resend" && ctx?.signerId) {
+      void resend(row.id, ctx.signerId);
+      return;
+    }
+    if (action === "signed") {
+      void api.download(`/signatures/${row.id}/signed`, `${row.reference}_signed.pdf`);
+      return;
+    }
+    if (action === "certificate") {
+      void api.download(`/signatures/${row.id}/certificate`, `${row.reference}_cert.pdf`);
+      return;
+    }
+    if (action === "cancel") void cancel(row.id);
   };
 
   return (
@@ -214,97 +318,14 @@ export default function SignaturesPage() {
           ) : undefined
         }
       />
-      {loading ? (
-        <p className="muted">Cargando…</p>
-      ) : (
-        <div className="table-wrap card">
-          <table>
-            <thead>
-              <tr>
-                <th>Referencia</th>
-                <th>Documento</th>
-                <th>Estado</th>
-                <th>Firmantes</th>
-                <th>Hash original</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr key={r.id}>
-                  <td>
-                    <code>{r.reference}</code>
-                  </td>
-                  <td>{r.title}</td>
-                  <td>
-                    <span className="badge">{STATUS_LABELS[r.status] ?? r.status}</span>
-                  </td>
-                  <td>
-                    <ul className="signers-inline">
-                      {r.signers.map((s) => (
-                        <li key={s.id}>
-                          {s.full_name} — {s.status}
-                          {canUpdate && s.status !== "firmado" && (
-                            <button
-                              type="button"
-                              className="btn btn-sm"
-                              onClick={() => resend(r.id, s.id)}
-                            >
-                              Reenviar
-                            </button>
-                          )}
-                        </li>
-                      ))}
-                    </ul>
-                  </td>
-                  <td className="muted small">
-                    <code>{r.original_hash.slice(0, 16)}…</code>
-                  </td>
-                  <td className="actions">
-                    {r.status === "completado" && (
-                      <>
-                        <button
-                          type="button"
-                          className="btn btn-sm"
-                          onClick={() =>
-                            api.download(
-                              `/signatures/${r.id}/signed`,
-                              `${r.reference}_signed.pdf`
-                            )
-                          }
-                        >
-                          PDF firmado
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-sm"
-                          onClick={() =>
-                            api.download(
-                              `/signatures/${r.id}/certificate`,
-                              `${r.reference}_cert.pdf`
-                            )
-                          }
-                        >
-                          Certificado
-                        </button>
-                      </>
-                    )}
-                    {canUpdate && !["completado", "cancelado"].includes(r.status) && (
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-danger"
-                        onClick={() => cancel(r.id)}
-                      >
-                        Cancelar
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <DataTable
+        data={tableData}
+        columns={columns}
+        loading={loading}
+        exportFilename="firmas"
+        emptyMessage="Sin solicitudes de firma"
+        onCellAction={onCellAction}
+      />
 
       <Modal
         title="Nueva solicitud de firma"

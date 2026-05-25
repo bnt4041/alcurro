@@ -1,9 +1,11 @@
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
 import { useAuth } from "../context/AuthContext";
+import DataTable, { type DataTableColumn } from "../components/DataTable";
 import Modal from "../components/Modal";
 import PageHeader from "../components/PageHeader";
-import { canModule, PERM_LABELS, PERM_SECTIONS, type Perm } from "../lib/permissions";
+import { canModule, PERM_LABELS, PERM_SECTIONS } from "../lib/permissions";
+import { tableActionButtons, type TableAction } from "../lib/tableFormatters";
 
 interface Group {
   id: string;
@@ -13,6 +15,8 @@ interface Group {
   permissions: string[];
   member_count: number;
 }
+
+type GroupRow = Group & { system_label: string; perms_count: number };
 
 interface PermItem {
   key: string;
@@ -32,6 +36,7 @@ const FALLBACK_SECTIONS: PermSection[] = PERM_SECTIONS.map((s) => ({
 export default function GroupsPage() {
   const { user } = useAuth();
   const [groups, setGroups] = useState<Group[]>([]);
+  const [loading, setLoading] = useState(true);
   const [catalogSections, setCatalogSections] = useState<PermSection[]>(FALLBACK_SECTIONS);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Group | null>(null);
@@ -42,18 +47,76 @@ export default function GroupsPage() {
   const canWrite = user && canModule(user.permissions, "write", "groups");
 
   const load = useCallback(async () => {
-    setGroups(await api.get<Group[]>("/groups"));
+    setLoading(true);
     try {
-      const sections = await api.get<PermSection[]>("/groups/catalog");
-      if (sections.length) setCatalogSections(sections);
-    } catch {
-      setCatalogSections(FALLBACK_SECTIONS);
+      setGroups(await api.get<Group[]>("/groups"));
+      try {
+        const sections = await api.get<PermSection[]>("/groups/catalog");
+        if (sections.length) setCatalogSections(sections);
+      } catch {
+        setCatalogSections(FALLBACK_SECTIONS);
+      }
+    } finally {
+      setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  const tableData = useMemo<GroupRow[]>(
+    () =>
+      groups.map((g) => ({
+        ...g,
+        system_label: g.is_system ? "Sistema" : "Personalizado",
+        perms_count: g.permissions.length,
+      })),
+    [groups]
+  );
+
+  const columns = useMemo<DataTableColumn<GroupRow>[]>(() => {
+    const cols: DataTableColumn<GroupRow>[] = [
+      { title: "Grupo", field: "name", headerFilter: "input", minWidth: 160 },
+      {
+        title: "Descripción",
+        field: "description",
+        headerFilter: "input",
+        formatter: (c) => String(c.getValue() ?? "—"),
+        minWidth: 180,
+      },
+      {
+        title: "Tipo",
+        field: "system_label",
+        headerFilter: "select",
+        headerFilterParams: {
+          values: { "": "Todos", Sistema: "Sistema", Personalizado: "Personalizado" },
+        },
+        width: 120,
+      },
+      { title: "Permisos", field: "perms_count", headerFilter: "number", width: 90 },
+      { title: "Miembros", field: "member_count", headerFilter: "number", width: 90 },
+    ];
+    if (canWrite) {
+      cols.push({
+        title: "",
+        field: "id",
+        headerFilter: false,
+        sorter: false,
+        download: false,
+        width: 160,
+        formatter: (cell) => {
+          const row = cell.getRow().getData() as GroupRow;
+          const actions: TableAction[] = [{ id: "edit", label: "Editar" }];
+          if (!row.is_system) {
+            actions.push({ id: "delete", label: "Eliminar", className: "btn-danger" });
+          }
+          return tableActionButtons(actions);
+        },
+      });
+    }
+    return cols;
+  }, [canWrite]);
 
   const openCreate = () => {
     setEditing(null);
@@ -102,6 +165,11 @@ export default function GroupsPage() {
     load();
   };
 
+  const onCellAction = (action: string, row: GroupRow) => {
+    if (action === "edit") openEdit(row);
+    else if (action === "delete") remove(row);
+  };
+
   if (!canRead) {
     return <p className="muted">No tienes permiso para ver grupos.</p>;
   }
@@ -119,49 +187,14 @@ export default function GroupsPage() {
           ) : undefined
         }
       />
-      <div className="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Grupo</th>
-              <th>Permisos</th>
-              <th>Miembros</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {groups.map((g) => (
-              <tr key={g.id}>
-                <td>
-                  <strong>{g.name}</strong>
-                  {g.is_system && <span className="badge">Sistema</span>}
-                  {g.description && <div className="muted small">{g.description}</div>}
-                </td>
-                <td className="small">{g.permissions.length} permisos</td>
-                <td>{g.member_count}</td>
-                <td>
-                  {canWrite && (
-                    <>
-                      <button type="button" className="btn btn-sm" onClick={() => openEdit(g)}>
-                        Editar
-                      </button>
-                      {!g.is_system && (
-                        <button
-                          type="button"
-                          className="btn btn-sm btn-danger"
-                          onClick={() => remove(g)}
-                        >
-                          Eliminar
-                        </button>
-                      )}
-                    </>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <DataTable
+        data={tableData}
+        columns={columns}
+        loading={loading}
+        exportFilename="grupos"
+        height="480px"
+        onCellAction={onCellAction}
+      />
 
       <Modal open={open} onClose={() => setOpen(false)} title={editing ? "Editar grupo" : "Nuevo grupo"}>
         <form onSubmit={save}>

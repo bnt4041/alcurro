@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
+import DataTable, { type DataTableColumn } from "../components/DataTable";
 import PageHeader from "../components/PageHeader";
 import { useToast } from "../context/ToastContext";
 import { formatMoney } from "../lib/money";
@@ -88,6 +89,65 @@ export default function PlatformStripePage() {
       setSimulating(false);
     }
   };
+
+  type PaymentRow = StripePayment & {
+    date_label: string;
+    amount_label: string;
+    status_text: string;
+  };
+
+  const paymentTableData = useMemo<PaymentRow[]>(
+    () =>
+      payments.map((p) => ({
+        ...p,
+        date_label: new Date(p.paid_at || p.created_at).toLocaleString("es-ES"),
+        amount_label: formatMoney(p.amount_cents, p.currency),
+        status_text: statusLabel[p.status] || p.status,
+      })),
+    [payments]
+  );
+
+  const paymentColumns = useMemo<DataTableColumn<PaymentRow>[]>(
+    () => [
+      { title: "Fecha", field: "date_label", headerFilter: "input", minWidth: 150 },
+      {
+        title: "Cuenta",
+        field: "tenant_name",
+        headerFilter: "input",
+        formatter: (c) => String(c.getValue() ?? "—"),
+        minWidth: 140,
+      },
+      { title: "Importe", field: "amount_label", headerFilter: "input", width: 110 },
+      {
+        title: "Estado",
+        field: "status_text",
+        headerFilter: "select",
+        headerFilterParams: {
+          values: { "": "Todos", ...Object.fromEntries(Object.entries(statusLabel).map(([, v]) => [v, v])) } as Record<string, string>,
+        },
+        formatter: (cell) => {
+          const r = cell.getRow().getData() as PaymentRow;
+          return `<span class="badge badge-${r.status}">${r.status_text}</span>`;
+        },
+        width: 110,
+      },
+      {
+        title: "Descripción",
+        field: "description",
+        headerFilter: "input",
+        formatter: (c) => String(c.getValue() ?? "—"),
+        minWidth: 160,
+      },
+      {
+        title: "Referencia",
+        field: "stripe_invoice_id",
+        headerFilter: "input",
+        formatter: (c) => `<span class="mono small">${String(c.getValue() ?? "—")}</span>`,
+        minWidth: 140,
+      },
+    ],
+    []
+  );
 
   return (
     <>
@@ -197,38 +257,12 @@ export default function PlatformStripePage() {
           <p className="muted">Aún no hay cobros registrados.</p>
         )}
         {!loading && payments.length > 0 && (
-          <div className="table-wrap">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Fecha</th>
-                  <th>Cuenta</th>
-                  <th>Importe</th>
-                  <th>Estado</th>
-                  <th>Descripción</th>
-                  <th>Referencia</th>
-                </tr>
-              </thead>
-              <tbody>
-                {payments.map((p) => (
-                  <tr key={p.id}>
-                    <td>
-                      {new Date(p.paid_at || p.created_at).toLocaleString("es-ES")}
-                    </td>
-                    <td>{p.tenant_name || "—"}</td>
-                    <td>{formatMoney(p.amount_cents, p.currency)}</td>
-                    <td>
-                      <span className={`badge badge-${p.status}`}>
-                        {statusLabel[p.status] || p.status}
-                      </span>
-                    </td>
-                    <td>{p.description || "—"}</td>
-                    <td className="mono small">{p.stripe_invoice_id || "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            data={paymentTableData}
+            columns={paymentColumns}
+            exportFilename="cobros_stripe"
+            height="400px"
+          />
         )}
       </div>
     </>

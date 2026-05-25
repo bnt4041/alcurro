@@ -1,6 +1,7 @@
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, buildQuery } from "../api/client";
+import DataTable, { type DataTableColumn } from "../components/DataTable";
 import type {
   BulkPayrollResponse,
   DocumentDelivery,
@@ -14,6 +15,7 @@ import TableToolbar from "../components/TableToolbar";
 import { useAuth } from "../context/AuthContext";
 import { useEmployees } from "../hooks/useEmployees";
 import { canModule, hasPerm } from "../lib/permissions";
+import { tableActionButtons, type TableAction } from "../lib/tableFormatters";
 
 type Tab = "list" | "upload" | "catalog" | "bulk" | "notify";
 
@@ -30,6 +32,7 @@ export default function DocumentsPage() {
   const [tagFilter, setTagFilter] = useState("");
   const [expiredOnly, setExpiredOnly] = useState(false);
   const [rows, setRows] = useState<DocumentDelivery[]>([]);
+  const [listLoading, setListLoading] = useState(false);
   const [types, setTypes] = useState<DocumentType[]>([]);
   const [tags, setTags] = useState<DocumentTag[]>([]);
   const [msg, setMsg] = useState("");
@@ -80,15 +83,20 @@ export default function DocumentsPage() {
   }, []);
 
   const load = useCallback(async () => {
-    const matchedType = types.find((x) => x.code === typeFilter);
-    const path = buildQuery({
-      q: search || undefined,
-      document_type: matchedType ? undefined : typeFilter || undefined,
-      document_type_id: matchedType?.id,
-      tag_id: tagFilter || undefined,
-      expired_only: expiredOnly ? "true" : undefined,
-    });
-    setRows(await api.get<DocumentDelivery[]>(`/documents${path}`));
+    setListLoading(true);
+    try {
+      const matchedType = types.find((x) => x.code === typeFilter);
+      const path = buildQuery({
+        q: search || undefined,
+        document_type: matchedType ? undefined : typeFilter || undefined,
+        document_type_id: matchedType?.id,
+        tag_id: tagFilter || undefined,
+        expired_only: expiredOnly ? "true" : undefined,
+      });
+      setRows(await api.get<DocumentDelivery[]>(`/documents${path}`));
+    } finally {
+      setListLoading(false);
+    }
   }, [search, typeFilter, tagFilter, expiredOnly, types]);
 
   useEffect(() => {
@@ -246,20 +254,6 @@ export default function DocumentsPage() {
     }
   };
 
-  const toggleSelect = (id: string) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
-  const toggleSelectAll = () => {
-    if (selected.size === rows.length) setSelected(new Set());
-    else setSelected(new Set(rows.map((r) => r.id)));
-  };
-
   const downloadOne = (id: string, fileName: string) => {
     api.download(`/documents/${id}/download`, fileName);
   };
@@ -349,6 +343,160 @@ export default function DocumentsPage() {
 
   const typeOptions = types.map((t) => ({ value: t.code, label: t.name }));
   const tagOptions = tags.map((t) => ({ value: t.id, label: t.name }));
+
+  type DocRow = DocumentDelivery & {
+    dest_label: string;
+    type_label: string;
+    tags_label: string;
+    expiry_label: string;
+    wa_ack_label: string;
+  };
+
+  const docTableData = useMemo<DocRow[]>(
+    () =>
+      rows.map((d) => {
+        const dest = d.employee_id
+          ? byId(d.employee_id)
+          : d.company_id
+            ? "Empresa"
+            : "—";
+        const tagsHtml = d.tags.length
+          ? d.tags
+              .map(
+                (t) =>
+                  `<span class="badge" style="${t.color ? `background-color:${t.color};color:#fff` : ""}">${t.name}</span>`
+              )
+              .join(" ")
+          : "—";
+        const expiry = d.expires_at
+          ? new Date(d.expires_at).toLocaleDateString("es-ES")
+          : "—";
+        const expiredBadge = d.is_expired ? ' <span class="badge badge-warn">Caducado</span>' : "";
+        return {
+          ...d,
+          dest_label: dest,
+          type_label: d.document_type_name ?? d.document_type,
+          tags_label: tagsHtml,
+          expiry_label: `${expiry}${expiredBadge}`,
+          wa_ack_label: `WA: ${d.sent_at ? new Date(d.sent_at).toLocaleString("es-ES") : "No"} · Acuse: ${d.acknowledged_at ? new Date(d.acknowledged_at).toLocaleString("es-ES") : "Pendiente"}`,
+        };
+      }),
+    [rows, byId]
+  );
+
+  const docColumns = useMemo<DataTableColumn<DocRow>[]>(() => {
+    const cols: DataTableColumn<DocRow>[] = [
+      {
+        title: "Archivo",
+        field: "file_name",
+        headerFilter: "input",
+        minWidth: 180,
+        formatter: (cell) => {
+          const r = cell.getRow().getData() as DocRow;
+          return `<strong>${r.file_name}</strong>${r.title ? `<div class="muted small">${r.title}</div>` : ""}`;
+        },
+      },
+      { title: "Destino", field: "dest_label", headerFilter: "input", minWidth: 140 },
+      { title: "Tipo", field: "type_label", headerFilter: "input", width: 120 },
+      {
+        title: "Etiquetas",
+        field: "tags_label",
+        headerFilter: "input",
+        formatter: (c) => String(c.getValue()),
+        minWidth: 140,
+      },
+      {
+        title: "Caducidad",
+        field: "expiry_label",
+        headerFilter: "input",
+        formatter: (c) => String(c.getValue()),
+        width: 130,
+      },
+      {
+        title: "WA / Acuse",
+        field: "wa_ack_label",
+        headerFilter: "input",
+        formatter: (c) => `<span class="small">${String(c.getValue())}</span>`,
+        minWidth: 180,
+      },
+    ];
+    cols.push({
+        title: "",
+        field: "id",
+        headerFilter: false,
+        download: false,
+        width: 220,
+        formatter: (cell) => {
+          const r = cell.getRow().getData() as DocRow;
+          const actions: TableAction[] = [{ id: "download", label: "Descargar" }];
+          if (canWrite && r.employee_id) actions.push({ id: "whatsapp", label: "Enviar WA", className: "btn-primary" });
+          if (canWrite) actions.push({ id: "delete", label: "Borrar", className: "btn-danger" });
+          return tableActionButtons(actions);
+        },
+      });
+    return cols;
+  }, [canWrite]);
+
+  const onDocAction = (action: string, row: DocRow) => {
+    if (action === "download") downloadOne(row.id, row.file_name);
+    if (action === "whatsapp") void sendWhatsapp(row.id);
+    if (action === "delete") void remove(row.id);
+  };
+
+  type BulkItemRow = BulkPayrollResponse["items"][number] & { status_label: string };
+
+  const bulkTableData = useMemo<BulkItemRow[]>(
+    () =>
+      (bulkResult?.items ?? []).map((item) => ({
+        ...item,
+        status_label: item.status,
+      })),
+    [bulkResult]
+  );
+
+  const bulkColumns = useMemo<DataTableColumn<BulkItemRow>[]>(
+    () => [
+      { title: "Origen", field: "source_file", headerFilter: "input", minWidth: 140 },
+      {
+        title: "Pág.",
+        field: "page",
+        headerFilter: "number",
+        formatter: (c) => String(c.getValue() ?? "—"),
+        width: 70,
+      },
+      {
+        title: "DNI/NIE",
+        field: "id_document",
+        headerFilter: "input",
+        formatter: (c) => String(c.getValue() ?? "—"),
+        width: 110,
+      },
+      {
+        title: "Empleado",
+        field: "employee_name",
+        headerFilter: "input",
+        formatter: (c) => String(c.getValue() ?? "—"),
+        minWidth: 140,
+      },
+      {
+        title: "Estado",
+        field: "status_label",
+        headerFilter: "select",
+        headerFilterParams: {
+          values: { "": "Todos", ok: "ok", error: "error", skipped: "skipped" },
+        },
+        formatter: (cell) => {
+          const r = cell.getRow().getData() as BulkItemRow;
+          const cls =
+            r.status === "ok" ? "badge-ok" : r.status === "error" ? "badge-danger" : "";
+          const msg = r.message ? `<div class="muted small">${r.message}</div>` : "";
+          return `<span class="badge ${cls}">${r.status}</span>${msg}`;
+        },
+        minWidth: 120,
+      },
+    ],
+    []
+  );
 
   return (
     <>
@@ -477,123 +625,15 @@ export default function DocumentsPage() {
               <Link to="/app/firmas">Firmas</Link>.
             </p>
           )}
-          <div className="table-wrap card">
-            <table>
-              <thead>
-                <tr>
-                  <th>
-                    <input
-                      type="checkbox"
-                      checked={rows.length > 0 && selected.size === rows.length}
-                      onChange={toggleSelectAll}
-                      aria-label="Seleccionar todos"
-                    />
-                  </th>
-                  <th>Archivo</th>
-                  <th>Destino</th>
-                  <th>Tipo</th>
-                  <th>Etiquetas</th>
-                  <th>Caducidad</th>
-                  <th>WA / Acuse</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((d) => (
-                  <tr key={d.id} className={d.is_expired ? "row-expired" : ""}>
-                    <td>
-                      <input
-                        type="checkbox"
-                        checked={selected.has(d.id)}
-                        onChange={() => toggleSelect(d.id)}
-                        aria-label={`Seleccionar ${d.file_name}`}
-                      />
-                    </td>
-                    <td>
-                      <strong>{d.file_name}</strong>
-                      {d.title && (
-                        <div className="muted small">{d.title}</div>
-                      )}
-                    </td>
-                    <td>
-                      {d.employee_id
-                        ? byId(d.employee_id)
-                        : d.company_id
-                          ? "Empresa"
-                          : "—"}
-                    </td>
-                    <td>{d.document_type_name ?? d.document_type}</td>
-                    <td>
-                      {d.tags.length
-                        ? d.tags.map((t) => (
-                            <span
-                              key={t.id}
-                              className="badge"
-                              style={
-                                t.color
-                                  ? { backgroundColor: t.color, color: "#fff" }
-                                  : undefined
-                              }
-                            >
-                              {t.name}
-                            </span>
-                          ))
-                        : "—"}
-                    </td>
-                    <td>
-                      {d.expires_at
-                        ? new Date(d.expires_at).toLocaleDateString("es-ES")
-                        : "—"}
-                      {d.is_expired && (
-                        <span className="badge badge-warn">Caducado</span>
-                      )}
-                    </td>
-                    <td>
-                      <div className="small">
-                        WA:{" "}
-                        {d.sent_at
-                          ? new Date(d.sent_at).toLocaleString("es-ES")
-                          : "No"}
-                      </div>
-                      <div className="small">
-                        Acuse:{" "}
-                        {d.acknowledged_at
-                          ? new Date(d.acknowledged_at).toLocaleString("es-ES")
-                          : "Pendiente"}
-                      </div>
-                    </td>
-                    <td className="actions">
-                      <button
-                        type="button"
-                        className="btn btn-sm"
-                        onClick={() => downloadOne(d.id, d.file_name)}
-                      >
-                        Descargar
-                      </button>
-                      {canWrite && d.employee_id && (
-                        <button
-                          type="button"
-                          className="btn btn-sm btn-primary"
-                          onClick={() => sendWhatsapp(d.id)}
-                        >
-                          Enviar WA
-                        </button>
-                      )}
-                      {canWrite && (
-                        <button
-                          type="button"
-                          className="btn btn-sm btn-danger"
-                          onClick={() => remove(d.id)}
-                        >
-                          Borrar
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            data={docTableData}
+            columns={docColumns}
+            loading={listLoading}
+            exportFilename="documentos"
+            selectable
+            onRowSelectionChange={(ids) => setSelected(new Set(ids))}
+            onCellAction={onDocAction}
+          />
         </>
       )}
 
@@ -981,44 +1021,13 @@ export default function DocumentsPage() {
             </button>
           </form>
           {bulkResult && (
-            <div className="table-wrap" style={{ marginTop: "1rem" }}>
-              <table>
-                <thead>
-                  <tr>
-                    <th>Origen</th>
-                    <th>Pág.</th>
-                    <th>DNI/NIE</th>
-                    <th>Empleado</th>
-                    <th>Estado</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {bulkResult.items.map((item, i) => (
-                    <tr key={i}>
-                      <td>{item.source_file}</td>
-                      <td>{item.page ?? "—"}</td>
-                      <td>{item.id_document ?? "—"}</td>
-                      <td>{item.employee_name ?? "—"}</td>
-                      <td>
-                        <span
-                          className={`badge ${
-                            item.status === "ok"
-                              ? "badge-ok"
-                              : item.status === "error"
-                                ? "badge-danger"
-                                : ""
-                          }`}
-                        >
-                          {item.status}
-                        </span>
-                        {item.message && (
-                          <div className="muted small">{item.message}</div>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div style={{ marginTop: "1rem" }}>
+              <DataTable
+                data={bulkTableData}
+                columns={bulkColumns}
+                exportFilename="importacion_nominas"
+                height="320px"
+              />
             </div>
           )}
         </section>

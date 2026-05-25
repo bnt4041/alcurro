@@ -198,6 +198,7 @@ class ClockIn(SQLModel, table=True):
     source: str = Field(default="whatsapp", max_length=50)
     notes: str | None = Field(default=None, max_length=500)
     whatsapp_message_id: str | None = Field(default=None, max_length=100)
+    project_id: UUID | None = Field(default=None, foreign_key="projects.id", index=True)
 
     employee: Employee | None = Relationship(back_populates="clock_ins")
 

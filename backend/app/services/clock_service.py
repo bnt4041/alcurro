@@ -5,12 +5,14 @@ from sqlmodel import Session, select
 
 from app.models.models import ClockIn, ClockInType, Employee
 from app.models.tenant import Company
+from app.services.clock_incident_hook import process_clock_in_incidents
 
 
 class ClockService:
     def __init__(self, session: Session, tenant_id: UUID | None = None) -> None:
         self._session = session
         self._tenant_id = tenant_id
+        self.last_incident = None
 
     def _company_ids(self) -> list[UUID]:
         if not self._tenant_id:
@@ -44,6 +46,9 @@ class ClockService:
         longitude: float | None = None,
         whatsapp_message_id: str | None = None,
         notes: str | None = None,
+        project_id: UUID | None = None,
+        *,
+        commit: bool = True,
     ) -> ClockIn:
         record = ClockIn(
             employee_id=employee_id,
@@ -53,11 +58,25 @@ class ClockService:
             longitude=longitude,
             whatsapp_message_id=whatsapp_message_id,
             notes=notes,
+            project_id=project_id,
             source="whatsapp",
         )
         self._session.add(record)
-        self._session.commit()
-        self._session.refresh(record)
+        if commit:
+            self._session.commit()
+            self._session.refresh(record)
+        else:
+            self._session.flush()
+        self.last_incident = None
+        if self._tenant_id:
+            emp = self._session.get(Employee, employee_id)
+            if emp:
+                self.last_incident = process_clock_in_incidents(
+                    self._session,
+                    tenant_id=self._tenant_id,
+                    employee=emp,
+                    clock=record,
+                )
         return record
 
     def get_last_clock(self, employee_id: UUID) -> ClockIn | None:
