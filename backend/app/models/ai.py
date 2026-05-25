@@ -49,6 +49,20 @@ class AiConversationRule(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class AiWhatsappMessage(SQLModel, table=True):
+    """Historial reciente de chat WhatsApp por empleado (contexto para Ollama)."""
+
+    __tablename__ = "ai_whatsapp_messages"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(foreign_key="tenants.id", index=True)
+    employee_id: UUID = Field(foreign_key="employees.id", index=True)
+    role: str = Field(max_length=20, description="user | assistant")
+    content: str = Field(max_length=4000)
+    intent_code: str | None = Field(default=None, max_length=50)
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+
+
 class AiUsageRecord(SQLModel, table=True):
     """Registro de consumo de IA por cuenta."""
 

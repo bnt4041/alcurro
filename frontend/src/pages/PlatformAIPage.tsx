@@ -213,6 +213,13 @@ export default function PlatformAIPage() {
         title="Inteligencia artificial"
         subtitle="Acciones por perfil, reglas conversacionales y consumo por cuenta"
       />
+      <p className="muted small" style={{ marginBottom: "1rem", maxWidth: "52rem" }}>
+        La matriz define qué puede hacer cada <strong>perfil IA</strong> por WhatsApp.
+        Además, cada empleado debe tener los permisos equivalentes en los{" "}
+        <strong>grupos del tenant</strong> (RBAC). Ollama recibe reglas, contexto del
+        empleado y hasta 12 mensajes recientes. Documentación:{" "}
+        <code>docs/AI_WHATSAPP.md</code> en el repositorio.
+      </p>
 
       <div className="toolbar" style={{ marginBottom: "0.75rem" }}>
         <label className="inline-label">

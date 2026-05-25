@@ -8,27 +8,15 @@ import httpx
 from sqlmodel import Session
 
 from app.config import get_settings
+from app.models.models import Employee
+from app.models.tenant import Tenant
+from app.models.clock_settings import ClockSettings
 from app.schemas.ollama import OllamaIntentResponse
-from app.services.ai_config_service import build_rules_prompt
-
-BASE_SYSTEM_PROMPT = """Eres un clasificador de intenciones para un sistema HRM español por WhatsApp.
-Analiza el mensaje del empleado y responde ÚNICAMENTE con un JSON válido (sin markdown):
-{
-  "intent": "<una de: fichar_entrada, fichar_salida, inicio_parada, fin_parada, solicitar_vacaciones, consultar_saldo_vacaciones, confirmar_documento, resumen_dia, desconocido>",
-  "entities": { "fecha_inicio": "YYYY-MM-DD", "fecha_fin": "YYYY-MM-DD", "motivo": "..." },
-  "confidence": 0.0-1.0
-}
-Reglas base:
-- "entrada", "fiché", "empiezo", "llego" -> fichar_entrada
-- "salida", "termino", "me voy" -> fichar_salida
-- "parada", "descanso", "pausa", "empiezo parada" -> inicio_parada
-- "vuelvo", "fin parada", "termino parada", "acabo parada" -> fin_parada
-- vacaciones, días libres, permiso -> solicitar_vacaciones (extrae fechas si las hay)
-- saldo vacaciones, cuántos días tengo -> consultar_saldo_vacaciones
-- "recibido", "acepto", "confirmo" documento/nómina -> confirmar_documento
-- resumen del día, resumen hoy, qué he fichado hoy -> resumen_dia
-- Si no encaja: desconocido con entities vacío
-"""
+from app.services.ai_conversation_service import (
+    build_system_prompt,
+    get_history_for_ollama,
+)
+from app.services.whatsapp_permission_service import list_whatsapp_actions_for_employee
 
 
 class OllamaService:
@@ -47,27 +35,64 @@ class OllamaService:
         self._tenant_id = tenant_id
         self.profile_key = profile_key
 
-    def _system_prompt(self) -> str:
-        extra = ""
-        if self._session:
-            extra = build_rules_prompt(self._session)
-        if extra:
-            return f"{BASE_SYSTEM_PROMPT}\n\n{extra}"
-        return BASE_SYSTEM_PROMPT
+    def _system_prompt(
+        self,
+        employee: Employee | None,
+        tenant: Tenant | None,
+        clock_settings: ClockSettings | None,
+    ) -> str:
+        if self._session and employee and tenant and clock_settings and self._tenant_id:
+            return build_system_prompt(
+                self._session,
+                employee=employee,
+                tenant=tenant,
+                settings=clock_settings,
+                tenant_id=self._tenant_id,
+            )
+        return (
+            "Eres un clasificador de intenciones HRM por WhatsApp. "
+            'Responde solo JSON con intent, entities y confidence. '
+            'Intents: fichar_entrada, fichar_salida, inicio_parada, fin_parada, '
+            "solicitar_vacaciones, consultar_saldo_vacaciones, confirmar_documento, "
+            "resumen_dia, desconocido."
+        )
 
-    async def extract_intent(self, message_text: str) -> OllamaIntentResponse:
+    async def extract_intent(
+        self,
+        message_text: str,
+        *,
+        employee: Employee | None = None,
+        tenant: Tenant | None = None,
+        clock_settings: ClockSettings | None = None,
+    ) -> OllamaIntentResponse:
         started = time.perf_counter()
         prompt_tokens = 0
         completion_tokens = 0
         success = True
         intent: OllamaIntentResponse
+        allowed: list[str] = []
+        if self._session and employee and self._tenant_id:
+            allowed = list_whatsapp_actions_for_employee(
+                self._session, employee, self._tenant_id
+            )
         try:
+            history = []
+            if self._session and employee and self._tenant_id:
+                history = get_history_for_ollama(
+                    self._session, self._tenant_id, employee.id
+                )
             intent, prompt_tokens, completion_tokens = await self._call_ollama(
-                message_text
+                message_text,
+                employee=employee,
+                tenant=tenant,
+                clock_settings=clock_settings,
+                history=history,
             )
         except Exception:
             success = False
-            intent = self._keyword_fallback(message_text)
+            intent = self._keyword_fallback(message_text, allowed)
+        if allowed and intent.intent not in allowed and intent.intent != "desconocido":
+            intent = OllamaIntentResponse(intent="desconocido", confidence=0.2)
         duration_ms = int((time.perf_counter() - started) * 1000)
         if self._session and self._tenant_id:
             from app.services.ai_usage_service import log_usage
@@ -87,16 +112,29 @@ class OllamaService:
         return intent
 
     async def _call_ollama(
-        self, message_text: str
+        self,
+        message_text: str,
+        *,
+        employee: Employee | None = None,
+        tenant: Tenant | None = None,
+        clock_settings: ClockSettings | None = None,
+        history: list[dict[str, str]] | None = None,
     ) -> tuple[OllamaIntentResponse, int, int]:
+        messages: list[dict[str, str]] = [
+            {
+                "role": "system",
+                "content": self._system_prompt(employee, tenant, clock_settings),
+            },
+        ]
+        if history:
+            messages.extend(history)
+        messages.append({"role": "user", "content": message_text.strip()})
+
         payload = {
             "model": self._model,
             "stream": False,
             "format": "json",
-            "messages": [
-                {"role": "system", "content": self._system_prompt()},
-                {"role": "user", "content": message_text.strip()},
-            ],
+            "messages": messages,
         }
         async with httpx.AsyncClient(timeout=60.0) as client:
             response = await client.post(
@@ -112,29 +150,62 @@ class OllamaService:
         return OllamaIntentResponse.model_validate(parsed), prompt_tokens, completion_tokens
 
     @staticmethod
-    def _keyword_fallback(message_text: str) -> OllamaIntentResponse:
+    def _keyword_fallback(
+        message_text: str, allowed: list[str] | None = None
+    ) -> OllamaIntentResponse:
         t = message_text.lower()
-        if any(w in t for w in ("entrada", "fiché", "fiche", "empiezo", "llego")):
+
+        def ok(code: str) -> bool:
+            if not allowed:
+                return True
+            return code in allowed
+
+        if ok("fichar_entrada") and any(
+            w in t for w in ("entrada", "fiché", "fiche", "empiezo", "llego")
+        ):
             return OllamaIntentResponse(intent="fichar_entrada", confidence=0.7)
-        if any(w in t for w in ("salida", "termino", "me voy")):
+        if ok("fichar_salida") and any(
+            w in t for w in ("salida", "termino", "me voy")
+        ):
             return OllamaIntentResponse(intent="fichar_salida", confidence=0.7)
-        if any(
-            w in t
-            for w in ("inicio parada", "empiezo parada", "empiezo descanso", "pausa")
-        ) or (("parada" in t or "descanso" in t) and "fin" not in t and "termin" not in t):
+        if ok("inicio_parada") and (
+            any(
+                w in t
+                for w in (
+                    "inicio parada",
+                    "empiezo parada",
+                    "empiezo descanso",
+                    "pausa",
+                )
+            )
+            or (("parada" in t or "descanso" in t) and "fin" not in t and "termin" not in t)
+        ):
             return OllamaIntentResponse(intent="inicio_parada", confidence=0.65)
-        if any(
+        if ok("fin_parada") and any(
             w in t
-            for w in ("fin parada", "termino parada", "acabo parada", "vuelvo del descanso")
+            for w in (
+                "fin parada",
+                "termino parada",
+                "acabo parada",
+                "vuelvo del descanso",
+            )
         ):
             return OllamaIntentResponse(intent="fin_parada", confidence=0.65)
-        if any(w in t for w in ("vacaciones", "días libres", "dia libre", "permiso")):
+        if ok("solicitar_vacaciones") and any(
+            w in t for w in ("vacaciones", "días libres", "dia libre", "permiso")
+        ):
             return OllamaIntentResponse(intent="solicitar_vacaciones", confidence=0.6)
-        if "saldo" in t or "cuántos días" in t or "cuantos dias" in t:
-            return OllamaIntentResponse(intent="consultar_saldo_vacaciones", confidence=0.6)
-        if any(w in t for w in ("recibido", "acepto", "confirmo")):
+        if ok("consultar_saldo_vacaciones") and (
+            "saldo" in t or "cuántos días" in t or "cuantos dias" in t
+        ):
+            return OllamaIntentResponse(
+                intent="consultar_saldo_vacaciones", confidence=0.6
+            )
+        if ok("confirmar_documento") and any(
+            w in t for w in ("recibido", "acepto", "confirmo")
+        ):
             return OllamaIntentResponse(intent="confirmar_documento", confidence=0.6)
-        if any(
+        if ok("resumen_dia") and any(
             w in t
             for w in (
                 "resumen del dia",

@@ -169,6 +169,30 @@ def update_action_matrix(
     return get_action_matrix(session)
 
 
+def list_allowed_action_codes_for_role(session: Session, role: Role | str) -> list[str]:
+    """Acciones habilitadas en la matriz IA para un perfil (sin comprobar RBAC)."""
+    ensure_ai_catalog(session)
+    profile = _role_to_profile(role)
+    actions = list(
+        session.exec(
+            select(AiAction)
+            .where(AiAction.is_active == True)  # noqa: E712
+            .order_by(AiAction.sort_order)
+        ).all()
+    )
+    links = {
+        (l.action_id, l.profile_key): l.enabled
+        for l in session.exec(
+            select(AiProfileAction).where(AiProfileAction.profile_key == profile)
+        ).all()
+    }
+    return [
+        a.code
+        for a in actions
+        if links.get((a.id, profile), False)
+    ]
+
+
 def is_action_allowed_for_role(session: Session, role: Role | str, action_code: str) -> bool:
     if action_code in ("desconocido", ""):
         return True

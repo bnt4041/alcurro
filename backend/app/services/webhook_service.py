@@ -25,9 +25,19 @@ from app.services.employee_onboarding_service import (
 )
 from app.services.gowa_service import GoWAService
 from app.services.leave_service import LeaveService
-from app.services.ai_config_service import is_action_allowed_for_role
+from app.services.ai_conversation_service import append_message
 from app.services.ai_usage_service import profile_key_for_employee
 from app.services.ollama_service import OllamaService
+from app.services.whatsapp_permission_service import (
+    ACTION_LABELS,
+    can_whatsapp_inbound_media,
+    can_whatsapp_location_clock,
+    denial_message,
+    is_whatsapp_action_allowed,
+    list_whatsapp_actions_for_employee,
+)
+
+_REPLY_MAX = 2000
 from app.services.project_service import (
     format_project_picker_message,
     list_active_projects,
@@ -250,6 +260,18 @@ class WebhookService:
             return {"ok": False, "error": "Empleado no encontrado"}
 
         record_type, label = self._next_record_type(employee_id)
+        if not can_whatsapp_location_clock(
+            self._session,
+            employee,
+            self._tenant_id,
+            record_type=record_type.value,
+        ):
+            reply = denial_message(self._session, employee, self._tenant_id)
+            try:
+                await self._gowa.send_text(phone, reply)
+            except Exception:
+                pass
+            return {"ok": True, "action": "denied_location"}
         reply = self._register_clock_with_project_flow(
             employee,
             record_type,
@@ -293,6 +315,16 @@ class WebhookService:
                 pass
             return {"ok": True, "action": "media_not_found"}
 
+        if not can_whatsapp_inbound_media(
+            self._session, employee, self._tenant_id, self._settings
+        ):
+            reply = denial_message(self._session, employee, self._tenant_id)
+            try:
+                await self._gowa.send_text(phone, reply)
+            except Exception:
+                pass
+            return {"ok": True, "action": "denied_media"}
+
         file_bytes = path.read_bytes()
         filename = message.file_name or path.name
         ok, reply = receive_inbound_file(
@@ -323,6 +355,17 @@ class WebhookService:
                 if pending.record_type == ClockInType.SALIDA.value
                 else ClockInType.ENTRADA
             )
+            code = "fichar_salida" if rt == ClockInType.SALIDA else "fichar_entrada"
+            if not is_whatsapp_action_allowed(
+                self._session, employee, self._tenant_id, code
+            ):
+                reply = denial_message(self._session, employee, self._tenant_id)
+                self._session.commit()
+                try:
+                    await self._gowa.send_text(phone, reply)
+                except Exception:
+                    pass
+                return {"ok": True, "action": "denied_project"}
             lbl = "SALIDA" if rt == ClockInType.SALIDA else "ENTRADA"
             reply = self._register_clock_with_project_flow(
                 employee,
@@ -350,28 +393,68 @@ class WebhookService:
                     "resumen de hoy",
                 )
             ):
-                reply = build_daily_summary(self._session, employee.id)
+                if is_whatsapp_action_allowed(
+                    self._session, employee, self._tenant_id, "resumen_dia"
+                ):
+                    reply = build_daily_summary(self._session, employee.id)
+                    append_message(
+                        self._session,
+                        tenant_id=self._tenant_id,
+                        employee_id=employee.id,
+                        role="user",
+                        content=text,
+                    )
+                    append_message(
+                        self._session,
+                        tenant_id=self._tenant_id,
+                        employee_id=employee.id,
+                        role="assistant",
+                        content=reply[:_REPLY_MAX],
+                        intent_code="resumen_dia",
+                    )
+                else:
+                    reply = denial_message(self._session, employee, self._tenant_id)
+                self._session.commit()
                 try:
                     await self._gowa.send_text(phone, reply)
                 except Exception:
                     pass
                 return {"ok": True, "action": "resumen_dia"}
 
+        append_message(
+            self._session,
+            tenant_id=self._tenant_id,
+            employee_id=employee.id,
+            role="user",
+            content=text,
+        )
+        self._session.flush()
+
         self._ollama.profile_key = profile_key_for_employee(employee.role)
-        intent_data = await self._ollama.extract_intent(text)
-        if not is_action_allowed_for_role(
-            self._session, employee.role, intent_data.intent
+        intent_data = await self._ollama.extract_intent(
+            text,
+            employee=employee,
+            tenant=self._tenant,
+            clock_settings=self._settings,
+        )
+        if not is_whatsapp_action_allowed(
+            self._session, employee, self._tenant_id, intent_data.intent
         ):
-            reply = (
-                "No tienes permiso para realizar esa acción por WhatsApp. "
-                "Contacta con tu responsable o RRHH."
-            )
+            reply = denial_message(self._session, employee, self._tenant_id)
         else:
             reply = await self._execute_intent(
                 employee, intent_data, text, message_id
             )
             if intent_data.intent in ("fichar_entrada", "fichar_salida"):
                 reply += self._geo_hint()
+        append_message(
+            self._session,
+            tenant_id=self._tenant_id,
+            employee_id=employee.id,
+            role="assistant",
+            content=reply[:_REPLY_MAX],
+            intent_code=intent_data.intent,
+        )
         self._session.commit()
         try:
             await self._gowa.send_text(phone, reply)
@@ -448,18 +531,19 @@ class WebhookService:
                 return self._leave.acknowledge_document(employee.id, raw_text)
 
             case _:
-                hints = [
-                    "fichar entrada/salida",
-                    "iniciar o finalizar parada",
-                    "solicitar vacaciones",
-                    "consultar saldo",
-                    "enviar documentación",
-                    "compartir ubicación para fichar",
-                ]
-                if self._settings.daily_summary_enabled:
-                    hints.append("pedir resumen del día")
+                allowed = list_whatsapp_actions_for_employee(
+                    self._session, employee, self._tenant_id
+                )
+                hints = [ACTION_LABELS.get(c, c) for c in allowed]
+                if not hints:
+                    return denial_message(self._session, employee, self._tenant_id)
+                extra = []
+                if (
+                    "fichar_entrada" in allowed or "fichar_salida" in allowed
+                ) and self._settings.require_geolocation:
+                    extra.append("compartir ubicación para fichar")
                 return (
                     "No he entendido tu solicitud. Puedes: "
-                    + ", ".join(hints)
+                    + "; ".join(hints + extra)
                     + "."
                 )

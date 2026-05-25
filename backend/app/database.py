@@ -29,6 +29,7 @@ from app.models.ai import (  # noqa: F401
     AiConversationRule,
     AiProfileAction,
     AiUsageRecord,
+    AiWhatsappMessage,
 )
 from app.models.documents import (  # noqa: F401
     DocumentDelivery,

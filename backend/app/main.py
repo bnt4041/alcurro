@@ -142,6 +142,12 @@ def _run_startup_migrations() -> None:
         migrate_incidents_v4()
     except Exception as exc:
         print(f"migrate_incidents_v4: {exc}")
+    try:
+        from scripts.migrate_ai_v2 import main as migrate_ai_v2
+
+        migrate_ai_v2()
+    except Exception as exc:
+        print(f"migrate_ai_v2: {exc}")
 
 
 @asynccontextmanager
