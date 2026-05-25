@@ -2,6 +2,57 @@
 # Ver docs/deploy.md
 
 services:
+
+  # ── TRAEFIK (edge router + SSL automático) ────────────────────────────────
+  traefik:
+    image: traefik:v2.11
+    container_name: hrm-traefik
+    restart: unless-stopped
+    command:
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.network=hrm-net"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      # HTTP → HTTPS redirect global
+      - "--entrypoints.web.http.redirections.entryPoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entryPoint.scheme=https"
+      - "--entrypoints.web.http.redirections.entryPoint.permanent=true"
+      # Let's Encrypt (HTTP-01 challenge por puerto 80)
+      - "--certificatesresolvers.letsencrypt.acme.httpchallenge=true"
+      - "--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web"
+      - "--certificatesresolvers.letsencrypt.acme.email=beni4041@gmail.com"
+      - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - DOCKER_API_VERSION=1.41
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik_letsencrypt:/letsencrypt
+    networks:
+      - hrm-net
+
+  # ── FRONTEND (Nginx estático, servido por Traefik) ────────────────────────
+  frontend:
+    image: nginx:alpine
+    container_name: hrm-frontend
+    restart: unless-stopped
+    volumes:
+      - /var/www/alcurro/frontend/dist:/usr/share/nginx/html:ro
+      - /var/www/alcurro/deploy/nginx-spa.conf:/etc/nginx/conf.d/default.conf:ro
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.frontend.rule=Host(`alcurro.es`)"
+      - "traefik.http.routers.frontend.entrypoints=websecure"
+      - "traefik.http.routers.frontend.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.frontend.priority=1"
+      - "traefik.http.services.frontend.loadbalancer.server.port=80"
+    networks:
+      - hrm-net
+
+  # ── BASE DE DATOS ─────────────────────────────────────────────────────────
   db:
     image: postgres:16-alpine
     container_name: hrm-postgres
@@ -20,6 +71,7 @@ services:
     networks:
       - hrm-net
 
+  # ── OLLAMA (IA) ───────────────────────────────────────────────────────────
   ollama:
     image: ollama/ollama:latest
     container_name: hrm-ollama
@@ -29,6 +81,7 @@ services:
     networks:
       - hrm-net
 
+  # ── GOWA (WhatsApp) ───────────────────────────────────────────────────────
   gowa:
     image: ${GOWA_IMAGE:-ghcr.io/aldinokemal/go-whatsapp-web-multidevice:latest}
     container_name: hrm-gowa
@@ -50,6 +103,7 @@ services:
     networks:
       - hrm-net
 
+  # ── BACKEND (FastAPI, enrutado por Traefik) ───────────────────────────────
   backend:
     build:
       context: ./backend
@@ -73,13 +127,22 @@ services:
     volumes:
       - uploads_data:/app/uploads
       - /var/run/docker.sock:/var/run/docker.sock
-    ports:
-      - "127.0.0.1:8000:8000"
     depends_on:
       db:
         condition: service_healthy
       ollama:
         condition: service_started
+    labels:
+      - "traefik.enable=true"
+      # Rutas API (mayor prioridad que el frontend)
+      - "traefik.http.routers.backend.rule=Host(`alcurro.es`) && (PathPrefix(`/api/`) || PathPrefix(`/uploads/`) || PathPrefix(`/webhook/`) || Path(`/health`))"
+      - "traefik.http.routers.backend.entrypoints=websecure"
+      - "traefik.http.routers.backend.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.backend.priority=10"
+      - "traefik.http.services.backend.loadbalancer.server.port=8000"
+      # Límite de subida de archivos (25 MB)
+      - "traefik.http.middlewares.upload-limit.buffering.maxRequestBodyBytes=26214400"
+      - "traefik.http.routers.backend.middlewares=upload-limit"
     networks:
       - hrm-net
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
@@ -89,6 +152,7 @@ volumes:
   ollama_data:
   gowa_data:
   uploads_data:
+  traefik_letsencrypt:
 
 networks:
   hrm-net:
