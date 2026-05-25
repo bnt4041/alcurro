@@ -1,0 +1,14 @@
+FROM oven/bun:1-alpine AS build
+
+WORKDIR /app
+
+COPY package.json bun.lock ./
+RUN bun install --frozen-lockfile
+
+COPY . .
+RUN bun run build
+
+FROM alpine:3.20
+WORKDIR /dist
+COPY --from=build /app/dist /dist
+# Solo para extraer dist al volumen o copiar con docker cp; Nginx en el host sirve los ficheros.

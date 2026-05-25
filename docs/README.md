@@ -7,6 +7,7 @@
 | Documento | Contenido |
 |-----------|-----------|
 | [Instalación y arranque](instalacion.md) | Docker, variables de entorno, migraciones, credenciales demo |
+| [Despliegue en servidor](deploy.md) | Producción: Nginx, HTTPS, backups, goWA, actualizaciones |
 | [Arquitectura](arquitectura.md) | Stack, multi-tenant, jerarquía org, servicios |
 | [Admin plataforma](admin-plataforma.md) | Cuentas, usuarios, tarifas, Stripe, WhatsApp, correo |
 | [Panel cliente](panel-cliente.md) | Rutas `/app`, permisos, módulos del tenant |

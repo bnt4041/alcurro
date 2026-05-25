@@ -9,6 +9,7 @@ Gestión de RRHH: fichajes, vacaciones, documentos, **firma electrónica**, text
 | Tema | Enlace |
 |------|--------|
 | Instalación, Docker, migraciones | [docs/instalacion.md](docs/instalacion.md) |
+| Despliegue en servidor (producción) | [docs/deploy.md](docs/deploy.md) |
 | Arquitectura y multi-tenant | [docs/arquitectura.md](docs/arquitectura.md) |
 | Admin plataforma (cuentas, mail, WhatsApp, Stripe) | [docs/admin-plataforma.md](docs/admin-plataforma.md) |
 | Panel cliente `/app` | [docs/panel-cliente.md](docs/panel-cliente.md) |

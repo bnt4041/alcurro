@@ -1,5 +1,7 @@
 # Instalación y arranque
 
+> Para migrar a un VPS o servidor con HTTPS y Nginx, ver [Despliegue en servidor](deploy.md).
+
 ## Requisitos
 
 - Docker y Docker Compose

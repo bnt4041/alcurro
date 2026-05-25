@@ -1,0 +1,96 @@
+# Producción — usar con: docker compose -f docker-compose.prod.yml --env-file .env up -d --build
+# Ver docs/deploy.md
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: hrm-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - hrm-net
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: hrm-ollama
+    restart: unless-stopped
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - hrm-net
+
+  gowa:
+    image: ${GOWA_IMAGE:-ghcr.io/aldinokemal/go-whatsapp-web-multidevice:latest}
+    container_name: hrm-gowa
+    restart: unless-stopped
+    command: ["rest", "--port=3000"]
+    environment:
+      WHATSAPP_WEBHOOK: http://backend:8000/webhook/whatsapp
+      WHATSAPP_WEBHOOK_EVENTS: message
+      APP_PORT: "3000"
+      APP_BASIC_AUTH: ${GOWA_BASIC_AUTH}
+      APP_OS: Chrome
+      APP_ACCOUNT_VALIDATION: "false"
+    volumes:
+      - gowa_data:/app/storages
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - backend
+    networks:
+      - hrm-net
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: hrm-backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2}
+      JWT_SECRET: ${JWT_SECRET}
+      DOCKER_NETWORK: hrm-net
+      PLATFORM_SETUP_KEY: ${PLATFORM_SETUP_KEY}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY:-}
+      STRIPE_SIMULATION_MODE: ${STRIPE_SIMULATION_MODE:-false}
+      PUBLIC_APP_URL: ${PUBLIC_APP_URL}
+      GOWA_SEND_URL: http://gowa:3000/send/message
+      GOWA_BASIC_AUTH: ${GOWA_BASIC_AUTH}
+    volumes:
+      - uploads_data:/app/uploads
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+    networks:
+      - hrm-net
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
+
+volumes:
+  postgres_data:
+  ollama_data:
+  gowa_data:
+  uploads_data:
+
+networks:
+  hrm-net:
+    name: hrm-net
+    driver: bridge
