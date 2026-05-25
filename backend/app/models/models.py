@@ -296,20 +296,3 @@ class ShiftAssignment(SQLModel, table=True):
         back_populates="assignments"
     )
 
-
-class DocumentDelivery(SQLModel, table=True):
-    """Distribución formal de documentación vía WhatsApp con acuse de recibo."""
-
-    __tablename__ = "document_deliveries"
-
-    id: UUID = Field(default_factory=uuid4, primary_key=True)
-    company_id: UUID | None = Field(default=None, foreign_key="companies.id", index=True)
-    employee_id: UUID | None = Field(default=None, foreign_key="employees.id", index=True)
-    file_path: str = Field(max_length=500)
-    file_name: str = Field(max_length=255)
-    document_type: str = Field(max_length=50)
-    sent_at: datetime | None = Field(default=None)
-    acknowledged_at: datetime | None = Field(default=None)
-    acknowledgment_text: str | None = Field(default=None, max_length=100)
-    requires_acknowledgment: bool = Field(default=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow)

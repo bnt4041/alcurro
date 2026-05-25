@@ -72,7 +72,7 @@ class LeaveService:
     def acknowledge_document(
         self, employee_id: UUID, text: str
     ) -> str:
-        from app.models.models import DocumentDelivery
+        from app.models.documents import DocumentDelivery
 
         statement = (
             select(DocumentDelivery)

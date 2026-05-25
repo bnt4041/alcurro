@@ -2,7 +2,6 @@ from app.models.models import (
     BreakType,
     ClockIn,
     ClockInType,
-    DocumentDelivery,
     Employee,
     LeaveRequest,
     LeaveStatus,
@@ -11,6 +10,12 @@ from app.models.models import (
     ShiftConfiguration,
     ShiftPatternType,
     WorkBreak,
+)
+from app.models.documents import (
+    DocumentDelivery,
+    DocumentDeliveryTag,
+    DocumentTag,
+    DocumentType,
 )
 
 __all__ = [
@@ -26,4 +31,7 @@ __all__ = [
     "ShiftPatternType",
     "ShiftAssignment",
     "DocumentDelivery",
+    "DocumentType",
+    "DocumentTag",
+    "DocumentDeliveryTag",
 ]

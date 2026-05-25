@@ -1,6 +1,12 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { api, buildQuery } from "../api/client";
-import type { Employee, Role, ShiftConfiguration, WorkSchedulePeriod } from "../api/types";
+import type {
+  Employee,
+  EmployeeBulkScheduleResult,
+  Role,
+  ShiftConfiguration,
+  WorkSchedulePeriod,
+} from "../api/types";
 import {
   defaultSchedulePeriods,
   formatWorkSchedule,
@@ -107,8 +113,22 @@ export default function EmployeesPage() {
   const [selectedGroups, setSelectedGroups] = useState<string[]>([]);
   const [shiftConfigs, setShiftConfigs] = useState<ShiftConfiguration[]>([]);
   const [legalStatus, setLegalStatus] = useState<EmployeeLegalStatus | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkSaving, setBulkSaving] = useState(false);
+  const [bulkMsg, setBulkMsg] = useState("");
+  const [bulkRotating, setBulkRotating] = useState(false);
+  const [bulkShiftId, setBulkShiftId] = useState<string | null>(null);
+  const [bulkWeeklyHours, setBulkWeeklyHours] = useState<number | null>(40);
+  const [bulkPeriods, setBulkPeriods] = useState<WorkSchedulePeriod[]>(
+    defaultSchedulePeriods()
+  );
 
   const canWrite = user && canModule(user.permissions, "write", "employees");
+  const canUpdate =
+    user &&
+    (canModule(user.permissions, "write", "employees") ||
+      canModule(user.permissions, "update", "employees"));
   const canAdmin = user && canModule(user.permissions, "admin", "employees");
   const canGroups = user && canModule(user.permissions, "write", "groups");
   const canLegalRead = user && canModule(user.permissions, "read", "legal");
@@ -143,6 +163,17 @@ export default function EmployeesPage() {
         .catch(() => setOrgTree([]));
     }
   }, [canWrite]);
+
+  useEffect(() => {
+    if (canUpdate && user?.company_id) {
+      api
+        .get<ShiftConfiguration[]>(
+          `/shifts/configurations?company_id=${encodeURIComponent(user.company_id)}`
+        )
+        .then(setShiftConfigs)
+        .catch(() => setShiftConfigs([]));
+    }
+  }, [canUpdate, user?.company_id]);
 
   useEffect(() => {
     if (open && canWrite && !orgTree.length) {
@@ -333,6 +364,87 @@ export default function EmployeesPage() {
     load();
   };
 
+  const toggleSelect = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selected.size === rows.length) setSelected(new Set());
+    else setSelected(new Set(rows.map((r) => r.id)));
+  };
+
+  const openBulkSchedule = () => {
+    if (selected.size === 0) return;
+    setBulkMsg("");
+    setBulkRotating(false);
+    setBulkShiftId(null);
+    setBulkWeeklyHours(40);
+    setBulkPeriods(defaultSchedulePeriods());
+    setBulkOpen(true);
+  };
+
+  const applyBulkSchedule = async (e: FormEvent) => {
+    e.preventDefault();
+    setBulkMsg("");
+    if (selected.size === 0) {
+      setBulkMsg("Selecciona al menos un empleado");
+      return;
+    }
+    if (bulkRotating) {
+      if (!bulkShiftId) {
+        setBulkMsg("Selecciona un turno complejo");
+        return;
+      }
+      if (!bulkWeeklyHours || bulkWeeklyHours <= 0 || bulkWeeklyHours > 168) {
+        setBulkMsg("Indica horas semanales válidas (0–168)");
+        return;
+      }
+    } else {
+      const err = validatePeriodsClient(bulkPeriods);
+      if (err) {
+        setBulkMsg(err);
+        return;
+      }
+    }
+    try {
+      setBulkSaving(true);
+      const res = await api.post<EmployeeBulkScheduleResult>(
+        "/employees/bulk-schedule",
+        {
+          employee_ids: [...selected],
+          rotating_shift: bulkRotating,
+          shift_configuration_id: bulkRotating ? bulkShiftId : null,
+          weekly_hours: bulkRotating ? bulkWeeklyHours : null,
+          work_schedule_periods: bulkRotating ? [] : bulkPeriods,
+        }
+      );
+      const errText =
+        res.errors.length > 0
+          ? ` · ${res.errors.length} error(es): ${res.errors
+              .slice(0, 3)
+              .map((x) => x.employee_name ?? x.employee_id)
+              .join(", ")}${res.errors.length > 3 ? "…" : ""}`
+          : "";
+      setBulkMsg(
+        `Horario actualizado en ${res.updated} empleado(s)${res.skipped ? `, ${res.skipped} omitidos` : ""}${errText}`
+      );
+      if (res.updated > 0) {
+        setSelected(new Set());
+        load();
+      }
+      if (res.errors.length === 0) setBulkOpen(false);
+    } catch (err) {
+      setBulkMsg(String(err).replace(/^Error:\s*/i, ""));
+    } finally {
+      setBulkSaving(false);
+    }
+  };
+
   return (
     <>
       <PageHeader
@@ -360,6 +472,27 @@ export default function EmployeesPage() {
           },
         ]}
       />
+      {canUpdate && rows.length > 0 && (
+        <div className="toolbar" style={{ marginBottom: "0.5rem" }}>
+          <button
+            type="button"
+            className="btn btn-sm"
+            onClick={toggleSelectAll}
+          >
+            {selected.size === rows.length && rows.length > 0
+              ? "Quitar selección"
+              : `Seleccionar visibles (${rows.length})`}
+          </button>
+          <button
+            type="button"
+            className="btn btn-sm btn-primary"
+            disabled={selected.size === 0}
+            onClick={openBulkSchedule}
+          >
+            Cambio masivo de horario ({selected.size})
+          </button>
+        </div>
+      )}
       {loading ? (
         <p className="muted">Cargando…</p>
       ) : (
@@ -367,6 +500,16 @@ export default function EmployeesPage() {
           <table>
             <thead>
               <tr>
+                {canUpdate && (
+                  <th>
+                    <input
+                      type="checkbox"
+                      checked={rows.length > 0 && selected.size === rows.length}
+                      onChange={toggleSelectAll}
+                      aria-label="Seleccionar todos los visibles"
+                    />
+                  </th>
+                )}
                 <th>Código</th>
                 <th>DNI/NIE</th>
                 <th>Nombre</th>
@@ -381,6 +524,16 @@ export default function EmployeesPage() {
             <tbody>
               {rows.map((e) => (
                 <tr key={e.id}>
+                  {canUpdate && (
+                    <td>
+                      <input
+                        type="checkbox"
+                        checked={selected.has(e.id)}
+                        onChange={() => toggleSelect(e.id)}
+                        aria-label={`Seleccionar ${e.full_name}`}
+                      />
+                    </td>
+                  )}
                   <td>
                     <code>{e.employee_code}</code>
                   </td>
@@ -415,6 +568,92 @@ export default function EmployeesPage() {
           </table>
         </div>
       )}
+      <Modal
+        title={`Cambio masivo de horario (${selected.size} empleado${selected.size === 1 ? "" : "s"})`}
+        open={bulkOpen && !!canUpdate}
+        onClose={() => setBulkOpen(false)}
+        xlarge
+        tall
+      >
+        <form onSubmit={applyBulkSchedule} className="form-grid modal-form-scroll">
+          {bulkMsg && (
+            <div
+              className={`alert form-grid-full ${
+                bulkMsg.includes("actualizado") ? "alert-ok" : "alert-error"
+              }`}
+            >
+              {bulkMsg}
+            </div>
+          )}
+          <p className="muted small form-grid-full">
+            Se aplicará el mismo horario a los empleados seleccionados en la tabla
+            (respeta filtros de búsqueda y rol).
+          </p>
+          <div className="form-grid-full schedule-mode">
+            <label className="checkbox schedule-mode__toggle">
+              <input
+                type="checkbox"
+                checked={bulkRotating}
+                onChange={(ev) => setBulkRotating(ev.target.checked)}
+              />
+              <strong>Turno rotativo (complejo)</strong>
+            </label>
+            {bulkRotating ? (
+              <div className="card-inner rotating-shift-panel">
+                <label className="full">
+                  Turno complejo
+                  <select
+                    required
+                    value={bulkShiftId ?? ""}
+                    onChange={(ev) => {
+                      const id = ev.target.value || null;
+                      const cfg = shiftConfigs.find((s) => s.id === id);
+                      setBulkShiftId(id);
+                      if (cfg?.weekly_hours != null) {
+                        setBulkWeeklyHours(cfg.weekly_hours);
+                      }
+                    }}
+                  >
+                    <option value="">Seleccionar…</option>
+                    {shiftConfigs.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                        {s.weekly_hours != null ? ` (${s.weekly_hours} h/sem)` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Horas semanales
+                  <input
+                    type="number"
+                    required
+                    min={0.5}
+                    max={168}
+                    step={0.5}
+                    value={bulkWeeklyHours ?? ""}
+                    onChange={(ev) =>
+                      setBulkWeeklyHours(
+                        ev.target.value ? parseFloat(ev.target.value) : null
+                      )
+                    }
+                  />
+                </label>
+              </div>
+            ) : (
+              <WorkScheduleEditor periods={bulkPeriods} onChange={setBulkPeriods} />
+            )}
+          </div>
+          <div className="form-actions form-grid-full">
+            <button type="button" className="btn" onClick={() => setBulkOpen(false)}>
+              Cancelar
+            </button>
+            <button type="submit" className="btn btn-primary" disabled={bulkSaving}>
+              {bulkSaving ? "Aplicando…" : "Aplicar horario"}
+            </button>
+          </div>
+        </form>
+      </Modal>
       <Modal
         title={editing ? "Editar empleado" : "Nuevo empleado"}
         open={open && !!canWrite}

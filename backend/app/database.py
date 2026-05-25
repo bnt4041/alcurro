@@ -24,6 +24,14 @@ from app.models.signature import (  # noqa: F401
     SignatureSigner,
 )
 from app.models.models import Employee  # noqa: F401
+from app.models.documents import (  # noqa: F401
+    DocumentDelivery,
+    DocumentDeliveryTag,
+    DocumentExpiryNotificationLog,
+    DocumentNotificationSettings,
+    DocumentTag,
+    DocumentType,
+)
 
 settings = get_settings()
 engine = create_engine(settings.database_url, echo=False)

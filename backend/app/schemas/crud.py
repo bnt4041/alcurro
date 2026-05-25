@@ -35,6 +35,26 @@ class EmployeeCreate(BaseModel):
     weekly_hours: float | None = Field(default=None, ge=0, le=168)
 
 
+class EmployeeBulkScheduleUpdate(BaseModel):
+    employee_ids: list[UUID] = Field(min_length=1, max_length=500)
+    rotating_shift: bool
+    shift_configuration_id: UUID | None = None
+    weekly_hours: float | None = Field(default=None, ge=0, le=168)
+    work_schedule_periods: list[dict[str, Any]] | None = None
+
+
+class EmployeeBulkScheduleItemError(BaseModel):
+    employee_id: UUID
+    employee_name: str | None = None
+    message: str
+
+
+class EmployeeBulkScheduleResult(BaseModel):
+    updated: int
+    skipped: int
+    errors: list[EmployeeBulkScheduleItemError] = Field(default_factory=list)
+
+
 class EmployeeUpdate(BaseModel):
     phone: str | None = None
     email: str | None = None

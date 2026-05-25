@@ -33,6 +33,7 @@ export type Perm =
   | "documents.write"
   | "documents.create_own"
   | "documents.update_own"
+  | "documents.bulk"
   | "signatures.read"
   | "signatures.read_own"
   | "signatures.write"
@@ -253,6 +254,7 @@ export const PERM_LABELS: Record<Perm, string> = {
   "documents.write": "Crear y modificar todos",
   "documents.create_own": "Crear sólo los del usuario",
   "documents.update_own": "Modificar sólo los del usuario",
+  "documents.bulk": "Subida masiva de nóminas",
   "signatures.read": "Ver todas las firmas",
   "signatures.read_own": "Ver sólo las del usuario",
   "signatures.write": "Crear y modificar todas",
@@ -340,6 +342,7 @@ export const PERM_SECTIONS: { section: string; keys: Perm[] }[] = [
       "documents.write",
       "documents.create_own",
       "documents.update_own",
+      "documents.bulk",
     ],
   },
   {

@@ -100,6 +100,18 @@ def _run_startup_migrations() -> None:
         migrate_employee_weekly_hours()
     except Exception as exc:
         print(f"migrate_employee_weekly_hours: {exc}")
+    try:
+        from scripts.migrate_documents_v2 import main as migrate_documents_v2
+
+        migrate_documents_v2()
+    except Exception as exc:
+        print(f"migrate_documents_v2: {exc}")
+    try:
+        from scripts.migrate_documents_v3 import main as migrate_documents_v3
+
+        migrate_documents_v3()
+    except Exception as exc:
+        print(f"migrate_documents_v3: {exc}")
 
 
 @asynccontextmanager
@@ -146,6 +158,8 @@ async def integrity_error_handler(_request: Request, exc: IntegrityError) -> JSO
         detail = "Código de empleado duplicado"
     elif "uq_employee_group" in msg:
         detail = "Conflicto al asignar grupos al empleado"
+    elif "document_deliveries" in msg or "document_delivery" in msg:
+        detail = "No se puede eliminar: el documento está vinculado a otros registros"
     else:
         detail = "Registro duplicado o conflicto de datos"
     return JSONResponse(status_code=409, content={"detail": detail})

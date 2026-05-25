@@ -12,7 +12,8 @@ from fastapi import HTTPException
 from sqlmodel import Session, select
 
 from app.config import get_settings
-from app.models.models import DocumentDelivery, Employee
+from app.models.documents import DocumentDelivery
+from app.models.models import Employee
 from app.models.signature import (
     EnvelopeStatus,
     SignatureEnvelope,
@@ -21,7 +22,7 @@ from app.models.signature import (
     SignatureSigner,
     SignerStatus,
 )
-from app.models.tenant import Tenant
+from app.models.tenant import Company, Tenant
 from app.schemas.signature import (
     SignatureEnvelopeCreate,
     SignatureEnvelopeRead,
@@ -211,8 +212,12 @@ def _store_document_delivery(
     safe_name = Path(file_name).name or "documento.pdf"
     stored = UPLOAD_DIR / f"{uuid4()}_{safe_name}"
     stored.write_bytes(content)
+    company = session.get(Company, company_id)
+    if not company:
+        raise ValueError("Empresa no válida")
     row = DocumentDelivery(
-        company_id=company_id,
+        tenant_id=company.tenant_id,
+        company_id=company_id if not employee_id else None,
         employee_id=employee_id,
         file_path=str(stored),
         file_name=safe_name,

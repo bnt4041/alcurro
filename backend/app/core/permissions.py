@@ -47,6 +47,7 @@ class Perm(StrEnum):
     DOCUMENTS_WRITE = "documents.write"
     DOCUMENTS_CREATE_OWN = "documents.create_own"
     DOCUMENTS_UPDATE_OWN = "documents.update_own"
+    DOCUMENTS_BULK = "documents.bulk"
     SIGNATURES_READ = "signatures.read"
     SIGNATURES_READ_OWN = "signatures.read_own"
     SIGNATURES_WRITE = "signatures.write"
@@ -144,6 +145,7 @@ PERM_LABELS: dict[str, str] = {
     Perm.DOCUMENTS_WRITE: "Crear y modificar todos",
     Perm.DOCUMENTS_CREATE_OWN: "Crear sólo los del usuario",
     Perm.DOCUMENTS_UPDATE_OWN: "Modificar sólo los del usuario",
+    Perm.DOCUMENTS_BULK: "Subida masiva de nóminas",
     Perm.SIGNATURES_READ: "Ver todas las firmas",
     Perm.SIGNATURES_READ_OWN: "Ver sólo las del usuario",
     Perm.SIGNATURES_WRITE: "Crear y modificar todas",
@@ -234,6 +236,7 @@ PERM_SECTIONS: list[tuple[str, list[str]]] = [
             Perm.DOCUMENTS_WRITE,
             Perm.DOCUMENTS_CREATE_OWN,
             Perm.DOCUMENTS_UPDATE_OWN,
+            Perm.DOCUMENTS_BULK,
         ],
     ),
     (
@@ -380,6 +383,7 @@ MANAGER_PERMS: frozenset[str] = frozenset(
         Perm.LEGAL_WRITE,
         Perm.DOCUMENTS_READ,
         Perm.DOCUMENTS_WRITE,
+        Perm.DOCUMENTS_BULK,
         Perm.SIGNATURES_READ,
         Perm.SIGNATURES_WRITE,
         Perm.TENANT_READ,

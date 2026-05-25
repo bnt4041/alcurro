@@ -17,6 +17,12 @@ export type ShiftPatternType =
   | "night"
   | "mixed";
 
+export interface EmployeeBulkScheduleResult {
+  updated: number;
+  skipped: number;
+  errors: { employee_id: string; employee_name: string | null; message: string }[];
+}
+
 export interface Employee {
   id: string;
   company_id?: string;
@@ -113,16 +119,86 @@ export interface ShiftAssignment {
   created_at: string;
 }
 
+export interface DocumentType {
+  id: string;
+  tenant_id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  is_active: boolean;
+  sort_order: number;
+  created_at: string;
+}
+
+export interface DocumentTag {
+  id: string;
+  tenant_id: string;
+  name: string;
+  color: string | null;
+  is_active: boolean;
+  created_at: string;
+}
+
 export interface DocumentDelivery {
   id: string;
-  employee_id: string;
+  tenant_id: string;
+  company_id: string | null;
+  employee_id: string | null;
+  document_type_id: string | null;
+  document_type: string;
+  document_type_name: string | null;
   file_path: string;
   file_name: string;
-  document_type: string;
+  title: string | null;
+  expires_at: string | null;
+  is_expired: boolean;
+  tag_ids: string[];
+  tags: DocumentTag[];
   sent_at: string | null;
   acknowledged_at: string | null;
+  acknowledgment_text: string | null;
   requires_acknowledgment: boolean;
   created_at: string;
+}
+
+export interface BulkPayrollItemResult {
+  source_file: string;
+  page: number | null;
+  id_document: string | null;
+  employee_id: string | null;
+  employee_name: string | null;
+  status: string;
+  document_id: string | null;
+  message: string | null;
+}
+
+export interface BulkPayrollResponse {
+  total_files: number;
+  total_pages: number;
+  assigned: number;
+  skipped: number;
+  errors: number;
+  items: BulkPayrollItemResult[];
+}
+
+export interface DocumentNotificationSettings {
+  tenant_id: string;
+  enabled: boolean;
+  days_before: number[];
+  channel_whatsapp: boolean;
+  channel_email: boolean;
+  notify_employee: boolean;
+  notify_managers: boolean;
+  extra_emails: string[];
+  updated_at: string;
+}
+
+export interface ExpiryNotificationRunResult {
+  checked: number;
+  sent: number;
+  skipped: number;
+  errors: number;
+  details: string[];
 }
 
 export interface SystemSettings {

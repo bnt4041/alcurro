@@ -9,10 +9,17 @@ from app.core.org_context import OrgContext, get_org_context, resolve_department
 from app.core.permissions import Permission, require_permission, require_write
 from app.core.security import hash_password
 from app.database import get_session
-from app.models.models import Employee, Role
+from app.models.models import Employee, Role, ShiftConfiguration
 from app.routers.crud_helpers import get_or_404
 from app.routers.search_helpers import ilike_filter
-from app.schemas.crud import EmployeeCreate, EmployeeRead, EmployeeUpdate
+from app.schemas.crud import (
+    EmployeeBulkScheduleResult,
+    EmployeeBulkScheduleUpdate,
+    EmployeeBulkScheduleItemError,
+    EmployeeCreate,
+    EmployeeRead,
+    EmployeeUpdate,
+)
 from app.schemas.whatsapp import normalize_mobile_digits
 from app.services.code_generator import next_employee_code
 from app.services.id_document import validate_id_document
@@ -97,6 +104,106 @@ def list_employees(
     if active_only:
         stmt = stmt.where(Employee.is_active == True)  # noqa: E712
     return list(session.exec(stmt).all())
+
+
+def _schedule_payload(data: EmployeeBulkScheduleUpdate) -> dict:
+    return {
+        "rotating_shift": data.rotating_shift,
+        "shift_configuration_id": data.shift_configuration_id,
+        "weekly_hours": data.weekly_hours,
+        "work_schedule_periods": data.work_schedule_periods,
+    }
+
+
+def _apply_schedule_to_employee(
+    session: Session, row: Employee, schedule: dict
+) -> None:
+    updates = normalize_employee_schedule(dict(schedule))
+    rotating = updates.get("rotating_shift", row.rotating_shift)
+    shift_id = updates.get("shift_configuration_id", row.shift_configuration_id)
+    if rotating:
+        if not shift_id:
+            raise ValueError("Selecciona un turno complejo")
+        cfg = session.get(ShiftConfiguration, shift_id)
+        if not cfg or cfg.company_id != row.company_id:
+            raise ValueError("Turno no válido para la empresa del empleado")
+        if not updates.get("weekly_hours", row.weekly_hours):
+            raise ValueError("Indica las horas semanales")
+    for key, value in updates.items():
+        setattr(row, key, value)
+    row.updated_at = datetime.utcnow()
+    session.add(row)
+
+
+@router.post("/bulk-schedule", response_model=EmployeeBulkScheduleResult)
+def bulk_update_schedule(
+    data: EmployeeBulkScheduleUpdate,
+    ctx: OrgContext = Depends(get_org_context),
+    session: Session = Depends(get_session),
+    user: Employee = Depends(get_current_user),
+    _: object = Depends(require_write("employees", "update")),
+) -> EmployeeBulkScheduleResult:
+    allowed = set(_scope_ids(ctx, session, user))
+    schedule = _schedule_payload(data)
+    try:
+        normalize_employee_schedule(dict(schedule))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    updated = 0
+    skipped = 0
+    errors: list[EmployeeBulkScheduleItemError] = []
+    seen: set[UUID] = set()
+
+    for emp_id in data.employee_ids:
+        if emp_id in seen:
+            skipped += 1
+            continue
+        seen.add(emp_id)
+        if emp_id not in allowed:
+            errors.append(
+                EmployeeBulkScheduleItemError(
+                    employee_id=emp_id,
+                    message="Sin permiso o empleado no encontrado",
+                )
+            )
+            continue
+        row = session.get(Employee, emp_id)
+        if not row:
+            errors.append(
+                EmployeeBulkScheduleItemError(
+                    employee_id=emp_id,
+                    message="Empleado no encontrado",
+                )
+            )
+            continue
+        try:
+            assert_employee_target(session, user, ctx, "employees", row.id, "update")
+            _apply_schedule_to_employee(session, row, schedule)
+            updated += 1
+        except HTTPException:
+            errors.append(
+                EmployeeBulkScheduleItemError(
+                    employee_id=emp_id,
+                    employee_name=row.full_name,
+                    message="Sin permiso para modificar",
+                )
+            )
+        except ValueError as exc:
+            errors.append(
+                EmployeeBulkScheduleItemError(
+                    employee_id=emp_id,
+                    employee_name=row.full_name,
+                    message=str(exc),
+                )
+            )
+
+    if updated:
+        session.commit()
+    else:
+        session.rollback()
+
+    return EmployeeBulkScheduleResult(updated=updated, skipped=skipped, errors=errors)
 
 
 @router.get("/{employee_id}", response_model=EmployeeRead)
