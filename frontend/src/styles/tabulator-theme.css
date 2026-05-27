@@ -287,3 +287,25 @@
   border: none !important;
   background: transparent !important;
 }
+
+@media (max-width: 768px) {
+  .data-table__toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 0.75rem 1rem;
+  }
+
+  .data-table__exports {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .data-table__grid .tabulator-col-title {
+    font-size: 0.8rem;
+  }
+
+  .data-table__grid .tabulator-cell {
+    font-size: 0.85rem;
+    padding: 0.4rem 0.5rem;
+  }
+}

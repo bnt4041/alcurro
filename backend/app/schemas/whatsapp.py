@@ -6,7 +6,18 @@ from pydantic import BaseModel, Field, model_validator
 
 
 def _extract_location_dict(data: dict[str, Any]) -> dict[str, Any] | None:
-    """Normaliza ubicación desde distintos formatos de goWA / WhatsApp Web."""
+    """Normaliza ubicación desde distintos formatos de goWA / WhatsApp Web.
+    
+    Soporta múltiples formatos de ubicación:
+    - {latitude, longitude}
+    - {degreesLatitude, degreesLongitude}
+    - {lat, lng}
+    - {location: {...}}
+    - {locationMessage: {...}}
+    - {liveLocationMessage: {...}}
+    - {msg: {location: {...}}}
+    También maneja strings numéricos de coordenadas.
+    """
     if not isinstance(data, dict):
         return None
 
@@ -23,6 +34,13 @@ def _extract_location_dict(data: dict[str, Any]) -> dict[str, Any] | None:
         if isinstance(nested, dict):
             candidates.append(nested)
 
+    # También buscar en valores que sean dict con coordenadas
+    for v in data.values():
+        if isinstance(v, dict) and any(
+            k in v for k in ("latitude", "lat", "degreesLatitude", "longitude", "lng", "lon", "degreesLongitude")
+        ):
+            candidates.append(v)
+
     for block in candidates:
         lat = (
             block.get("latitude")
@@ -37,12 +55,16 @@ def _extract_location_dict(data: dict[str, Any]) -> dict[str, Any] | None:
         )
         if lat is not None and lng is not None:
             try:
-                return {
-                    "latitude": float(lat),
-                    "longitude": float(lng),
-                    "name": block.get("name"),
-                    "address": block.get("address"),
-                }
+                lat_f = float(lat)
+                lng_f = float(lng)
+                # Validar rango GPS
+                if -90 <= lat_f <= 90 and -180 <= lng_f <= 180:
+                    return {
+                        "latitude": lat_f,
+                        "longitude": lng_f,
+                        "name": block.get("name"),
+                        "address": block.get("address"),
+                    }
             except (TypeError, ValueError):
                 continue
     return None
@@ -87,7 +109,7 @@ class GoWAMessage(BaseModel):
         if self.location is not None:
             return True
         t = (self.type or "").lower()
-        return any(
+        if any(
             x in t
             for x in (
                 "location",
@@ -95,7 +117,21 @@ class GoWAMessage(BaseModel):
                 "locationmessage",
                 "livelocation",
             )
-        )
+        ):
+            return True
+        # Si el body/text contiene solo coordenadas numéricas, podría ser ubicación
+        body = (self.body or self.text or "").strip()
+        if body:
+            parts = body.replace(",", " ").split()
+            if len(parts) == 2:
+                try:
+                    lat = float(parts[0])
+                    lng = float(parts[1])
+                    if -90 <= lat <= 90 and -180 <= lng <= 180:
+                        return True
+                except (TypeError, ValueError):
+                    pass
+        return False
 
     @property
     def is_media(self) -> bool:
@@ -136,8 +172,11 @@ class GoWAWebhookPayload(BaseModel):
         if not isinstance(data, dict):
             return data
 
-        # Evento dedicado de ubicación (algunas versiones de goWA)
-        if data.get("event") in ("location", "live_location", "message.location"):
+        # Evento dedicado de ubicación (varias versiones de goWA)
+        if data.get("event") in (
+            "location", "live_location", "message.location",
+            "locationMessage", "liveLocationMessage",
+        ):
             p = data.get("payload") if isinstance(data.get("payload"), dict) else data
             loc = _extract_location_dict(p or {})
             sender = (
@@ -153,6 +192,20 @@ class GoWAWebhookPayload(BaseModel):
                         "location": loc,
                     },
                 }
+            # Si es evento de ubicación pero no pudimos extraer coordenadas,
+            # intentamos con el payload completo
+            if isinstance(p, dict):
+                loc2 = _extract_location_dict(p)
+                if loc2:
+                    return {
+                        "event": "message",
+                        "message": {
+                            "from": sender or "",
+                            "id": p.get("id"),
+                            "type": "location",
+                            "location": loc2,
+                        },
+                    }
 
         if data.get("event") == "message" and isinstance(data.get("payload"), dict):
             p = data["payload"]
@@ -196,6 +249,13 @@ class GoWAWebhookPayload(BaseModel):
                     return GoWAMessage.model_validate(
                         {**msg.model_dump(by_alias=True), "location": loc, "type": "location"}
                     )
+            # Si el mensaje es texto pero contiene coordenadas GPS, intentar tratarlo como ubicación
+            if not msg.is_location and msg.plain_text and self.payload:
+                loc = _extract_location_dict(self.payload)
+                if loc:
+                    return GoWAMessage.model_validate(
+                        {**msg.model_dump(by_alias=True), "location": loc, "type": "location"}
+                    )
             return msg
         if self.payload:
             loc = _extract_location_dict(self.payload)
@@ -229,6 +289,8 @@ class GoWAWebhookPayload(BaseModel):
             "location",
             "live_location",
             "message.location",
+            "locationMessage",
+            "liveLocationMessage",
             None,
         ):
             if self.event in ("status", "ack", "receipt", "connection"):

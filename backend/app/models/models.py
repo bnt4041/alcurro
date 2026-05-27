@@ -204,12 +204,22 @@ class ClockIn(SQLModel, table=True):
 
 
 class WorkBreak(SQLModel, table=True):
-    """Paradas / descansos durante la jornada (inalterables, sin borrado)."""
+    """Paradas / descansos durante la jornada (inalterables, sin borrado).
+    
+    Las paradas se asocian al fichaje de ENTRADA abierto (sin SALIDA aún)
+    para mantener la trazabilidad completa de la jornada.
+    """
 
     __tablename__ = "work_breaks"
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     employee_id: UUID = Field(foreign_key="employees.id", index=True)
+    clock_in_id: UUID | None = Field(
+        default=None,
+        foreign_key="clock_ins.id",
+        index=True,
+        description="Fichaje de ENTRADA abierto al que pertenece esta parada",
+    )
     record_type: BreakType
     recorded_at: datetime = Field(default_factory=datetime.utcnow)
     source: str = Field(default="panel", max_length=50)

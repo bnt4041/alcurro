@@ -1,4 +1,4 @@
-"""Fichaje pendiente de proyecto (WhatsApp)."""
+"""Fichaje pendiente de proyecto o confirmación (WhatsApp)."""
 
 from __future__ import annotations
 
@@ -23,6 +23,8 @@ def set_pending(
     latitude: float | None = None,
     longitude: float | None = None,
     whatsapp_message_id: str | None = None,
+    pending_confirmation: bool = False,
+    pending_intent: str | None = None,
 ) -> ClockPendingFichaje:
     row = session.get(ClockPendingFichaje, employee_id)
     if row:
@@ -30,6 +32,8 @@ def set_pending(
         row.latitude = latitude
         row.longitude = longitude
         row.whatsapp_message_id = whatsapp_message_id
+        row.pending_confirmation = pending_confirmation
+        row.pending_intent = pending_intent
         row.created_at = datetime.utcnow()
     else:
         row = ClockPendingFichaje(
@@ -38,6 +42,8 @@ def set_pending(
             latitude=latitude,
             longitude=longitude,
             whatsapp_message_id=whatsapp_message_id,
+            pending_confirmation=pending_confirmation,
+            pending_intent=pending_intent,
         )
         session.add(row)
     session.flush()
@@ -49,3 +55,9 @@ def clear_pending(session: Session, employee_id: UUID) -> None:
     if row:
         session.delete(row)
         session.flush()
+
+
+def is_pending_confirmation(session: Session, employee_id: UUID) -> bool:
+    """True si hay una acción esperando confirmación sí/no."""
+    row = session.get(ClockPendingFichaje, employee_id)
+    return row is not None and row.pending_confirmation

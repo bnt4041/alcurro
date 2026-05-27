@@ -106,6 +106,38 @@ def ensure_ai_catalog(session: Session) -> None:
                     )
                 )
     session.flush()
+    _ensure_default_conversation_rules(session)
+
+
+def _ensure_default_conversation_rules(session: Session) -> None:
+    """Reglas base para comprensión coloquial (idempotente)."""
+    title = "Comprensión coloquial (sistema)"
+    body = (
+        "Interpreta español coloquial de España sin exigir frases del menú. "
+        "Ejemplos: «ficho ahora»=fichar; «vuelvo al trabajo»=fin_parada si hay parada "
+        "abierta; «pausa»/«a comer»=inicio_parada; «me voy»=salida de jornada. "
+        "Usa historial + estado de fichaje y paradas. "
+        "Nunca respondas solo con lista de comandos: si no entiendes, pregunta "
+        "en una frase corta y amable."
+    )
+    exists = session.exec(
+        select(AiConversationRule).where(AiConversationRule.title == title)
+    ).first()
+    if exists:
+        exists.content = body
+        exists.is_active = True
+        session.add(exists)
+        session.flush()
+        return
+    session.add(
+        AiConversationRule(
+            title=title,
+            content=body,
+            priority=0,
+            is_active=True,
+        )
+    )
+    session.flush()
 
 
 def get_action_matrix(session: Session) -> list[AiActionMatrixRow]:

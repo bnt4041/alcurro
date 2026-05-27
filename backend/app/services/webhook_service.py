@@ -8,7 +8,12 @@ from app.models.tenant import Tenant
 from app.schemas.ollama import OllamaIntentResponse
 from app.schemas.whatsapp import GoWAMessage, GoWAWebhookPayload
 from app.services.break_service import BreakService
-from app.services.clock_pending_service import clear_pending, get_pending, set_pending
+from app.services.clock_pending_service import (
+    clear_pending,
+    get_pending,
+    is_pending_confirmation,
+    set_pending,
+)
 from app.services.clock_incident_hook import (
     should_notify_whatsapp,
     whatsapp_message_for_incident,
@@ -35,14 +40,20 @@ from app.services.clock_settings_service import inbound_name
 from app.services.whatsapp_format import (
     format_break_registered,
     format_clock_registered,
+    format_confirmation_cancelled,
+    format_conversational_help,
     format_geo_hint,
-    format_help_actions,
     format_inbound_document_picker,
 )
 from app.services.leave_service import LeaveService
 from app.services.ai_conversation_service import append_message
 from app.services.ai_usage_service import profile_key_for_employee
 from app.services.ollama_service import OllamaService
+from app.services.whatsapp_nlu import (
+    build_confirmation_message,
+    is_affirmative_reply,
+    is_negative_reply,
+)
 from app.services.whatsapp_permission_service import (
     ACTION_LABELS,
     can_whatsapp_inbound_media,
@@ -271,9 +282,72 @@ class WebhookService:
                 pass
             return {"ok": False, "error": "Ubicación vacía"}
 
+        # Validar coordenadas
+        try:
+            lat = float(loc.latitude)
+            lng = float(loc.longitude)
+        except (TypeError, ValueError):
+            reply = (
+                "📍 Las coordenadas recibidas no son válidas. "
+                "Inténtalo de nuevo compartiendo tu ubicación desde WhatsApp."
+            )
+            try:
+                await self._gowa.send_text(phone, reply)
+            except Exception:
+                pass
+            return {"ok": False, "error": "Coordenadas inválidas"}
+
+        if not (-90 <= lat <= 90) or not (-180 <= lng <= 180):
+            reply = (
+                "📍 Las coordenadas GPS están fuera de rango. "
+                "Asegúrate de compartir tu ubicación real desde WhatsApp."
+            )
+            try:
+                await self._gowa.send_text(phone, reply)
+            except Exception:
+                pass
+            return {"ok": False, "error": "Coordenadas fuera de rango"}
+
         employee = self._session.get(Employee, employee_id)
         if not employee:
             return {"ok": False, "error": "Empleado no encontrado"}
+
+        # Si hay confirmación pendiente por ubicación, ejecutar directamente
+        pending = get_pending(self._session, employee_id)
+        if pending and pending.pending_confirmation:
+            record_type = (
+                ClockInType.SALIDA
+                if pending.record_type == ClockInType.SALIDA.value
+                else ClockInType.ENTRADA
+            )
+            label = "SALIDA" if record_type == ClockInType.SALIDA else "ENTRADA"
+            if not can_whatsapp_location_clock(
+                self._session, employee, self._tenant_id, record_type=record_type.value
+            ):
+                reply = denial_message(self._session, employee, self._tenant_id)
+                clear_pending(self._session, employee_id)
+                self._session.commit()
+                try:
+                    await self._gowa.send_text(phone, reply)
+                except Exception:
+                    pass
+                return {"ok": True, "action": "denied_location"}
+            reply = self._register_clock_with_project_flow(
+                employee,
+                record_type,
+                label,
+                latitude=lat,
+                longitude=lng,
+                whatsapp_message_id=message.id,
+            )
+            clear_pending(self._session, employee_id)
+            self._session.commit()
+            try:
+                await self._gowa.send_text(phone, reply + self._geo_hint())
+                await self._notify_incident_if_needed(phone)
+            except Exception:
+                pass
+            return {"ok": True, "action": f"fichar_{record_type.value}"}
 
         record_type, label = self._next_record_type(employee_id)
         if not can_whatsapp_location_clock(
@@ -283,18 +357,18 @@ class WebhookService:
             record_type=record_type.value,
         ):
             reply = denial_message(self._session, employee, self._tenant_id)
-            # denial_message already formatted
             try:
                 await self._gowa.send_text(phone, reply)
             except Exception:
                 pass
             return {"ok": True, "action": "denied_location"}
+
         reply = self._register_clock_with_project_flow(
             employee,
             record_type,
             label,
-            latitude=loc.latitude,
-            longitude=loc.longitude,
+            latitude=lat,
+            longitude=lng,
             whatsapp_message_id=message.id,
         )
         self._session.commit()
@@ -395,111 +469,32 @@ class WebhookService:
         text: str,
         message_id: str | None,
     ) -> dict:
+        # 1. Pendiente de subir documento
         upload_pending = get_pending_upload(self._session, employee.id)
         if upload_pending:
-            doc_row = resolve_document_from_reply(self._session, employee.id, text)
-            if not doc_row:
-                file_pending = pending_file_documents(self._session, employee.id)
-                picker_rows = [
-                    type(
-                        "Row",
-                        (),
-                        {"document_name": inbound_name(self._session, r.document_code)},
-                    )()
-                    for r in file_pending
-                ]
-                reply = format_inbound_document_picker(picker_rows)
-                reply += "\n\n_No he reconocido tu respuesta. Indica el número o nombre._"
-            else:
-                ok, reply = complete_pending_upload(
-                    self._session,
-                    employee,
-                    tenant_id=self._tenant_id,
-                    document_code=doc_row.document_code,
-                )
-                if not ok:
-                    pass
-            self._session.commit()
-            try:
-                await self._gowa.send_text(phone, reply)
-            except Exception:
-                pass
-            return {"ok": True, "action": "inbound_document_assigned"}
+            return await self._handle_inbound_document_pick(employee, phone, text)
 
+        # 2. Pendiente de confirmación sí/no
         pending = get_pending(self._session, employee.id)
-        if self._settings.require_project_on_clock_in and pending:
-            rt = (
-                ClockInType.SALIDA
-                if pending.record_type == ClockInType.SALIDA.value
-                else ClockInType.ENTRADA
+        if pending and pending.pending_confirmation:
+            return await self._handle_confirmation_response(
+                employee, phone, text, message_id, pending
             )
-            code = "fichar_salida" if rt == ClockInType.SALIDA else "fichar_entrada"
-            if not is_whatsapp_action_allowed(
-                self._session, employee, self._tenant_id, code
-            ):
-                reply = denial_message(self._session, employee, self._tenant_id)
-            # denial_message already formatted
-                self._session.commit()
-                try:
-                    await self._gowa.send_text(phone, reply)
-                except Exception:
-                    pass
-                return {"ok": True, "action": "denied_project"}
-            lbl = "SALIDA" if rt == ClockInType.SALIDA else "ENTRADA"
-            reply = self._register_clock_with_project_flow(
-                employee,
-                rt,
-                lbl,
-                whatsapp_message_id=message_id,
-                picker_text=text,
-            )
-            self._session.commit()
-            try:
-                await self._gowa.send_text(phone, reply)
-                await self._notify_incident_if_needed(phone)
-            except Exception:
-                pass
-            return {"ok": True, "action": "select_project"}
 
-        if self._settings.daily_summary_enabled:
-            lower = text.lower().strip()
-            if any(
-                k in lower
-                for k in (
-                    "resumen del dia",
-                    "resumen del día",
-                    "resumen hoy",
-                    "resumen de hoy",
-                )
-            ):
-                if is_whatsapp_action_allowed(
-                    self._session, employee, self._tenant_id, "resumen_dia"
-                ):
-                    reply = build_daily_summary(self._session, employee.id)
-                    append_message(
-                        self._session,
-                        tenant_id=self._tenant_id,
-                        employee_id=employee.id,
-                        role="user",
-                        content=text,
-                    )
-                    append_message(
-                        self._session,
-                        tenant_id=self._tenant_id,
-                        employee_id=employee.id,
-                        role="assistant",
-                        content=reply[:_REPLY_MAX],
-                        intent_code="resumen_dia",
-                    )
-                else:
-                    reply = denial_message(self._session, employee, self._tenant_id)
-            # denial_message already formatted
-                self._session.commit()
-                try:
-                    await self._gowa.send_text(phone, reply)
-                except Exception:
-                    pass
-                return {"ok": True, "action": "resumen_dia"}
+        # 3. Pendiente de selección de proyecto (sin confirmación pendiente)
+        if self._settings.require_project_on_clock_in and pending:
+            return await self._handle_project_selection(
+                employee, phone, text, message_id, pending
+            )
+
+        # 4. Ollama como orquestador: decide stage (ask/confirm/execute)
+        self._ollama.profile_key = profile_key_for_employee(employee.role)
+        intent_data = await self._ollama.extract_intent(
+            text,
+            employee=employee,
+            tenant=self._tenant,
+            clock_settings=self._settings,
+        )
 
         append_message(
             self._session,
@@ -510,6 +505,225 @@ class WebhookService:
         )
         self._session.flush()
 
+        return await self._handle_stage(employee, phone, intent_data, text, message_id)
+
+    async def _handle_stage(
+        self,
+        employee: Employee,
+        phone: str,
+        intent_data: OllamaIntentResponse,
+        raw_text: str,
+        message_id: str | None,
+    ) -> dict:
+        """Orquestador conversacional: sigue la decisión de Ollama (ask/confirm/execute)."""
+        stage = intent_data.stage
+        intent_code = intent_data.intent
+        ollama_message = (intent_data.message or "").strip()
+
+        # Verificar permisos para la intención (excepto stage=ask que es solo conversación)
+        if stage in ("confirm", "execute") and intent_code != "desconocido":
+            if not is_whatsapp_action_allowed(
+                self._session, employee, self._tenant_id, intent_code
+            ):
+                reply = denial_message(self._session, employee, self._tenant_id)
+                append_message(
+                    self._session,
+                    tenant_id=self._tenant_id,
+                    employee_id=employee.id,
+                    role="assistant",
+                    content=reply[:_REPLY_MAX],
+                    intent_code="denied",
+                )
+                self._session.commit()
+                try:
+                    await self._gowa.send_text(phone, reply)
+                except Exception:
+                    pass
+                return {"ok": True, "action": "denied"}
+
+        if stage == "ask":
+            # Seguir preguntando: enviar el mensaje de Ollama y esperar
+            reply = ollama_message or format_conversational_help(
+                [ACTION_LABELS.get(c, c) for c in list_whatsapp_actions_for_employee(
+                    self._session, employee, self._tenant_id
+                )],
+                employee_name=employee.full_name,
+            )
+            append_message(
+                self._session,
+                tenant_id=self._tenant_id,
+                employee_id=employee.id,
+                role="assistant",
+                content=reply[:_REPLY_MAX],
+                intent_code="ask",
+            )
+            self._session.commit()
+            try:
+                await self._gowa.send_text(phone, reply)
+            except Exception:
+                pass
+            return {"ok": True, "action": "ask", "reply": reply}
+
+        if stage == "confirm":
+            # Guardar intención pendiente de confirmación y preguntar sí/no
+            record_type = (
+                ClockInType.SALIDA
+                if intent_code == "fichar_salida"
+                else ClockInType.ENTRADA
+            )
+            set_pending(
+                self._session,
+                employee_id=employee.id,
+                record_type=record_type,
+                whatsapp_message_id=message_id,
+                pending_confirmation=True,
+                pending_intent=intent_code,
+            )
+            reply = ollama_message or build_confirmation_message(
+                intent_code, employee.full_name
+            )
+            append_message(
+                self._session,
+                tenant_id=self._tenant_id,
+                employee_id=employee.id,
+                role="assistant",
+                content=reply[:_REPLY_MAX],
+                intent_code="pending_confirmation",
+            )
+            self._session.commit()
+            try:
+                await self._gowa.send_text(phone, reply)
+            except Exception:
+                pass
+            return {"ok": True, "action": "confirm", "intent": intent_code}
+
+        # stage == "execute"
+        if intent_code == "desconocido":
+            # No debería pasar, pero por si acaso: preguntar
+            reply = ollama_message or format_conversational_help(
+                [ACTION_LABELS.get(c, c) for c in list_whatsapp_actions_for_employee(
+                    self._session, employee, self._tenant_id
+                )],
+                employee_name=employee.full_name,
+            )
+            append_message(
+                self._session,
+                tenant_id=self._tenant_id,
+                employee_id=employee.id,
+                role="assistant",
+                content=reply[:_REPLY_MAX],
+                intent_code="ask",
+            )
+            self._session.commit()
+            try:
+                await self._gowa.send_text(phone, reply)
+            except Exception:
+                pass
+            return {"ok": True, "action": "ask"}
+
+        # Limpiar pending si existía
+        pending = get_pending(self._session, employee.id)
+        if pending and pending.pending_confirmation:
+            clear_pending(self._session, employee.id)
+
+        reply = await self._execute_intent(
+            employee, intent_data, raw_text, message_id
+        )
+        if intent_code in ("fichar_entrada", "fichar_salida"):
+            reply += self._geo_hint()
+
+        # Anteponer mensaje de Ollama al resultado si existe
+        if ollama_message and ollama_message not in reply:
+            reply = f"{ollama_message}\n\n{reply}"
+
+        append_message(
+            self._session,
+            tenant_id=self._tenant_id,
+            employee_id=employee.id,
+            role="assistant",
+            content=reply[:_REPLY_MAX],
+            intent_code=intent_code,
+        )
+        self._session.commit()
+        try:
+            await self._gowa.send_text(phone, reply)
+            if intent_code in ("fichar_entrada", "fichar_salida"):
+                await self._notify_incident_if_needed(phone)
+        except Exception:
+            pass
+        return {"ok": True, "action": intent_code, "reply": reply}
+
+    async def _handle_confirmation_response(
+        self,
+        employee: Employee,
+        phone: str,
+        text: str,
+        message_id: str | None,
+        pending,
+    ) -> dict:
+        """Procesa la respuesta sí/no a una confirmación pendiente."""
+        intent_code = pending.pending_intent or "fichar_entrada"
+
+        append_message(
+            self._session,
+            tenant_id=self._tenant_id,
+            employee_id=employee.id,
+            role="user",
+            content=text,
+        )
+
+        if is_affirmative_reply(text):
+            # Ejecutar la acción pendiente directamente (no necesita Ollama para un "sí")
+            intent_data = OllamaIntentResponse(
+                stage="execute",
+                intent=intent_code,
+                confidence=1.0,
+                message="¡Perfecto!",
+            )
+            reply = await self._execute_intent(
+                employee, intent_data, text, message_id
+            )
+            if intent_code in ("fichar_entrada", "fichar_salida"):
+                reply += self._geo_hint()
+            if intent_data.message and intent_data.message not in reply:
+                reply = f"{intent_data.message}\n\n{reply}"
+            clear_pending(self._session, employee.id)
+            append_message(
+                self._session,
+                tenant_id=self._tenant_id,
+                employee_id=employee.id,
+                role="assistant",
+                content=reply[:_REPLY_MAX],
+                intent_code=intent_code,
+            )
+            self._session.commit()
+            try:
+                await self._gowa.send_text(phone, reply)
+                if intent_code in ("fichar_entrada", "fichar_salida"):
+                    await self._notify_incident_if_needed(phone)
+            except Exception:
+                pass
+            return {"ok": True, "action": intent_code, "reply": reply}
+
+        if is_negative_reply(text):
+            reply = format_confirmation_cancelled(employee.full_name)
+            clear_pending(self._session, employee.id)
+            append_message(
+                self._session,
+                tenant_id=self._tenant_id,
+                employee_id=employee.id,
+                role="assistant",
+                content=reply[:_REPLY_MAX],
+                intent_code="cancelled",
+            )
+            self._session.commit()
+            try:
+                await self._gowa.send_text(phone, reply)
+            except Exception:
+                pass
+            return {"ok": True, "action": "cancelled"}
+
+        # No es un sí/no claro: dejar que Ollama (orquestador) decida el siguiente paso
         self._ollama.profile_key = profile_key_for_employee(employee.role)
         intent_data = await self._ollama.extract_intent(
             text,
@@ -517,32 +731,85 @@ class WebhookService:
             tenant=self._tenant,
             clock_settings=self._settings,
         )
+        return await self._handle_stage(employee, phone, intent_data, text, message_id)
+
+    async def _handle_project_selection(
+        self,
+        employee: Employee,
+        phone: str,
+        text: str,
+        message_id: str | None,
+        pending,
+    ) -> dict:
+        """Procesa la selección de proyecto para un fichaje pendiente."""
+        rt = (
+            ClockInType.SALIDA
+            if pending.record_type == ClockInType.SALIDA.value
+            else ClockInType.ENTRADA
+        )
+        code = "fichar_salida" if rt == ClockInType.SALIDA else "fichar_entrada"
         if not is_whatsapp_action_allowed(
-            self._session, employee, self._tenant_id, intent_data.intent
+            self._session, employee, self._tenant_id, code
         ):
             reply = denial_message(self._session, employee, self._tenant_id)
-        else:
-            reply = await self._execute_intent(
-                employee, intent_data, text, message_id
-            )
-            if intent_data.intent in ("fichar_entrada", "fichar_salida"):
-                reply += self._geo_hint()
-        append_message(
-            self._session,
-            tenant_id=self._tenant_id,
-            employee_id=employee.id,
-            role="assistant",
-            content=reply[:_REPLY_MAX],
-            intent_code=intent_data.intent,
+            clear_pending(self._session, employee.id)
+            self._session.commit()
+            try:
+                await self._gowa.send_text(phone, reply)
+            except Exception:
+                pass
+            return {"ok": True, "action": "denied_project"}
+        lbl = "SALIDA" if rt == ClockInType.SALIDA else "ENTRADA"
+        reply = self._register_clock_with_project_flow(
+            employee,
+            rt,
+            lbl,
+            whatsapp_message_id=message_id,
+            picker_text=text,
         )
         self._session.commit()
         try:
             await self._gowa.send_text(phone, reply)
-            if intent_data.intent in ("fichar_entrada", "fichar_salida"):
-                await self._notify_incident_if_needed(phone)
+            await self._notify_incident_if_needed(phone)
         except Exception:
             pass
-        return {"ok": True, "action": intent_data.intent, "reply": reply}
+        return {"ok": True, "action": "select_project"}
+
+    async def _handle_inbound_document_pick(
+        self,
+        employee: Employee,
+        phone: str,
+        text: str,
+    ) -> dict:
+        """Procesa la selección de tipo de documento para un archivo pendiente."""
+        doc_row = resolve_document_from_reply(self._session, employee.id, text)
+        if not doc_row:
+            file_pending = pending_file_documents(self._session, employee.id)
+            picker_rows = [
+                type(
+                    "Row",
+                    (),
+                    {"document_name": inbound_name(self._session, r.document_code)},
+                )()
+                for r in file_pending
+            ]
+            reply = format_inbound_document_picker(picker_rows)
+            reply += "\n\n_No he reconocido tu respuesta. Indica el número o nombre._"
+        else:
+            ok, reply = complete_pending_upload(
+                self._session,
+                employee,
+                tenant_id=self._tenant_id,
+                document_code=doc_row.document_code,
+            )
+            if not ok:
+                pass
+        self._session.commit()
+        try:
+            await self._gowa.send_text(phone, reply)
+        except Exception:
+            pass
+        return {"ok": True, "action": "inbound_document_assigned"}
 
     async def _execute_intent(
         self,
@@ -622,4 +889,8 @@ class WebhookService:
                     "fichar_entrada" in allowed or "fichar_salida" in allowed
                 ):
                     extra.append("Compartir ubicación (clip → Ubicación) para fichar")
-                return format_help_actions(hints + extra)
+                return format_conversational_help(
+                    hints + extra,
+                    employee_name=employee.full_name,
+                    lead=intent.message or None,
+                )

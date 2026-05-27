@@ -250,7 +250,8 @@ export default function HomePage() {
               <p style={{ color: "var(--lp-muted)" }}>
                 Rotativos, nocturnos o partidos sin líos.
               </p>
-              <div className="landing-shift-grid">
+              <div className="landing-shift-scroll">
+                <div className="landing-shift-grid">
                 <span className="is-light">L</span>
                 <span className="is-work">M</span>
                 <span className="is-work">X</span>
@@ -258,6 +259,7 @@ export default function HomePage() {
                 <span className="is-light">V</span>
                 <span className="is-off">S</span>
                 <span className="is-off">D</span>
+                </div>
               </div>
               <p
                 style={{

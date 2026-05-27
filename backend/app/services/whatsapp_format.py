@@ -99,9 +99,66 @@ def format_geo_hint(required: bool) -> str:
     )
 
 
+def format_confirmation_cancelled(employee_name: str) -> str:
+    return (
+        f"Entendido {employee_name}, no pasa nada. "
+        "Cuando necesites algo, aquí estoy. 😊"
+    )
+
+
+def format_pending_confirmation_reminder(
+    intent_code: str, employee_name: str
+) -> str:
+    """Cuando el empleado envía un mensaje sin responder sí/no a la confirmación pendiente."""
+    labels: dict[str, str] = {
+        "fichar_entrada": "fichar la entrada",
+        "fichar_salida": "fichar la salida",
+        "inicio_parada": "iniciar una parada/descanso",
+        "fin_parada": "finalizar la parada/descanso",
+        "solicitar_vacaciones": "solicitar vacaciones",
+        "consultar_saldo_vacaciones": "consultar tu saldo de vacaciones",
+        "confirmar_documento": "confirmar un documento",
+        "resumen_dia": "ver el resumen del día",
+    }
+    action_label = labels.get(intent_code, intent_code.replace("_", " "))
+    return (
+        f"{employee_name}, antes de continuar necesito que me confirmes:\n\n"
+        f"¿Quieres *{action_label}*?\n\n"
+        "Responde *sí* o *no* por favor."
+    )
+
+
 def format_help_actions(hints: list[str]) -> str:
     body = "\n".join(f"• {h}" for h in hints)
     return f"❓ {bold('No he entendido tu mensaje')}\n\nPuedes:\n{body}"
+
+
+def format_conversational_help(
+    hints: list[str],
+    *,
+    employee_name: str | None = None,
+    lead: str | None = None,
+) -> str:
+    """Ayuda cuando la intención no está clara — tono cercano, sin menú rígido."""
+    first = (employee_name or "").strip().split()
+    name_bit = f" {first[0]}" if first else ""
+    intro = (lead or "").strip()
+    if not intro:
+        intro = (
+            f"Hola{name_bit}, no he pillado del todo qué quieres hacer. "
+            "Dímelo con tus palabras, por ejemplo:"
+        )
+    examples = (
+        "«ficho ahora», «me voy», «vuelvo al trabajo», «pausa», «resumen del día»"
+    )
+    if len(hints) <= 4:
+        body = "\n".join(f"• {h}" for h in hints)
+        return f"👋 {intro}\n\n{body}\n\n_Ejemplos: {examples}_"
+    return (
+        f"👋 {intro}\n\n"
+        f"Puedo ayudarte a fichar, paradas, vacaciones, documentos y más. "
+        f"_Prueba con frases como {examples}._"
+    )
 
 
 def format_daily_summary_header(employee_name: str, date_str: str) -> str:

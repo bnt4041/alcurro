@@ -12,6 +12,26 @@ class BreakService:
     def __init__(self, session: Session) -> None:
         self._session = session
 
+    def _find_open_clock_in(self, employee_id: UUID) -> UUID | None:
+        """Busca el fichaje de ENTRADA más reciente que no tenga SALIDA posterior."""
+        from app.models.models import ClockIn, ClockInType
+
+        rows = list(
+            self._session.exec(
+                select(ClockIn)
+                .where(ClockIn.employee_id == employee_id)
+                .order_by(ClockIn.recorded_at.desc())
+            ).all()
+        )
+        for row in rows:
+            if row.record_type == ClockInType.SALIDA:
+                # Si lo último es una SALIDA, no hay jornada abierta
+                return None
+            if row.record_type == ClockInType.ENTRADA:
+                # Encontramos la entrada más reciente sin salida posterior
+                return row.id
+        return None
+
     def register_break(
         self,
         employee_id: UUID,
@@ -21,8 +41,10 @@ class BreakService:
         notes: str | None = None,
         source: str = "whatsapp",
     ) -> WorkBreak:
+        clock_in_id = self._find_open_clock_in(employee_id)
         record = WorkBreak(
             employee_id=employee_id,
+            clock_in_id=clock_in_id,
             record_type=record_type,
             recorded_at=datetime.utcnow(),
             whatsapp_message_id=whatsapp_message_id,

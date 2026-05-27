@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
+import { useResponsiveSidebar } from "../hooks/useResponsiveSidebar";
 import { api } from "../api/client";
 import BrandLogo from "./BrandLogo";
 import OrgSelector from "./OrgSelector";
@@ -27,6 +28,8 @@ const nav = [
 
 export default function Layout() {
   const { user, logout } = useAuth();
+  const { open: sidebarOpen, toggle: toggleSidebar, close: closeSidebar } =
+    useResponsiveSidebar();
   const [tenantLogo, setTenantLogo] = useState<string | null>(null);
 
   useEffect(() => {
@@ -52,8 +55,17 @@ export default function Layout() {
   const displayRole = ROLE_LABELS[user.user_type ?? user.role] ?? user.role;
 
   return (
-    <div className="layout layout--light">
-      <aside className="sidebar sidebar--light">
+    <div
+      className={`layout layout--light${sidebarOpen ? " layout--sidebar-open" : ""}`}
+    >
+      <button
+        type="button"
+        className="sidebar-backdrop"
+        aria-label="Cerrar menú"
+        onClick={closeSidebar}
+        tabIndex={sidebarOpen ? 0 : -1}
+      />
+      <aside id="app-sidebar" className="sidebar sidebar--light">
         <div className="brand">
           <BrandLogo variant="light" compact logoSrc={tenantLogo} alt={user.tenant_name} />
           <p className="tenant-label">{user.tenant_name}</p>
@@ -63,7 +75,7 @@ export default function Layout() {
           <span className="badge">{displayRole}</span>
         </div>
         <OrgSelector />
-        <nav>
+        <nav onClick={closeSidebar}>
           {nav
             .filter((item) => {
               if ("always" in item && item.always) return true;
@@ -90,6 +102,16 @@ export default function Layout() {
         </button>
       </aside>
       <main className="main">
+        <button
+          type="button"
+          className="sidebar-toggle"
+          aria-expanded={sidebarOpen}
+          aria-controls="app-sidebar"
+          onClick={toggleSidebar}
+        >
+          <span className="sidebar-toggle__bars" aria-hidden />
+          <span className="sidebar-toggle__label">Menú</span>
+        </button>
         <LegalAcceptanceModal />
         {user.role === "labor_inspector" && (
           <div className="alert alert-info">

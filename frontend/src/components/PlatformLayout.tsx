@@ -1,4 +1,5 @@
 import { NavLink, Outlet } from "react-router-dom";
+import { useResponsiveSidebar } from "../hooks/useResponsiveSidebar";
 import BrandLogo from "./BrandLogo";
 import { useAuth } from "../context/AuthContext";
 
@@ -15,11 +16,22 @@ const nav = [
 
 export default function PlatformLayout() {
   const { platformUser, logout } = useAuth();
+  const { open: sidebarOpen, toggle: toggleSidebar, close: closeSidebar } =
+    useResponsiveSidebar();
   if (!platformUser) return null;
 
   return (
-    <div className="layout layout--light">
-      <aside className="sidebar sidebar--light">
+    <div
+      className={`layout layout--light${sidebarOpen ? " layout--sidebar-open" : ""}`}
+    >
+      <button
+        type="button"
+        className="sidebar-backdrop"
+        aria-label="Cerrar menú"
+        onClick={closeSidebar}
+        tabIndex={sidebarOpen ? 0 : -1}
+      />
+      <aside id="platform-sidebar" className="sidebar sidebar--light">
         <div className="brand">
           <BrandLogo variant="light" compact />
         </div>
@@ -27,7 +39,7 @@ export default function PlatformLayout() {
           <span className="user-name">{platformUser.full_name}</span>
           <span className="badge">Administrador</span>
         </div>
-        <nav>
+        <nav onClick={closeSidebar}>
           {nav.map((item) => (
             <NavLink
               key={item.to}
@@ -46,6 +58,16 @@ export default function PlatformLayout() {
         </button>
       </aside>
       <main className="main">
+        <button
+          type="button"
+          className="sidebar-toggle"
+          aria-expanded={sidebarOpen}
+          aria-controls="platform-sidebar"
+          onClick={toggleSidebar}
+        >
+          <span className="sidebar-toggle__bars" aria-hidden />
+          <span className="sidebar-toggle__label">Menú</span>
+        </button>
         <Outlet />
       </main>
     </div>

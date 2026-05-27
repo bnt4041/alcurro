@@ -66,7 +66,7 @@ export default function JustifyIncidentPage() {
 
   return (
     <div className="public-page">
-      <div className="card" style={{ maxWidth: 520, margin: "2rem auto" }}>
+      <div className="card public-page__card">
         {meta ? (
           <>
             <h1>{meta.title}</h1>

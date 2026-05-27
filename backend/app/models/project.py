@@ -30,7 +30,7 @@ class Project(SQLModel, table=True):
 
 
 class ClockPendingFichaje(SQLModel, table=True):
-    """Fichaje WhatsApp en espera de que el empleado elija proyecto."""
+    """Fichaje WhatsApp en espera de que el empleado elija proyecto o confirme."""
 
     __tablename__ = "clock_pending_fichajes"
 
@@ -39,4 +39,13 @@ class ClockPendingFichaje(SQLModel, table=True):
     latitude: float | None = Field(default=None)
     longitude: float | None = Field(default=None)
     whatsapp_message_id: str | None = Field(default=None, max_length=100)
+    pending_confirmation: bool = Field(
+        default=False,
+        description="Esperando confirmación sí/no del empleado antes de ejecutar",
+    )
+    pending_intent: str | None = Field(
+        default=None,
+        max_length=50,
+        description="Intención pendiente de confirmación (fichar_entrada, fichar_salida, etc.)",
+    )
     created_at: datetime = Field(default_factory=datetime.utcnow)
