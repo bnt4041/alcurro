@@ -3,8 +3,17 @@
 from __future__ import annotations
 
 import secrets
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from uuid import UUID
+from zoneinfo import ZoneInfo
+
+_SPAIN_TZ = ZoneInfo("Europe/Madrid")
+
+
+def _to_spain(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(_SPAIN_TZ)
 
 from sqlmodel import Session, select
 
@@ -206,7 +215,7 @@ def check_late_clock_in(
         incident_type="late_clock_in",
         title=f"Entrada {late_minutes} min tarde",
         description=(
-            f"Entrada registrada a las {clock.recorded_at.strftime('%H:%M')} "
+            f"Entrada registrada a las {_to_spain(clock.recorded_at).strftime('%H:%M')} "
             f"(horario previsto desde las {expected.strftime('%H:%M')})."
         ),
         source="auto",

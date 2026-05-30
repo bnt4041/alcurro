@@ -165,6 +165,7 @@ class GoWAWebhookPayload(BaseModel):
     message: GoWAMessage | None = None
     sender: str | None = None
     phone: str | None = None
+    from_me: bool = False
 
     @model_validator(mode="before")
     @classmethod
@@ -209,6 +210,7 @@ class GoWAWebhookPayload(BaseModel):
 
         if data.get("event") == "message" and isinstance(data.get("payload"), dict):
             p = data["payload"]
+            from_me = bool(p.get("fromMe") or p.get("from_me") or p.get("isFromMe"))
             msg_type = (p.get("type") or "text").lower()
             loc = _extract_location_dict(p)
             media_path = (
@@ -225,6 +227,7 @@ class GoWAWebhookPayload(BaseModel):
             return {
                 "event": data.get("event"),
                 "device_id": data.get("device_id"),
+                "from_me": from_me,
                 "message": {
                     "from": p.get("from", ""),
                     "id": p.get("id"),
@@ -295,6 +298,12 @@ class GoWAWebhookPayload(BaseModel):
         ):
             if self.event in ("status", "ack", "receipt", "connection"):
                 return False
+        # Ignorar mensajes enviados por el propio bot (outgoing)
+        if self.from_me:
+            return False
+        p = self.payload or {}
+        if p.get("fromMe") or p.get("from_me") or p.get("isFromMe"):
+            return False
         return True
 
 

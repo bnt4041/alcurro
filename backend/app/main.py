@@ -154,6 +154,12 @@ def _run_startup_migrations() -> None:
         migrate_projects_v4()
     except Exception as exc:
         print(f"migrate_projects_v4: {exc}")
+    try:
+        from scripts.migrate_wa_dedup import main as migrate_wa_dedup
+
+        migrate_wa_dedup()
+    except Exception as exc:
+        print(f"migrate_wa_dedup: {exc}")
 
 
 @asynccontextmanager

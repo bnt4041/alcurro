@@ -108,7 +108,9 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     const detail = err.detail ?? err.message ?? res.statusText;
     throw new Error(formatApiError(res.status, detail));
   }
-  return res.json() as Promise<T>;
+  return res.json().catch(() => {
+    throw new Error("El servidor no responde correctamente. Comprueba que el backend esté en marcha.");
+  }) as Promise<T>;
 }
 
 export const api = {

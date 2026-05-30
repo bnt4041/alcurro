@@ -14,7 +14,7 @@ class Settings(BaseSettings):
         "postgresql+psycopg://hrm:hrm_secret@localhost:5432/hrm"
     )
     ollama_base_url: str = "http://localhost:11434"
-    ollama_model: str = "llama3.2"
+    ollama_model: str = "qwen2.5:7b"
     gowa_send_url: str = "http://gowa:3000/send/message"
     gowa_basic_auth: str = "admin:admin"
     jwt_secret: str = "change-me-in-production-hrm-jwt-secret"

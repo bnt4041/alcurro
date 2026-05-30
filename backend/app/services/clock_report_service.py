@@ -2,8 +2,17 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from uuid import UUID
+from zoneinfo import ZoneInfo
+
+_SPAIN_TZ = ZoneInfo("Europe/Madrid")
+
+
+def _to_spain(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(_SPAIN_TZ)
 
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
@@ -103,7 +112,7 @@ def build_employee_day_report(
             (
                 c.recorded_at,
                 ReportTimelineItem(
-                    time_label=c.recorded_at.strftime("%H:%M"),
+                    time_label=_to_spain(c.recorded_at).strftime("%H:%M"),
                     kind="fichaje",
                     label=tipo,
                     detail=" · ".join(detail_parts) if detail_parts else None,
@@ -117,7 +126,7 @@ def build_employee_day_report(
             (
                 b.recorded_at,
                 ReportTimelineItem(
-                    time_label=b.recorded_at.strftime("%H:%M"),
+                    time_label=_to_spain(b.recorded_at).strftime("%H:%M"),
                     kind="parada",
                     label=label,
                     detail=b.notes,

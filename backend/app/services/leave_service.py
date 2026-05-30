@@ -28,8 +28,13 @@ class LeaveService:
         intent: OllamaIntentResponse,
         raw_message: str,
     ) -> tuple[LeaveRequest | None, str]:
-        start = intent.get_date("fecha_inicio") or date.today()
-        end = intent.get_date("fecha_fin") or start
+        start = intent.get_date("fecha_inicio")
+        end = intent.get_date("fecha_fin")
+        if not start or not end:
+            return None, (
+                "No he podido identificar las fechas. "
+                "Indícame el período así: 'del 1 al 31 de agosto'."
+            )
         days = self.count_business_days(start, end)
 
         if days > employee.vacation_days_balance:

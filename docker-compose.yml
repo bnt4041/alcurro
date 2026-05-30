@@ -76,8 +76,6 @@ services:
         condition: service_healthy
       ollama:
         condition: service_started
-      gowa:
-        condition: service_started
     networks:
       - hrm-net
     command: sh -c "pip install -q -r requirements.txt && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
@@ -99,6 +97,13 @@ services:
       - backend
     networks:
       - hrm-net
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.frontend.rule=Host(`alcurro.es`)"
+      - "traefik.http.routers.frontend.entrypoints=websecure"
+      - "traefik.http.routers.frontend.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.frontend.priority=1"
+      - "traefik.http.services.frontend.loadbalancer.server.port=5174"
     command: sh -c "bun install && exec bun run dev -- --host 0.0.0.0"
 
 volumes:

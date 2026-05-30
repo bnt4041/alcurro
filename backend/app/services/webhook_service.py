@@ -46,12 +46,13 @@ from app.services.whatsapp_format import (
     format_inbound_document_picker,
 )
 from app.services.leave_service import LeaveService
-from app.services.ai_conversation_service import append_message
+from app.services.ai_conversation_service import append_message, _to_spain
 from app.services.ai_usage_service import profile_key_for_employee
 from app.services.ollama_service import OllamaService
 from app.services.whatsapp_nlu import (
     build_confirmation_message,
     is_affirmative_reply,
+    is_cancel_or_new_intent,
     is_negative_reply,
 )
 from app.services.whatsapp_permission_service import (
@@ -181,7 +182,7 @@ class WebhookService:
     ) -> str:
         return format_clock_registered(
             label,
-            record.recorded_at.strftime("%H:%M:%S"),
+            _to_spain(record.recorded_at).strftime("%H:%M:%S"),
             project_name=project_name,
             latitude=record.latitude,
             longitude=record.longitude,
@@ -227,7 +228,9 @@ class WebhookService:
                 return self._format_clock_reply(label, record, direct.name)
 
         pending = get_pending(self._session, employee.id)
-        if pending:
+        # Solo tratar como pendiente de proyecto si NO es una confirmación pendiente
+        if pending and not pending.pending_confirmation:
+            # El usuario ya eligió proyecto desde el selector
             project = resolve_project_from_reply(
                 self._session, employee.company_id, picker_text or ""
             )
@@ -673,6 +676,10 @@ class WebhookService:
         )
 
         if is_affirmative_reply(text):
+            # Limpiar el pending ANTES de ejecutar (evita que _register_clock_with_project_flow
+            # confunda el pending de confirmación con uno de proyecto)
+            clear_pending(self._session, employee.id)
+
             # Ejecutar la acción pendiente directamente (no necesita Ollama para un "sí")
             intent_data = OllamaIntentResponse(
                 stage="execute",
@@ -687,7 +694,6 @@ class WebhookService:
                 reply += self._geo_hint()
             if intent_data.message and intent_data.message not in reply:
                 reply = f"{intent_data.message}\n\n{reply}"
-            clear_pending(self._session, employee.id)
             append_message(
                 self._session,
                 tenant_id=self._tenant_id,
@@ -742,6 +748,27 @@ class WebhookService:
         pending,
     ) -> dict:
         """Procesa la selección de proyecto para un fichaje pendiente."""
+        # Si el texto parece una nueva intención (no selección de proyecto), cancelar y redirigir
+        if is_cancel_or_new_intent(text):
+            clear_pending(self._session, employee.id)
+            self._session.flush()
+            self._ollama.profile_key = profile_key_for_employee(employee.role)
+            intent_data = await self._ollama.extract_intent(
+                text,
+                employee=employee,
+                tenant=self._tenant,
+                clock_settings=self._settings,
+            )
+            append_message(
+                self._session,
+                tenant_id=self._tenant_id,
+                employee_id=employee.id,
+                role="user",
+                content=text,
+            )
+            self._session.flush()
+            return await self._handle_stage(employee, phone, intent_data, text, message_id)
+
         rt = (
             ClockInType.SALIDA
             if pending.record_type == ClockInType.SALIDA.value
@@ -853,7 +880,7 @@ class WebhookService:
                 )
                 return format_break_registered(
                     "INICIO DE PARADA",
-                    record.recorded_at.strftime("%H:%M:%S"),
+                    _to_spain(record.recorded_at).strftime("%H:%M:%S"),
                 )
 
             case "fin_parada":
@@ -864,7 +891,7 @@ class WebhookService:
                 )
                 return format_break_registered(
                     "FIN DE PARADA",
-                    record.recorded_at.strftime("%H:%M:%S"),
+                    _to_spain(record.recorded_at).strftime("%H:%M:%S"),
                 )
 
             case "solicitar_vacaciones":

@@ -29,6 +29,7 @@ import PlatformStripePage from "./pages/PlatformStripePage";
 import PlatformWhatsAppPage from "./pages/PlatformWhatsAppPage";
 import PlatformMailPage from "./pages/PlatformMailPage";
 import PlatformAIPage from "./pages/PlatformAIPage";
+import PlatformPurgePage from "./pages/PlatformPurgePage";
 import ShiftsPage from "./pages/ShiftsPage";
 import SignupPage from "./pages/SignupPage";
 import SignupSimulatePaymentPage from "./pages/SignupSimulatePaymentPage";
@@ -70,6 +71,7 @@ export default function App() {
                 <Route path="whatsapp" element={<PlatformWhatsAppPage />} />
                 <Route path="mail" element={<PlatformMailPage />} />
                 <Route path="ia" element={<PlatformAIPage />} />
+                <Route path="purgar" element={<PlatformPurgePage />} />
               </Route>
             </Route>
 

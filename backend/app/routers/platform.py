@@ -32,6 +32,7 @@ from app.services.id_document import validate_id_document
 from app.services.rbac_service import assign_role_default_group, ensure_system_groups
 from app.schemas.billing import InvoiceRead, TenantListItemRead
 from app.schemas.organization import GroupTemplateRead, GroupTemplateUpdate
+from pydantic import BaseModel
 from app.services.billing_read import subscription_to_summary, tenant_account_billing
 from app.services.billing_service import get_primary_subscription
 from app.services.org_service import (
@@ -41,6 +42,7 @@ from app.services.org_service import (
 )
 from app.services.slug import resolve_tenant_slug, resolve_tenant_slug_update
 from app.services.tenant_delete import delete_tenant_permanent
+from app.services.tenant_purge import PURGE_CATEGORIES, purge_tenant_data
 
 router = APIRouter(prefix="/platform", tags=["platform"])
 
@@ -395,6 +397,59 @@ def delete_tenant_platform(
             status_code=409,
             detail="No se pudo eliminar la cuenta: tiene datos asociados",
         ) from exc
+
+
+class TenantPurgeRequest(BaseModel):
+    categories: list[str]
+
+
+class TenantPurgeResponse(BaseModel):
+    tenant_id: str
+    tenant_name: str
+    purged: dict[str, int]
+
+
+@router.post("/purge/{tenant_id}", response_model=TenantPurgeResponse)
+def purge_tenant(
+    tenant_id: UUID,
+    data: TenantPurgeRequest,
+    session: Session = Depends(get_session),
+    _: PlatformUser = Depends(get_platform_user),
+) -> TenantPurgeResponse:
+    """Purga datos de una cuenta según las categorías seleccionadas."""
+    tenant = session.get(Tenant, tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Cuenta no encontrada")
+
+    try:
+        results = purge_tenant_data(session, tenant_id, data.categories)
+        session.commit()
+    except HTTPException:
+        session.rollback()
+        raise
+    except Exception as exc:
+        session.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error al purgar datos: {exc}",
+        ) from exc
+
+    return TenantPurgeResponse(
+        tenant_id=str(tenant_id),
+        tenant_name=tenant.name,
+        purged=results,
+    )
+
+
+@router.get("/purge-categories")
+def list_purge_categories(
+    _: PlatformUser = Depends(get_platform_user),
+) -> list[dict[str, str]]:
+    """Lista las categorías disponibles para purga."""
+    return [
+        {"key": k, "label": v}
+        for k, v in PURGE_CATEGORIES.items()
+    ]
 
 
 @router.get("/group-templates", response_model=list[GroupTemplateRead])

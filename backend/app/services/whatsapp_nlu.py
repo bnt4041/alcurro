@@ -7,9 +7,9 @@ import unicodedata
 
 from app.schemas.ollama import OllamaIntentResponse
 
-# Solo saludos: respuesta amable, el resto lo decide Ollama con el historial
+# Saludos: detectar aunque haya más texto después (ej. "Hola! comenzamos?")
 _RE_GREETING = re.compile(
-    r"^(hola|buenos\s+dias|buenas\s+tardes|buenas\s+noches|hey|buenas|que\s+tal)[\s!.,?]*$",
+    r"^(hola|buenos\s+dias|buenas\s+tardes|buenas\s+noches|hey|buenas|que\s+tal)\b",
     re.IGNORECASE,
 )
 
@@ -51,11 +51,18 @@ def match_whatsapp_intent(
     t = normalize_whatsapp_text(message_text)
     if _RE_GREETING.match(t.strip()):
         return OllamaIntentResponse(
+            stage="ask",
             intent="desconocido",
             confidence=0.3,
-            reply_prefix="¡Hola! Cuéntame qué necesitas: fichar, parada, vacaciones…",
+            message="¡Hola! Cuéntame qué necesitas: fichar, parada, vacaciones…",
         )
-    return OllamaIntentResponse(intent="desconocido", confidence=0.1)
+    # Fallback cuando Ollama no está disponible
+    return OllamaIntentResponse(
+        stage="ask",
+        intent="desconocido",
+        confidence=0.1,
+        message="",
+    )
 
 
 def is_affirmative_reply(text: str) -> bool:
@@ -74,6 +81,24 @@ def is_negative_reply(text: str) -> bool:
     if _RE_NEGATIVE.search(t):
         return True
     return False
+
+
+_RE_ACTION_ESCAPE = re.compile(
+    r"\b("
+    r"salgo|me\s+voy|me\s+marcho|termino|acabo|fin\s+de\s+jornada|"
+    r"paro|pausa|descanso|a\s+comer|cafe|break|un\s+rato|momento|"
+    r"vuelvo|regreso|sigo\s+trabajando|retomo|sigo|"
+    r"vacaciones|dias\s+libres|dias\s+libre|"
+    r"resumen|como\s+voy|que\s+he\s+hecho|hola|buenas"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def is_cancel_or_new_intent(text: str) -> bool:
+    """Detecta si el texto es una cancelación o nueva intención, no una selección de proyecto."""
+    t = normalize_whatsapp_text(text)
+    return bool(is_negative_reply(text) or _RE_ACTION_ESCAPE.search(t))
 
 
 def build_confirmation_message(intent_code: str, employee_name: str) -> str:

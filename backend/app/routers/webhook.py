@@ -1,7 +1,9 @@
+import hashlib
 from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import text
 from sqlmodel import Session, select
 
 from app.database import get_session
@@ -11,6 +13,35 @@ from app.schemas.whatsapp import GoWAWebhookPayload
 from app.services.webhook_service import WebhookService
 
 router = APIRouter(tags=["webhook"])
+
+_DEDUP_TTL_MINUTES = 3
+
+
+def _is_duplicate_db(session: Session, dedup_key: str) -> bool:
+    """Dedup atómico en BD — funciona con múltiples workers."""
+    # Limpiar registros viejos (best-effort, no critical)
+    try:
+        session.execute(
+            text(
+                f"DELETE FROM whatsapp_dedup WHERE created_at < NOW() - INTERVAL '{_DEDUP_TTL_MINUTES} minutes'"
+            )
+        )
+    except Exception:
+        pass
+    # INSERT atómico: si ya existe → rowcount=0 → duplicado
+    try:
+        result = session.execute(
+            text(
+                "INSERT INTO whatsapp_dedup (wa_msg_id, created_at) "
+                "VALUES (:key, NOW()) ON CONFLICT DO NOTHING"
+            ),
+            {"key": dedup_key},
+        )
+        session.commit()
+        return result.rowcount == 0
+    except Exception:
+        # Si la tabla no existe aún (arranque inicial), no bloquear
+        return False
 
 
 def _resolve_employee_and_tenant(
@@ -41,7 +72,20 @@ def _resolve_employee_and_tenant(
 async def _process_global(
     session: Session, payload: GoWAWebhookPayload
 ) -> dict[str, Any]:
+    # Dedup atómico en BD: funciona entre múltiples workers
     phone = payload.resolve_phone()
+    if phone:
+        msg = payload.resolve_message()
+        raw_key = (msg.id if msg and msg.id else None) or (
+            hashlib.md5((msg.plain_text or "").encode()).hexdigest()[:12]
+            if msg and msg.plain_text
+            else None
+        )
+        if raw_key:
+            dedup_key = f"{phone}:{raw_key}"
+            if _is_duplicate_db(session, dedup_key):
+                return {"ok": True, "action": "duplicate"}
+
     if not phone:
         return {"ok": False, "error": "Teléfono no identificado en el webhook"}
 

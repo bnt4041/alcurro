@@ -139,7 +139,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
     const me = await fetch("/api/auth/me", { headers });
     if (!me.ok) throw new Error("No se pudo cargar la sesión");
-    const data: AuthUser = await me.json();
+    const data: AuthUser = await me.json().catch(() => { throw new Error("El servidor no responde correctamente"); });
     setUser(data);
     setPlatformUser(null);
     localStorage.setItem(COMPANY_KEY, data.company_id);
@@ -168,7 +168,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         headers: { Authorization: `Bearer ${res.access_token}` },
       });
       if (!me.ok) throw new Error("No se pudo cargar la sesión");
-      const platform = await me.json();
+      const platform = await me.json().catch(() => { throw new Error("El servidor no responde correctamente"); });
       setPlatformUser(platform);
       setUser(null);
       setLoading(false);
@@ -185,7 +185,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
     const me = await fetch("/api/auth/me", { headers });
     if (!me.ok) throw new Error("No se pudo cargar la sesión");
-    const data: AuthUser = await me.json();
+    const data: AuthUser = await me.json().catch(() => { throw new Error("El servidor no responde correctamente"); });
     setUser(data);
     setPlatformUser(null);
     localStorage.setItem(COMPANY_KEY, data.company_id);
