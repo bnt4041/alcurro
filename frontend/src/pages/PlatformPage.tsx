@@ -43,6 +43,8 @@ interface TenantRow {
   is_active: boolean;
   created_at: string;
   subscription: SubscriptionSummary | null;
+  admin_employee_code?: string | null;
+  admin_password?: string | null;
 }
 
 type TenantTableRow = TenantRow & {
@@ -353,8 +355,11 @@ export default function PlatformPage() {
           delete body.slug;
         }
         const created = await api.post<TenantRow>("/platform/tenants", body);
+        const credsMsg = created.admin_password
+          ? ` | Usuario: ${created.admin_employee_code || "ADM001"} / Contraseña: ${created.admin_password}`
+          : "";
         toast.success(
-          `Cuenta «${base.name}» creada. Código de acceso: ${created.slug}`
+          `Cuenta «${base.name}» creada. Código: ${created.slug}${credsMsg}`
         );
         setEditingId(created.id);
         setForm(tenantToForm(created));
@@ -447,6 +452,33 @@ export default function PlatformPage() {
     }
   };
 
+  const updateTenantUser = async (userId: string, data: Partial<TenantUserCreateForm> & { is_active?: boolean }) => {
+    if (!editingId) return;
+    try {
+      await api.patch(`/platform/tenants/${editingId}/users/${userId}`, {
+        ...data,
+        email: data.email || undefined,
+      });
+      toast.success("Usuario actualizado");
+      await loadUsers(editingId);
+    } catch (err) {
+      toast.error(String(err).replace(/^Error:\s*/i, ""));
+      throw err;
+    }
+  };
+
+  const deleteTenantUser = async (userId: string, userName: string) => {
+    if (!editingId) return;
+    if (!confirm(`¿Desactivar al usuario «${userName}»?`)) return;
+    try {
+      await api.delete(`/platform/tenants/${editingId}/users/${userId}`);
+      toast.success(`Usuario «${userName}» desactivado`);
+      await loadUsers(editingId);
+    } catch (err) {
+      toast.error(String(err).replace(/^Error:\s*/i, ""));
+    }
+  };
+
   return (
     <>
       <PageHeader
@@ -524,6 +556,8 @@ export default function PlatformPage() {
         onReactivate={editingId ? reactivate : undefined}
         onDelete={editingId ? removePermanent : undefined}
         onCreateTenantUser={editingId ? createTenantUser : undefined}
+        onUpdateTenantUser={editingId ? updateTenantUser : undefined}
+        onDeleteTenantUser={editingId ? deleteTenantUser : undefined}
         creatingUser={creatingUser}
       />
     </>

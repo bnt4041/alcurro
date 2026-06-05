@@ -5,7 +5,6 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.models import (
-    ClockInType,
     LeaveStatus,
     Role,
     ShiftPatternType,
@@ -124,18 +123,28 @@ class EmployeeRead(BaseModel):
 
 class ClockInCreate(BaseModel):
     employee_id: UUID
-    record_type: ClockInType
+    entrada_at: datetime
+    salida_at: datetime | None = None
     latitude: float | None = None
     longitude: float | None = None
     source: str = "panel"
     notes: str | None = None
+    work_summary: str | None = None
     project_id: UUID | None = None
 
 
-class ClockInRead(ClockInCreate):
+class ClockInRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: UUID
-    recorded_at: datetime
+    employee_id: UUID
+    entrada_at: datetime
+    salida_at: datetime | None = None
+    latitude: float | None = None
+    longitude: float | None = None
+    source: str
+    notes: str | None = None
+    work_summary: str | None = None
+    project_id: UUID | None = None
     whatsapp_message_id: str | None = None
     project_name: str | None = None
 

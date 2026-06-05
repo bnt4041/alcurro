@@ -75,11 +75,6 @@ class RoleType(TypeDecorator):
             return Role.EMPLOYEE
 
 
-class ClockInType(StrEnum):
-    ENTRADA = "entrada"
-    SALIDA = "salida"
-
-
 class BreakType(StrEnum):
     INICIO = "inicio_parada"
     FIN = "fin_parada"
@@ -181,22 +176,21 @@ class Employee(SQLModel, table=True):
 class ClockIn(SQLModel, table=True):
     """
     Registro de jornada inalterable (normativa española).
-    Sin borrado físico — DELETE prohibido a nivel de API.
+    Un único registro por jornada: entrada_at siempre presente, salida_at se
+    rellena al cerrar. Sin borrado físico — DELETE prohibido a nivel de API.
     """
 
     __tablename__ = "clock_ins"
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     employee_id: UUID = Field(foreign_key="employees.id", index=True)
-    record_type: ClockInType
-    recorded_at: datetime = Field(
-        default_factory=datetime.utcnow,
-        description="Hora del servidor en el momento del fichaje",
-    )
+    entrada_at: datetime = Field(default_factory=datetime.utcnow)
+    salida_at: datetime | None = Field(default=None)
     latitude: float | None = Field(default=None)
     longitude: float | None = Field(default=None)
     source: str = Field(default="whatsapp", max_length=50)
     notes: str | None = Field(default=None, max_length=500)
+    work_summary: str | None = Field(default=None, max_length=2000)
     whatsapp_message_id: str | None = Field(default=None, max_length=100)
     project_id: UUID | None = Field(default=None, foreign_key="projects.id", index=True)
 
@@ -214,11 +208,9 @@ class WorkBreak(SQLModel, table=True):
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     employee_id: UUID = Field(foreign_key="employees.id", index=True)
-    clock_in_id: UUID | None = Field(
-        default=None,
+    clock_in_id: UUID = Field(
         foreign_key="clock_ins.id",
         index=True,
-        description="Fichaje de ENTRADA abierto al que pertenece esta parada",
     )
     record_type: BreakType
     recorded_at: datetime = Field(default_factory=datetime.utcnow)

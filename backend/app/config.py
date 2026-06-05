@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     stripe_publishable_key: str = ""
     stripe_simulation_mode: bool = True
     public_app_url: str = "http://localhost:5174"
+    deepseek_api_key: str = ""
+    deepseek_model: str = "deepseek-chat"
+    deepseek_base_url: str = "https://api.deepseek.com"
 
 
 @lru_cache

@@ -19,7 +19,7 @@ from sqlmodel import Session, select
 
 from app.config import get_settings
 from app.models.incident import Incident, IncidentAutoRule
-from app.models.models import ClockIn, ClockInType, Employee, LeaveRequest, LeaveStatus
+from app.models.models import ClockIn, Employee, LeaveRequest, LeaveStatus
 from app.models.tenant import Tenant
 from app.schemas.incident import (
     IncidentApplyClock,
@@ -59,11 +59,10 @@ def update_rules(
 
 def _clock_snapshot(clock: ClockIn) -> dict:
     return {
-        "recorded_at": clock.recorded_at.isoformat(),
-        "record_type": clock.record_type.value
-        if hasattr(clock.record_type, "value")
-        else str(clock.record_type),
+        "entrada_at": clock.entrada_at.isoformat(),
+        "salida_at": clock.salida_at.isoformat() if clock.salida_at else None,
         "notes": clock.notes,
+        "work_summary": clock.work_summary,
         "project_id": str(clock.project_id) if clock.project_id else None,
         "latitude": clock.latitude,
         "longitude": clock.longitude,
@@ -187,19 +186,17 @@ def check_late_clock_in(
     employee: Employee,
     clock: ClockIn,
 ) -> Incident | None:
-    if clock.record_type != ClockInType.ENTRADA:
-        return None
     rules = get_or_create_rules(session, tenant_id)
     if not rules.late_entrada_enabled:
         return None
-    on_date = clock.recorded_at.date()
+    on_date = clock.entrada_at.date()
     if not is_work_day(employee, on_date):
         return None
     expected = earliest_work_start(employee, on_date)
     if not expected:
         return None
     scheduled = datetime.combine(on_date, expected)
-    late_minutes = int((clock.recorded_at - scheduled).total_seconds() // 60)
+    late_minutes = int((clock.entrada_at - scheduled).total_seconds() // 60)
     if late_minutes <= rules.late_entrada_grace_minutes:
         return None
     existing = session.exec(
@@ -215,7 +212,7 @@ def check_late_clock_in(
         incident_type="late_clock_in",
         title=f"Entrada {late_minutes} min tarde",
         description=(
-            f"Entrada registrada a las {_to_spain(clock.recorded_at).strftime('%H:%M')} "
+            f"Entrada registrada a las {_to_spain(clock.entrada_at).strftime('%H:%M')} "
             f"(horario previsto desde las {expected.strftime('%H:%M')})."
         ),
         source="auto",
@@ -241,17 +238,13 @@ def apply_clock_correction(
     if not incident.original_data:
         incident.original_data = _clock_snapshot(clock)
     modified = _clock_snapshot(clock)
-    modified["recorded_at"] = data.recorded_at.isoformat()
-    if data.record_type:
-        modified["record_type"] = data.record_type
+    modified["entrada_at"] = data.recorded_at.isoformat()
     if data.notes is not None:
         modified["notes"] = data.notes
     if data.project_id is not None:
         modified["project_id"] = str(data.project_id)
     incident.modified_data = modified
-    clock.recorded_at = data.recorded_at
-    if data.record_type:
-        clock.record_type = ClockInType(data.record_type)
+    clock.entrada_at = data.recorded_at
     if data.notes is not None:
         clock.notes = data.notes
     if data.project_id is not None:

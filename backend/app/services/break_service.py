@@ -13,24 +13,15 @@ class BreakService:
         self._session = session
 
     def _find_open_clock_in(self, employee_id: UUID) -> UUID | None:
-        """Busca el fichaje de ENTRADA más reciente que no tenga SALIDA posterior."""
-        from app.models.models import ClockIn, ClockInType
+        """Jornada abierta: entrada sin salida."""
+        from app.models.models import ClockIn
 
-        rows = list(
-            self._session.exec(
-                select(ClockIn)
-                .where(ClockIn.employee_id == employee_id)
-                .order_by(ClockIn.recorded_at.desc())
-            ).all()
-        )
-        for row in rows:
-            if row.record_type == ClockInType.SALIDA:
-                # Si lo último es una SALIDA, no hay jornada abierta
-                return None
-            if row.record_type == ClockInType.ENTRADA:
-                # Encontramos la entrada más reciente sin salida posterior
-                return row.id
-        return None
+        record = self._session.exec(
+            select(ClockIn)
+            .where(ClockIn.employee_id == employee_id, ClockIn.salida_at == None)  # noqa: E711
+            .order_by(ClockIn.entrada_at.desc())  # type: ignore[attr-defined]
+        ).first()
+        return record.id if record else None
 
     def register_break(
         self,

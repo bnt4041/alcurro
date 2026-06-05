@@ -8,7 +8,7 @@ from app.core.deps import get_current_user
 from app.core.org_context import OrgContext, get_org_context
 from app.core.permissions import Permission, require_permission, require_write
 from app.database import get_session
-from app.models.models import ClockIn, ClockInType, Employee
+from app.models.models import ClockIn, Employee
 from app.models.project import Project
 from app.routers.crud_helpers import get_or_404
 from app.schemas.crud import ClockInCreate, ClockInRead
@@ -53,7 +53,6 @@ def list_clock_ins(
     session: Session = Depends(get_session),
     user: Employee = Depends(get_current_user),
     employee_id: UUID | None = None,
-    record_type: ClockInType | None = None,
     q: str | None = None,
     limit: int = 200,
     _: object = Depends(require_permission(Permission.READ, "clock_ins")),
@@ -64,14 +63,12 @@ def list_clock_ins(
     stmt = (
         select(ClockIn)
         .where(ClockIn.employee_id.in_(ids))  # type: ignore[attr-defined]
-        .order_by(ClockIn.recorded_at.desc())  # type: ignore[attr-defined]
+        .order_by(ClockIn.entrada_at.desc())  # type: ignore[attr-defined]
     )
     if employee_id:
         if employee_id not in ids:
             raise HTTPException(status_code=404, detail="Empleado no encontrado")
         stmt = stmt.where(ClockIn.employee_id == employee_id)
-    if record_type:
-        stmt = stmt.where(ClockIn.record_type == record_type)
     if q and q.strip():
         employees = {
             e.id: e
@@ -151,13 +148,16 @@ def create_clock_in(
     ):
         raise HTTPException(status_code=400, detail="Proyecto no válido")
 
-    row = ClockIn.model_validate(
-        {
-            **data.model_dump(),
-            "employee_id": target,
-            "source": data.source or "panel",
-            "project_id": project_id,
-        }
+    row = ClockIn(
+        employee_id=target,
+        entrada_at=data.entrada_at,
+        salida_at=data.salida_at,
+        latitude=data.latitude,
+        longitude=data.longitude,
+        source=data.source or "panel",
+        notes=data.notes,
+        work_summary=data.work_summary,
+        project_id=project_id,
     )
     session.add(row)
     session.flush()

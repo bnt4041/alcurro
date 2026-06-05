@@ -133,11 +133,11 @@ def purge_employees(session: Session, tenant_id: UUID) -> int:
     session.exec(delete(ClockPendingFichaje).where(
         col(ClockPendingFichaje.employee_id).in_(emp_subquery)
     ))
-    session.exec(delete(ClockIn).where(
-        col(ClockIn.employee_id).in_(emp_subquery)
-    ))
     session.exec(delete(WorkBreak).where(
         col(WorkBreak.employee_id).in_(emp_subquery)
+    ))
+    session.exec(delete(ClockIn).where(
+        col(ClockIn.employee_id).in_(emp_subquery)
     ))
     session.exec(delete(LeaveRequest).where(
         col(LeaveRequest.employee_id).in_(emp_subquery)
@@ -239,11 +239,11 @@ def purge_accounts(session: Session, tenant_id: UUID) -> None:
         session.exec(delete(ClockPendingFichaje).where(
             col(ClockPendingFichaje.employee_id).in_(emp_subquery)
         ))
-        session.exec(delete(ClockIn).where(
-            col(ClockIn.employee_id).in_(emp_subquery)
-        ))
         session.exec(delete(WorkBreak).where(
             col(WorkBreak.employee_id).in_(emp_subquery)
+        ))
+        session.exec(delete(ClockIn).where(
+            col(ClockIn.employee_id).in_(emp_subquery)
         ))
         session.exec(delete(LeaveRequest).where(
             col(LeaveRequest.employee_id).in_(emp_subquery)
@@ -398,8 +398,8 @@ PURGE_CATEGORIES = {
 }
 
 PURGE_ORDER = [
-    "clock_ins",
     "work_breaks",
+    "clock_ins",
     "leave_requests",
     "incidents",
     "employees",

@@ -6,7 +6,7 @@ from datetime import date, datetime, time, timedelta
 
 from sqlmodel import Session, select
 
-from app.models.models import ClockIn, ClockInType, Employee
+from app.models.models import ClockIn, Employee
 from app.models.tenant import Company
 from app.schemas.clock_settings import ClockReminderRunResult
 from app.services.clock_settings_service import get_or_create_settings
@@ -68,8 +68,7 @@ async def run_clock_reminders(session: Session, tenant_id) -> ClockReminderRunRe
         has_entrada = session.exec(
             select(ClockIn).where(
                 ClockIn.employee_id == emp.id,
-                ClockIn.record_type == ClockInType.ENTRADA,
-                ClockIn.recorded_at >= datetime.combine(today, time.min),  # type: ignore[operator]
+                ClockIn.entrada_at >= datetime.combine(today, time.min),  # type: ignore[operator]
             )
         ).first()
         if has_entrada:

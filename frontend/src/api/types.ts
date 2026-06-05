@@ -7,7 +7,6 @@ export type Role =
   | "admin";
 
 export type UserScope = "tenant" | "platform";
-export type ClockInType = "entrada" | "salida";
 export type BreakType = "inicio_parada" | "fin_parada";
 export type LeaveStatus = "pending" | "approved" | "rejected" | "cancelled";
 export type ShiftPatternType =
@@ -198,12 +197,13 @@ export interface ClockReminderRunResult {
 export interface ClockIn {
   id: string;
   employee_id: string;
-  record_type: ClockInType;
-  recorded_at: string;
+  entrada_at: string;
+  salida_at: string | null;
   latitude: number | null;
   longitude: number | null;
   source: string;
   notes: string | null;
+  work_summary: string | null;
   project_id?: string | null;
   project_name?: string | null;
 }

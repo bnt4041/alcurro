@@ -49,7 +49,6 @@ export default function IncidentsPage() {
   const [msg, setMsg] = useState("");
   const [clockForm, setClockForm] = useState({
     recorded_at: "",
-    record_type: "entrada",
     notes: "",
   });
 
@@ -182,12 +181,11 @@ export default function IncidentsPage() {
 
   const openDetail = (row: IncidentRow) => {
     setSelected(row);
-    const orig = row.original_data?.recorded_at as string | undefined;
+    const orig = (row.original_data?.entrada_at ?? row.original_data?.recorded_at) as string | undefined;
     setClockForm({
       recorded_at: orig
         ? new Date(orig).toISOString().slice(0, 16)
         : new Date().toISOString().slice(0, 16),
-      record_type: String(row.original_data?.record_type ?? "entrada"),
       notes: String(row.original_data?.notes ?? ""),
     });
     setMsg("");
@@ -199,7 +197,6 @@ export default function IncidentsPage() {
     try {
       await api.post(`/incidents/${selected.id}/apply-clock`, {
         recorded_at: new Date(clockForm.recorded_at).toISOString(),
-        record_type: clockForm.record_type,
         notes: clockForm.notes || null,
       });
       setMsg("Fichaje corregido y incidencia resuelta");
@@ -362,7 +359,7 @@ export default function IncidentsPage() {
                 <option value="">Sin vincular</option>
                 {linkClocks.map((c) => (
                   <option key={c.id} value={c.id}>
-                    {new Date(c.recorded_at).toLocaleString("es-ES")} — {c.record_type}
+                    {new Date(c.entrada_at).toLocaleString("es-ES")}{c.salida_at ? ` → ${new Date(c.salida_at).toLocaleString("es-ES")}` : " (abierta)"}
                     {c.notes ? ` (${c.notes})` : ""}
                   </option>
                 ))}
@@ -471,18 +468,6 @@ export default function IncidentsPage() {
                         setClockForm({ ...clockForm, recorded_at: ev.target.value })
                       }
                     />
-                  </label>
-                  <label>
-                    Tipo
-                    <select
-                      value={clockForm.record_type}
-                      onChange={(ev) =>
-                        setClockForm({ ...clockForm, record_type: ev.target.value })
-                      }
-                    >
-                      <option value="entrada">Entrada</option>
-                      <option value="salida">Salida</option>
-                    </select>
                   </label>
                   <label className="form-grid-full">
                     Notas

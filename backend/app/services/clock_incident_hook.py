@@ -7,7 +7,7 @@ from uuid import UUID
 from sqlmodel import Session
 
 from app.models.incident import Incident
-from app.models.models import ClockIn, ClockInType, Employee
+from app.models.models import ClockIn, Employee
 from app.services.incident_service import (
     build_whatsapp_incident_message,
     check_late_clock_in,
@@ -22,8 +22,6 @@ def process_clock_in_incidents(
     employee: Employee,
     clock: ClockIn,
 ) -> Incident | None:
-    if clock.record_type != ClockInType.ENTRADA:
-        return None
     return check_late_clock_in(session, tenant_id, employee, clock)
 
 

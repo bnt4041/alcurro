@@ -1,7 +1,6 @@
 from app.models.models import (
     BreakType,
     ClockIn,
-    ClockInType,
     Employee,
     LeaveRequest,
     LeaveStatus,
@@ -22,7 +21,6 @@ __all__ = [
     "Role",
     "Employee",
     "ClockIn",
-    "ClockInType",
     "WorkBreak",
     "BreakType",
     "LeaveRequest",

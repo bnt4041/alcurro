@@ -96,6 +96,11 @@ class TenantCreate(BaseModel):
 
     gowa_basic_auth: str = "admin:admin"
 
+    admin_password: str | None = Field(
+        default=None, min_length=6, max_length=128,
+        description="Contraseña para el usuario administrador inicial. Si no se indica, se genera una aleatoria."
+    )
+
     @field_validator("slug", mode="before")
     @classmethod
     def normalize_slug(cls, v: object) -> str | None:
@@ -224,7 +229,8 @@ class TenantRead(BaseModel):
 
     created_at: datetime
 
-
+    admin_employee_code: str | None = None
+    admin_password: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -270,6 +276,16 @@ class TenantUserCreate(BaseModel):
     id_document: str = Field(min_length=1, max_length=20)
     role: Role = Role.TENANT_ADMIN
     password: str = Field(min_length=6, max_length=128)
+
+
+class TenantUserUpdate(BaseModel):
+    full_name: str | None = Field(default=None, min_length=1, max_length=200)
+    phone: str | None = Field(default=None, min_length=6, max_length=20)
+    email: str | None = None
+    id_document: str | None = Field(default=None, min_length=1, max_length=20)
+    role: Role | None = None
+    password: str | None = Field(default=None, min_length=6, max_length=128)
+    is_active: bool | None = None
 
 
 class CompanyCreate(BaseModel):

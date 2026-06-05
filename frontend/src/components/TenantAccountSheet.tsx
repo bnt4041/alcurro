@@ -74,6 +74,8 @@ interface Props {
   onReactivate?: () => void;
   onDelete?: () => void;
   onCreateTenantUser?: (data: TenantUserCreateForm) => Promise<void>;
+  onUpdateTenantUser?: (userId: string, data: Partial<TenantUserCreateForm> & { is_active?: boolean }) => Promise<void>;
+  onDeleteTenantUser?: (userId: string, userName: string) => void;
   creatingUser?: boolean;
 }
 
@@ -112,6 +114,8 @@ export default function TenantAccountSheet({
   onReactivate,
   onDelete,
   onCreateTenantUser,
+  onUpdateTenantUser,
+  onDeleteTenantUser,
   creatingUser = false,
 }: Props) {
   const [userForm, setUserForm] = useState<TenantUserCreateForm>({
@@ -122,19 +126,34 @@ export default function TenantAccountSheet({
     role: "tenant_admin",
     password: "",
   });
+  const [editingUserId, setEditingUserId] = useState<string | null>(null);
+  const [editUserForm, setEditUserForm] = useState<TenantUserCreateForm & { is_active?: boolean }>({
+    full_name: "",
+    phone: "",
+    email: "",
+    id_document: "",
+    role: "tenant_admin",
+    password: "",
+    is_active: true,
+  });
+  const [savingUser, setSavingUser] = useState(false);
 
-  const submitNewUser = async (e: FormEvent) => {
+  const submitNewUser = async (e: React.MouseEvent) => {
     e.preventDefault();
     if (!onCreateTenantUser) return;
-    await onCreateTenantUser(userForm);
-    setUserForm({
-      full_name: "",
-      phone: "",
-      email: "",
-      id_document: "",
-      role: "tenant_admin",
-      password: "",
-    });
+    try {
+      await onCreateTenantUser(userForm);
+      setUserForm({
+        full_name: "",
+        phone: "",
+        email: "",
+        id_document: "",
+        role: "tenant_admin",
+        password: "",
+      });
+    } catch {
+      // error ya se muestra en el padre
+    }
   };
 
   type UserTableRow = TenantUserRow & { role_label: string; status_label: string };
@@ -178,6 +197,50 @@ export default function TenantAccountSheet({
     ],
     []
   );
+
+  const startEditUser = (u: TenantUserRow) => {
+    setEditingUserId(u.id);
+    setEditUserForm({
+      full_name: u.full_name,
+      phone: u.phone,
+      email: u.email || "",
+      id_document: "",
+      role: u.role as Role,
+      password: "",
+      is_active: u.is_active,
+    });
+  };
+
+  const cancelEditUser = () => {
+    setEditingUserId(null);
+  };
+
+  const saveEditUser = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (!onUpdateTenantUser || !editingUserId) return;
+    setSavingUser(true);
+    try {
+      const payload: Record<string, unknown> = {
+        full_name: editUserForm.full_name,
+        phone: editUserForm.phone,
+        email: editUserForm.email || undefined,
+        role: editUserForm.role,
+        is_active: editUserForm.is_active,
+      };
+      if (editUserForm.password) {
+        payload.password = editUserForm.password;
+      }
+      if (editUserForm.id_document) {
+        payload.id_document = editUserForm.id_document;
+      }
+      await onUpdateTenantUser(editingUserId, payload as any);
+      setEditingUserId(null);
+    } catch {
+      // error ya mostrado
+    } finally {
+      setSavingUser(false);
+    }
+  };
 
   if (!open) return null;
 
@@ -457,7 +520,7 @@ export default function TenantAccountSheet({
                         Acceso al panel del cliente con código{" "}
                         <code>{form.accountCode}</code> y el usuario generado (EMP-001…).
                       </p>
-                      <form onSubmit={submitNewUser} className="form-grid">
+                      <div className="form-grid">
                         <label>
                           Nombre
                           <input
@@ -531,14 +594,15 @@ export default function TenantAccountSheet({
                         </label>
                         <div className="form-actions form-grid-full">
                           <button
-                            type="submit"
+                            type="button"
                             className="btn btn-primary"
                             disabled={creatingUser}
+                            onClick={submitNewUser}
                           >
                             {creatingUser ? "Creando…" : "Crear usuario"}
                           </button>
                         </div>
-                      </form>
+                      </div>
                     </section>
                   )}
                   {usersLoading ? (
@@ -546,13 +610,134 @@ export default function TenantAccountSheet({
                   ) : users.length === 0 ? (
                     <p className="muted small">Aún no hay usuarios en esta cuenta.</p>
                   ) : (
+                    <>
                     <DataTable
                       data={userTableData}
                       columns={userColumns}
                       loading={usersLoading}
                       exportFilename="usuarios_cuenta"
                       height="360px"
+                      onRowClick={(row) => {
+                        const u = users.find((x) => x.id === (row as UserTableRow).id);
+                        if (u) startEditUser(u);
+                      }}
                     />
+                    <p className="muted small" style={{ marginTop: "0.5rem" }}>
+                      Haz clic en un usuario para editarlo.
+                    </p>
+                    {editingUserId && (
+                      <section className="card sheet-user-create" style={{ marginTop: "1rem" }}>
+                        <h4>Editar usuario</h4>
+                        <div className="form-grid">
+                          <label>
+                            Nombre
+                            <input
+                              value={editUserForm.full_name}
+                              onChange={(ev) =>
+                                setEditUserForm({ ...editUserForm, full_name: ev.target.value })
+                              }
+                            />
+                          </label>
+                          <label>
+                            DNI/NIE
+                            <input
+                              value={editUserForm.id_document}
+                              onChange={(ev) =>
+                                setEditUserForm({ ...editUserForm, id_document: ev.target.value.toUpperCase() })
+                              }
+                              placeholder="Solo si cambia"
+                            />
+                          </label>
+                          <label>
+                            Teléfono
+                            <input
+                              value={editUserForm.phone}
+                              onChange={(ev) =>
+                                setEditUserForm({ ...editUserForm, phone: ev.target.value })
+                              }
+                            />
+                          </label>
+                          <label>
+                            Email
+                            <input
+                              type="email"
+                              value={editUserForm.email}
+                              onChange={(ev) =>
+                                setEditUserForm({ ...editUserForm, email: ev.target.value })
+                              }
+                            />
+                          </label>
+                          <label>
+                            Rol
+                            <select
+                              value={editUserForm.role}
+                              onChange={(ev) =>
+                                setEditUserForm({ ...editUserForm, role: ev.target.value as Role })
+                              }
+                            >
+                              <option value="tenant_admin">Administrador de cuenta</option>
+                              <option value="manager">Responsable</option>
+                              <option value="employee">Empleado</option>
+                            </select>
+                          </label>
+                          <label>
+                            Nueva contraseña
+                            <input
+                              type="password"
+                              value={editUserForm.password}
+                              onChange={(ev) =>
+                                setEditUserForm({ ...editUserForm, password: ev.target.value })
+                              }
+                              placeholder="Dejar vacío para no cambiar"
+                            />
+                          </label>
+                          <label className="checkbox-row form-span-2">
+                            <input
+                              type="checkbox"
+                              checked={editUserForm.is_active ?? true}
+                              onChange={(ev) =>
+                                setEditUserForm({ ...editUserForm, is_active: ev.target.checked })
+                              }
+                            />
+                            Usuario activo
+                          </label>
+                          <div className="form-actions form-grid-full" style={{ display: "flex", gap: "0.5rem" }}>
+                            <button
+                              type="button"
+                              className="btn btn-primary"
+                              disabled={savingUser}
+                              onClick={saveEditUser}
+                            >
+                              {savingUser ? "Guardando…" : "Guardar cambios"}
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-ghost"
+                              onClick={cancelEditUser}
+                            >
+                              Cancelar
+                            </button>
+                            {onDeleteTenantUser && (
+                              <button
+                                type="button"
+                                className="btn btn-danger"
+                                style={{ marginLeft: "auto" }}
+                                onClick={() => {
+                                  const u = users.find((x) => x.id === editingUserId);
+                                  if (u) {
+                                    onDeleteTenantUser(u.id, u.full_name);
+                                    setEditingUserId(null);
+                                  }
+                                }}
+                              >
+                                Desactivar usuario
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </section>
+                    )}
+                    </>
                   )}
                 </>
               )}

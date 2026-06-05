@@ -22,7 +22,7 @@ def _to_spain(dt: datetime) -> datetime:
 from sqlmodel import Session, select
 
 from app.models.ai import AiWhatsappMessage
-from app.models.models import BreakType, ClockInType, Employee
+from app.models.models import BreakType, Employee
 from app.models.tenant import Tenant
 from app.models.clock_settings import ClockSettings
 from app.services.break_service import BreakService
@@ -35,7 +35,7 @@ from app.services.whatsapp_permission_service import (
     list_whatsapp_actions_for_employee,
 )
 
-MAX_HISTORY_MESSAGES = 10
+MAX_HISTORY_MESSAGES = 5
 MAX_MESSAGE_AGE_DAYS = 7
 MAX_CONTENT_LEN = 2000
 
@@ -99,20 +99,20 @@ def build_employee_clock_context(
     lines: list[str] = []
 
     if last:
-        tipo = "ENTRADA" if last.record_type == ClockInType.ENTRADA else "SALIDA"
-        lines.append(
-            f"- Último fichaje registrado: {tipo} "
-            f"({_to_spain(last.recorded_at).strftime('%Y-%m-%d %H:%M')})."
-        )
-        if last.record_type == ClockInType.ENTRADA:
+        if last.salida_at is None:
             lines.append(
-                "- Si el empleado dice «ficho», «fichar ahora», «me voy» sin más detalle, "
-                "lo más probable es que quiera fichar SALIDA."
+                f"- Jornada ABIERTA desde {_to_spain(last.entrada_at).strftime('%Y-%m-%d %H:%M')} (sin salida)."
+            )
+            lines.append(
+                "- «me voy», «ficho», «termino», «me piro», «a currar» sin más contexto → fichar SALIDA."
             )
         else:
             lines.append(
-                "- Tras una SALIDA (o sin jornada abierta), «ficho» / «empiezo» "
-                "suele significar fichar ENTRADA."
+                f"- Última jornada CERRADA: entrada {_to_spain(last.entrada_at).strftime('%H:%M')}, "
+                f"salida {_to_spain(last.salida_at).strftime('%H:%M')}."
+            )
+            lines.append(
+                "- Sin jornada abierta: «ficho», «llego», «empiezo», «a currar» → fichar ENTRADA."
             )
     else:
         lines.append("- No hay fichajes previos registrados para este empleado.")
@@ -221,7 +221,7 @@ def _build_actions_catalog(
         "inicio_parada":        {"c":"inicio_parada","n":"Iniciar parada","d":"Pausa/descanso","cat":"paradas","cf":True, "p":{},"cq":"¿Quieres iniciar una pausa ahora?","tr":["descanso","pausa","cafe","a comer","paro un rato","desconecto"]},
         "fin_parada":           {"c":"fin_parada","n":"Finalizar parada","d":"Reanudar jornada","cat":"paradas","cf":True, "p":{},"cq":"¿Quieres finalizar la pausa y reanudar?","tr":["vuelvo","regreso","sigo","retomo","termino descanso","continuo"]},
         "solicitar_vacaciones": {"c":"solicitar_vacaciones","n":"Solicitar vacaciones","d":"Crear solicitud de vacaciones","cat":"vacaciones","cf":True, "p":{"fecha_inicio":"YYYY-MM-DD","fecha_fin":"YYYY-MM-DD"},"cq":"¿Confirmas las vacaciones del {fecha_inicio} al {fecha_fin}?","tr":["quiero pedir vacaciones","solicito vacaciones","pedir dias libres","vacaciones del","dias libres del"]},
-        "consultar_saldo_vacaciones": {"c":"consultar_saldo_vacaciones","n":"Consultar saldo","d":"Días disponibles","cat":"vacaciones","cf":False,"p":{},"cq":None,"tr":["saldo","cuantos dias me quedan","dias disponibles","cuantas vacaciones tengo","balance de vacaciones"]},
+        "consultar_saldo_vacaciones": {"c":"consultar_saldo_vacaciones","n":"Consultar saldo","d":"Días disponibles","cat":"vacaciones","cf":False,"p":{},"cq":None,"tr":["cuantas vacaciones me quedan","cuantos dias me quedan","dias de vacaciones","saldo de vacaciones","cuantas vacaciones tengo","dias disponibles","balance de vacaciones","saldo"]},
         "confirmar_documento":  {"c":"confirmar_documento","n":"Confirmar documento","d":"Acuse de recibo","cat":"documentos","cf":False,"p":{},"cq":None,"tr":["confirmo","recibido","de acuerdo","acepto el documento"]},
         "resumen_dia":          {"c":"resumen_dia","n":"Resumen del día","d":"Fichajes y paradas de hoy","cat":"fichajes","cf":False,"p":{},"cq":None,"tr":["resumen","como voy","que he hecho hoy","mi dia","resumen del dia"]},
     }
@@ -265,69 +265,65 @@ def build_system_prompt(
     today_str = _now_spain().strftime("%Y-%m-%d")
     current_year = _now_spain().year
 
-    actions_catalog = _build_actions_catalog(session, allowed_effective)
-
-    # Prompt conciso y estructurado: prioridad 0 = nuevo vs continuación, 1 = saludos, 2 = interpretar, 3 = catálogo, 4 = confirmar
+    # Prompt ultra-compacto para modelos pequeños (1.5B-7B)
     lines = [
-        "Eres un orquestador conversacional de RRHH por WhatsApp, te llamas Curro. Interpretas mensajes coloquiales",
-        "y decides si hay que preguntar, confirmar o ejecutar una acción. Responde SOLO en JSON.",
+        "Eres Curro, asistente de RRHH por WhatsApp. Clasifica mensajes en JSON.",
         "",
-        "=== PRIORIDAD 0: ¿CONVERSACIÓN NUEVA O CONTINUACIÓN? ===",
-        "ANTES de clasificar la intención, revisa el HISTORIAL y decide el contexto:",
+        "RESPONDE SOLO:",
+        '{"stage":"ask|confirm|execute","intent":"CODIGO","confidence":0.9,"message":"texto","entities":{}}',
         "",
-        "CONTINUACIÓN (el usuario responde a algo que TÚ preguntaste antes):",
-        "- Tu último mensaje era una pregunta de confirmación sí/no y el usuario responde",
-        "  «sí»/«vale»/«ok»/«dale»/«confirmo»/«adelante» → stage=execute, ejecuta la acción pendiente.",
-        "- Tu último mensaje era una pregunta de confirmación y el usuario responde",
-        "  «no»/«cancelar»/«mejor no» → stage=ask, pregunta qué quiere hacer en su lugar.",
-        "- Tu último mensaje pedía fechas («¿Qué período de vacaciones?») y el usuario",
-        "  responde con fechas → stage=confirm, extrae las fechas y confirma el período.",
-        "- Tu último mensaje pedía que eligiera un proyecto y el usuario responde con",
-        "  un número o nombre → NO es un fichaje nuevo, es la selección del proyecto.",
+        "STAGE:",
+        "ask = no entiendes o necesitas más info",
+        "confirm = entendiste, confirmas con pregunta sí/no",
+        "execute = es consulta o usuario confirmó con sí/ok/vale/dale",
         "",
-        "CONVERSACIÓN NUEVA (el usuario empieza de cero o cambia de tema):",
-        "- El historial está vacío o el último mensaje tuyo es de una acción ya ejecutada.",
-        "- El usuario manda un saludo («hola», «buenas», «hey») → intent=desconocido, stage=ask.",
-        "- El usuario introduce un verbo de acción nuevo («ficho», «me voy», «descanso»)",
-        "  que NO tiene relación con lo que se estaba hablando → ignora el contexto previo.",
-        "- El usuario dice una palabra suelta («vacaciones?») sin verbo claro",
-        "  → intent=desconocido, stage=ask, pregúntale qué quiere hacer exactamente.",
+        "INTENTS: " + intent_list,
         "",
-        "REGLA CLAVE: si el historial muestra que TÚ hiciste una pregunta y el usuario",
-        "responde a ella, estás en CONTINUACIÓN. Si el usuario introduce un tema totalmente",
-        "nuevo sin relación con tu última pregunta, estás en CONVERSACIÓN NUEVA.",
-        "",
-        "=== PRIORIDAD 1: CATÁLOGO DE ACCIONES (JSON) ===",
-        "Leyenda: c=código, n=nombre, d=descripción, cat=categoría, cf=requiereConfirmación,",
-        "p=parámetros, cq=preguntaConfirmación, tr=frasesDisparadoras.",
-        actions_catalog,
-        "",
-        "=== PRIORIDAD 2: FLUJO DE CONFIRMACIÓN ===",
-        "- Acciones con cf=true (fichar, paradas, solicitar_vacaciones): stage=confirm, usa cq.",
-        "- Acciones con cf=false (consultar_saldo, resumen_dia, confirmar_documento): stage=execute.",
-        "- Si el usuario dice «sí»/«vale»/«ok»/«dale»/«confirmo» tras tu confirmación → stage=execute.",
-        "- Si el usuario dice «no»/«cancelar» → stage=ask, pregunta qué desea.",
-        "- Si el mensaje no encaja en ninguna acción → intent=desconocido, stage=ask.",
-        "",
-        "=== PRIORIDAD 3: EXTRACCIÓN DE FECHAS (solo para solicitar_vacaciones) ===",
-        f"Año actual: {current_year}. Formato: YYYY-MM-DD.",
-        f'«del 1 al 8 de agosto» → entities={{"fecha_inicio":"{current_year}-08-01","fecha_fin":"{current_year}-08-08"}}.',
-        "Sin fechas claras → stage=ask pidiendo las fechas.",
-        "",
-        "=== FORMATO DE RESPUESTA ===",
-        'SIEMPRE responde SOLO este JSON (nada más):',
-        '{"stage":"ask","intent":"fichar_entrada","confidence":0.9,"message":"...","entities":{}}',
-        f"stage: ask | confirm | execute. intent: {intent_list}.",
-        "",
-        f"EMPLEADO: {employee.full_name} | EMPRESA: {tenant.name} | HOY: {today_str}.",
-        f"Proyecto obligatorio al fichar: {'SI' if settings.require_project_on_clock_in else 'NO'}.",
-        "",
-        "ESTADO FICHAJE:",
-        clock_ctx,
-        "",
-        "ESTADO PARADAS:",
-        break_ctx,
+        "MAPA FRASE -> INTENT:",
     ]
+
+    # Mapa compacto de frases clave
+    _PHRASE_MAP = [
+        ("fichar_entrada", "ficho, llego, empiezo, comienzo, entrada, ya estoy, a trabajar, a currar, voy a currar, quiero currar, curro, empezar a currar"),
+        ("fichar_salida", "me voy, termino, acabo, salida, me marcho, salgo, finalizo, me piro"),
+        ("inicio_parada", "descanso, pausa, cafe, a comer, paro un rato, desconecto"),
+        ("fin_parada", "vuelvo, regreso, sigo, retomo, continuo, termino descanso"),
+        ("solicitar_vacaciones", "quiero pedir vacaciones, solicito vacaciones, pedir dias, vacaciones del"),
+        ("consultar_saldo_vacaciones", "cuantas vacaciones me quedan, cuantos dias me quedan, saldo, dias disponibles, cuantas vacaciones tengo"),
+        ("resumen_dia", "resumen, como voy, que he hecho hoy, mi dia"),
+        ("confirmar_documento", "confirmo, recibido, de acuerdo, acepto"),
+    ]
+    for code, phrases in _PHRASE_MAP:
+        if code in allowed_effective:
+            lines.append(f"- {code}: {phrases}")
+
+    lines.extend([
+        "",
+        "CONFIRMACIÓN:",
+        "- fichar/paradas/vacaciones NUEVAS: stage=confirm (pregunta sí/no)",
+        "- consultar_saldo/resumen_dia/confirmar_documento: stage=execute (directo)",
+        "- usuario dice sí/ok/vale/dale/confirmo/adelante: stage=execute",
+        "- usuario dice no/cancelar: stage=ask",
+        "",
+        "HISTORIAL:",
+        "- Si TU último mensaje preguntaba algo y el usuario responde a eso -> CONTINUACIÓN",
+        "- Si el usuario cambia de tema o saluda -> CONVERSACIÓN NUEVA -> intent=desconocido",
+        "- Saludo SOLO (solo 'hola', 'buenas', 'hey'): intent=desconocido, stage=ask",
+        "- Saludo + acción ('hola quiero fichar', 'hola voy a currar'): usa el intent de la acción, ignora el saludo",
+        "",
+        "VOCABULARIO COLOQUIAL:",
+        "- currar/curro/currando = trabajar → fichar_entrada o fichar_salida según contexto",
+        "- pirarse/piro/pirarme = marcharse → fichar_salida",
+        "- chupar el dedo/no hacer nada = no aplica → desconocido",
+        "",
+        f"AÑO: {current_year} | HOY: {today_str}",
+        f"EMPLEADO: {employee.full_name} | EMPRESA: {tenant.name}",
+        "",
+        "FICHAJE:",
+        clock_ctx,
+        "PARADAS:",
+        break_ctx,
+    ])
 
     if nlu_hint:
         lines.extend(["", "PISTA NLU (referencia): " + nlu_hint])

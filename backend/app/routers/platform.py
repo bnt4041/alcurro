@@ -1,4 +1,5 @@
 from uuid import UUID
+import secrets
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, col, select
@@ -16,7 +17,7 @@ from app.schemas.rbac import (
     PlatformUserUpdate,
 )
 from app.schemas.auth import TokenResponse
-from app.models.models import Employee
+from app.models.models import Employee, Role
 from app.models.tenant import Company
 from app.schemas.tenant import (
     TenantCreate,
@@ -24,6 +25,7 @@ from app.schemas.tenant import (
     TenantRead,
     TenantUserCreate,
     TenantUserRead,
+    TenantUserUpdate,
 )
 from app.models.organization import GroupTemplate
 from app.models.organization import Department, WorkCenter
@@ -203,10 +205,31 @@ def create_tenant_platform(
     session.add(tenant)
     session.flush()
     ensure_group_templates(session)
-    seed_tenant_organization(session, tenant, data.name)
+    company, _, _ = seed_tenant_organization(session, tenant, data.name)
     clone_groups_for_tenant(session, tenant.id)
+    ensure_system_groups(session, tenant.id)
+
+    # Auto-crear usuario administrador principal
+    admin_password = data.admin_password or secrets.token_urlsafe(10)
+    admin = Employee(
+        company_id=company.id,
+        phone=data.billing_phone.strip(),
+        email=data.billing_email.strip().lower(),
+        full_name=f"Admin {data.name.strip()}",
+        employee_code="ADM001",
+        role=Role.TENANT_ADMIN,
+        password_hash=hash_password(admin_password),
+        is_active=True,
+    )
+    session.add(admin)
+    session.flush()
+    assign_role_default_group(session, admin, tenant.id)
+
     session.commit()
     session.refresh(tenant)
+    # Inyectar credenciales en la respuesta
+    tenant.admin_employee_code = "ADM001"  # type: ignore[attr-defined]
+    tenant.admin_password = admin_password  # type: ignore[attr-defined]
     return tenant
 
 
@@ -338,6 +361,86 @@ def create_tenant_user(
         role=row.role,
         is_active=row.is_active,
     )
+
+
+@router.patch("/tenants/{tenant_id}/users/{user_id}", response_model=TenantUserRead)
+def update_tenant_user(
+    tenant_id: UUID,
+    user_id: UUID,
+    data: TenantUserUpdate,
+    session: Session = Depends(get_session),
+    _: PlatformUser = Depends(get_platform_user),
+) -> TenantUserRead:
+    tenant = session.get(Tenant, tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Cuenta no encontrada")
+
+    row = session.get(Employee, user_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+    company = session.get(Company, row.company_id)
+    if not company or company.tenant_id != tenant_id:
+        raise HTTPException(status_code=404, detail="Usuario no pertenece a esta cuenta")
+
+    if data.full_name is not None:
+        row.full_name = data.full_name.strip()
+    if data.phone is not None:
+        row.phone = data.phone.strip()
+    if data.email is not None:
+        row.email = data.email.strip().lower() if data.email.strip() else None
+    if data.id_document is not None:
+        from app.services.id_document import validate_id_document
+        try:
+            row.id_document = validate_id_document(data.id_document)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if data.role is not None:
+        row.role = data.role
+    if data.password is not None:
+        row.password_hash = hash_password(data.password)
+    if data.is_active is not None:
+        row.is_active = data.is_active
+
+    session.add(row)
+    session.commit()
+    session.refresh(row)
+
+    return TenantUserRead(
+        id=row.id,
+        company_id=row.company_id,
+        company_name=company.name,
+        full_name=row.full_name,
+        employee_code=row.employee_code,
+        phone=row.phone,
+        email=row.email,
+        role=row.role,
+        is_active=row.is_active,
+    )
+
+
+@router.delete("/tenants/{tenant_id}/users/{user_id}", status_code=204)
+def delete_tenant_user(
+    tenant_id: UUID,
+    user_id: UUID,
+    session: Session = Depends(get_session),
+    _: PlatformUser = Depends(get_platform_user),
+) -> None:
+    tenant = session.get(Tenant, tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Cuenta no encontrada")
+
+    row = session.get(Employee, user_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+    company = session.get(Company, row.company_id)
+    if not company or company.tenant_id != tenant_id:
+        raise HTTPException(status_code=404, detail="Usuario no pertenece a esta cuenta")
+
+    row.is_active = False
+    session.add(row)
+    session.commit()
 
 
 @router.patch("/tenants/{tenant_id}", response_model=TenantRead)

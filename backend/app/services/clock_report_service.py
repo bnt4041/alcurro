@@ -17,7 +17,7 @@ def _to_spain(dt: datetime) -> datetime:
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
-from app.models.models import BreakType, ClockIn, ClockInType, Employee, WorkBreak
+from app.models.models import BreakType, ClockIn, Employee, WorkBreak
 from app.models.project import Project
 
 
@@ -76,10 +76,10 @@ def build_employee_day_report(
             select(ClockIn)
             .where(
                 ClockIn.employee_id == employee_id,
-                ClockIn.recorded_at >= start,
-                ClockIn.recorded_at < end,
+                ClockIn.entrada_at >= start,
+                ClockIn.entrada_at < end,
             )
-            .order_by(ClockIn.recorded_at)
+            .order_by(ClockIn.entrada_at)  # type: ignore[attr-defined]
         ).all()
     )
 
@@ -98,7 +98,6 @@ def build_employee_day_report(
     timeline: list[tuple[datetime, ReportTimelineItem]] = []
 
     for c in clocks:
-        tipo = "Entrada" if c.record_type == ClockInType.ENTRADA else "Salida"
         detail_parts: list[str] = []
         if c.project_id:
             p = session.get(Project, c.project_id)
@@ -110,15 +109,28 @@ def build_employee_day_report(
             detail_parts.append(c.notes)
         timeline.append(
             (
-                c.recorded_at,
+                c.entrada_at,
                 ReportTimelineItem(
-                    time_label=_to_spain(c.recorded_at).strftime("%H:%M"),
+                    time_label=_to_spain(c.entrada_at).strftime("%H:%M"),
                     kind="fichaje",
-                    label=tipo,
+                    label="Entrada",
                     detail=" · ".join(detail_parts) if detail_parts else None,
                 ),
             )
         )
+        if c.salida_at:
+            salida_detail = c.work_summary or None
+            timeline.append(
+                (
+                    c.salida_at,
+                    ReportTimelineItem(
+                        time_label=_to_spain(c.salida_at).strftime("%H:%M"),
+                        kind="fichaje",
+                        label="Salida",
+                        detail=salida_detail,
+                    ),
+                )
+            )
 
     for b in breaks:
         label = "Inicio parada" if b.record_type == BreakType.INICIO else "Fin parada"
@@ -138,16 +150,14 @@ def build_employee_day_report(
     items = [t[1] for t in timeline]
 
     worked = 0
-    open_start: datetime | None = None
+    open_clock = False
     for c in clocks:
-        if c.record_type == ClockInType.ENTRADA:
-            open_start = c.recorded_at
-        elif c.record_type == ClockInType.SALIDA and open_start:
-            worked += _minutes_between(open_start, c.recorded_at)
-            open_start = None
-    open_clock = open_start is not None
-    if open_start and report_date == date.today():
-        worked += _minutes_between(open_start, datetime.utcnow())
+        if c.salida_at:
+            worked += _minutes_between(c.entrada_at, c.salida_at)
+        else:
+            open_clock = True
+            if report_date == date.today():
+                worked += _minutes_between(c.entrada_at, datetime.utcnow())
 
     break_minutes = 0
     break_start: datetime | None = None

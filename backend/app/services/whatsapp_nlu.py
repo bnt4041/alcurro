@@ -1,34 +1,139 @@
-"""Utilidades de texto para WhatsApp: normalización, saludos, confirmación sí/no."""
+"""Utilidades de texto para WhatsApp: normalización, intents por keywords, confirmación sí/no."""
 
 from __future__ import annotations
 
 import re
 import unicodedata
+from typing import Callable
 
 from app.schemas.ollama import OllamaIntentResponse
 
-# Saludos: detectar aunque haya más texto después (ej. "Hola! comenzamos?")
-_RE_GREETING = re.compile(
-    r"^(hola|buenos\s+dias|buenas\s+tardes|buenas\s+noches|hey|buenas|que\s+tal)\b",
-    re.IGNORECASE,
-)
+# ---------------------------------------------------------------------------
+# Patrones de intención por keyword (alta precisión, ordenados por prioridad)
+# ---------------------------------------------------------------------------
+# Cada entrada: (regex, intent, stage, confidence, message)
+# Se evalúan en orden; el primer match gana.
 
-# Respuestas de confirmación / negación para el flujo de confirmación sí/no
-_RE_AFFIRMATIVE = re.compile(
-    r"\b("
-    r"si|s[ií]|yes|vale|ok|okey|claro|confirmo|confirmar|de\s+acuerdo|"
-    r"adelante|venga|dale|perfecto|correcto|afirmativo|hecho|"
-    r"por\s+supuesto|obvio|exacto|as[ií]\s+es|eso\s+es"
-    r")\b",
-    re.IGNORECASE,
-)
-_RE_NEGATIVE = re.compile(
-    r"\b("
-    r"no|nop|nope|negativo|cancelar|cancela|mejor\s+no|"
-    r"no\s+gracias|deja|dejalo|d[eé]jalo|para|para\s+ya"
-    r")\b",
-    re.IGNORECASE,
-)
+_INTENT_PATTERNS: list[tuple[re.Pattern, str, str, float, str | None]] = [
+    # --- Consultas (execute directo, sin confirmación) ---
+    (
+        re.compile(
+            r"\b("
+            r"cuantas\s+vacaciones\s+(me\s+)?quedan|"
+            r"cuantos\s+dias\s+(me\s+)?quedan|"
+            r"cuantas\s+vacaciones\s+tengo|"
+            r"saldo\s+(de\s+)?vacaciones|"
+            r"dias\s+( disponibles|de\s+vacaciones)|"
+            r"balance\s+de\s+vacaciones|"
+            r"que\s+saldo\s+(me\s+)?queda"
+            r")\b", re.IGNORECASE
+        ),
+        "consultar_saldo_vacaciones", "execute", 0.9, None,
+    ),
+    (
+        re.compile(
+            r"\b("
+            r"resumen\s+(del\s+)?dia|"
+            r"como\s+(voy|va\s+(mi|el)\s+dia)|"
+            r"que\s+he\s+hecho\s+hoy|"
+            r"mi\s+dia|mi\s+jornada|"
+            r"cuantas\s+horas\s+(llevo|he\s+hecho)"
+            r")\b", re.IGNORECASE
+        ),
+        "resumen_dia", "execute", 0.9, None,
+    ),
+    (
+        re.compile(
+            r"\b("
+            r"confirmo|confirmar\s+documento|recibido|"
+            r"de\s+acuerdo|acepto\s+(el\s+)?documento"
+            r")\b", re.IGNORECASE
+        ),
+        "confirmar_documento", "execute", 0.7, None,
+    ),
+
+    # --- Fichajes (requieren confirmación) ---
+    (
+        re.compile(
+            r"\b("
+            r"ficho\s*(ahora|ya)?|"
+            r"fichar\s+entrada|fichar\s+ahora|"
+            r"llego|(estoy\s+)?llegando|"
+            r"empiezo|comienzo|comenzar\s+(a\s+)?trabajar|"
+            r"entrada|ya\s+estoy|en\s+el\s+trabajo|"
+            r"voy\s+a\s+(fichar|trabajar|empezar|currar)|"
+            r"quiero\s+(empezar|empiezo)\s+a\s+(trabajar|currar)|"
+            r"a\s+(trabajar|currar)|"
+            r"curro\b|currando"
+            r")\b", re.IGNORECASE
+        ),
+        "fichar_entrada", "confirm", 0.85, "¿Quieres fichar la entrada ahora?",
+    ),
+    (
+        re.compile(
+            r"\b("
+            r"me\s+voy|me\s+marcho|me\s+piro|"
+            r"termino|acabo|finalizo|"
+            r"salida|fin\s+de\s+jornada|"
+            r"salgo|terminar\s+(de\s+)?trabajar|"
+            r"he\s+terminado|he\s+acabado|"
+            r"voy\s+a\s+salir"
+            r")\b", re.IGNORECASE
+        ),
+        "fichar_salida", "confirm", 0.85, "¿Quieres fichar la salida ahora?",
+    ),
+
+    # --- Paradas (requieren confirmación) ---
+    (
+        re.compile(
+            r"\b("
+            r"descanso|voy\s+a\s+descansar|me\s+tomo\s+un\s+descanso|"
+            r"pausa|voy\s+a\s+hacer\s+una\s+pausa|"
+            r"a\s+comer|voy\s+a\s+comer|me\s+voy\s+a\s+comer|"
+            r"cafe|caf[eé]|voy\s+a\s+por\s+un\s+caf[eé]|"
+            r"paro\s+un\s+rato|paro\s+ya|voy\s+a\s+parar|"
+            r"desconecto|me\s+desconecto|"
+            r"almuerzo|voy\s+a\s+almorzar"
+            r")\b", re.IGNORECASE
+        ),
+        "inicio_parada", "confirm", 0.85, "¿Quieres iniciar una pausa ahora?",
+    ),
+    (
+        re.compile(
+            r"\b("
+            r"vuelvo|ya\s+he\s+vuelto|he\s+vuelto|"
+            r"regreso|estoy\s+de\s+vuelta|"
+            r"sigo|sigo\s+trabajando|continuo|contin[uú]o|"
+            r"retomo|retomo\s+(el\s+)?trabajo|"
+            r"termino\s+(el\s+)?descanso|fin\s+del?\s+descanso|"
+            r"reanudo|reanudo\s+(la\s+)?jornada"
+            r")\b", re.IGNORECASE
+        ),
+        "fin_parada", "confirm", 0.85, "¿Quieres finalizar la pausa y reanudar?",
+    ),
+
+    # --- Vacaciones (requiere confirmación / fechas) ---
+    (
+        re.compile(
+            r"\b("
+            r"quiero\s+pedir\s+vacaciones|solicito\s+vacaciones|"
+            r"pedir\s+(d[ií]as|vacaciones)|"
+            r"vacaciones\s+del?\s+\d|d[ií]as\s+libres?\s+del?\s+\d|"
+            r"solicitar\s+vacaciones"
+            r")\b", re.IGNORECASE
+        ),
+        "solicitar_vacaciones", "confirm", 0.8, None,
+    ),
+    (
+        re.compile(
+            r"\b("
+            r"vacaciones|d[ií]as\s+libres?|"
+            r"pedir\s+d[ií]as|solicitar\s+d[ií]as"
+            r")\b", re.IGNORECASE
+        ),
+        "solicitar_vacaciones", "ask", 0.5, "¿Qué período de vacaciones deseas solicitar? Indícame las fechas.",
+    ),
+]
 
 
 def normalize_whatsapp_text(message_text: str) -> str:
@@ -44,25 +149,94 @@ def match_whatsapp_intent(
     message_text: str,
     allowed: list[str] | None = None,
     *,
-    infer_fichar: object = None,
-    infer_break: object = None,
+    infer_fichar: Callable[[], str | None] | None = None,
+    infer_break: Callable[[], str | None] | None = None,
 ) -> OllamaIntentResponse:
-    """Respaldo mínimo: solo saludos. Ollama es quien clasifica la intención."""
+    """Keyword matching primario: detecta la intención por frases clave.
+
+    Devuelve OllamaIntentResponse con stage, intent, confidence y message.
+    Si no hay match, devuelve intent=desconocido con confidence baja para
+    que Ollama pueda intentar interpretarlo.
+    """
     t = normalize_whatsapp_text(message_text)
-    if _RE_GREETING.match(t.strip()):
+    allowed_set = set(allowed) if allowed else None
+
+    for pattern, intent, stage, confidence, msg in _INTENT_PATTERNS:
+        if allowed_set and intent not in allowed_set and intent != "desconocido":
+            continue
+        if pattern.search(t):
+            # Desambiguar fichajes según contexto real
+            if intent == "fichar_entrada" and infer_fichar:
+                hint = infer_fichar()
+                if hint == "fichar_salida":
+                    return OllamaIntentResponse(
+                        stage="confirm", intent="fichar_salida",
+                        confidence=0.85,
+                        message="¿Quieres fichar la salida ahora?",
+                    )
+            elif intent == "fichar_salida" and infer_fichar:
+                hint = infer_fichar()
+                if hint == "fichar_entrada":
+                    return OllamaIntentResponse(
+                        stage="confirm", intent="fichar_entrada",
+                        confidence=0.85,
+                        message="¿Quieres fichar la entrada ahora?",
+                    )
+            # Desambiguar paradas según contexto real
+            if intent == "inicio_parada" and infer_break:
+                hint = infer_break()
+                if hint == "fin_parada":
+                    return OllamaIntentResponse(
+                        stage="confirm", intent="fin_parada",
+                        confidence=0.85,
+                        message="¿Quieres finalizar la pausa y reanudar?",
+                    )
+            elif intent == "fin_parada" and infer_break:
+                hint = infer_break()
+                if hint == "inicio_parada":
+                    return OllamaIntentResponse(
+                        stage="confirm", intent="inicio_parada",
+                        confidence=0.85,
+                        message="¿Quieres iniciar una pausa ahora?",
+                    )
+
+            return OllamaIntentResponse(
+                stage=stage, intent=intent,
+                confidence=confidence,
+                message=msg or "",
+            )
+
+    # Saludo genérico (último recurso antes de desconocido)
+    if re.search(r"\b(hola|buenos\s+dias|buenas\s+tardes|buenas\s+noches|hey|buenas|que\s+tal|como\s+estas?)\b", t, re.IGNORECASE):
         return OllamaIntentResponse(
-            stage="ask",
-            intent="desconocido",
-            confidence=0.3,
+            stage="ask", intent="desconocido", confidence=0.4,
             message="¡Hola! Cuéntame qué necesitas: fichar, parada, vacaciones…",
         )
-    # Fallback cuando Ollama no está disponible
+
+    # Sin match → desconocido, confidence baja para que Ollama lo intente
     return OllamaIntentResponse(
-        stage="ask",
-        intent="desconocido",
-        confidence=0.1,
-        message="",
+        stage="ask", intent="desconocido", confidence=0.1, message="",
     )
+
+
+# ---------------------------------------------------------------------------
+# Confirmación / negación (para flujo sí/no)
+# ---------------------------------------------------------------------------
+_RE_AFFIRMATIVE = re.compile(
+    r"\b("
+    r"si|s[ií]|yes|vale|ok|okey|claro|confirmo|confirmar|de\s+acuerdo|"
+    r"adelante|venga|dale|perfecto|correcto|afirmativo|hecho|"
+    r"por\s+supuesto|obvio|exacto|as[ií]\s+es|eso\s+es"
+    r")\b",
+    re.IGNORECASE,
+)
+_RE_NEGATIVE = re.compile(
+    r"\b("
+    r"no|nop|nope|negativo|cancelar|cancela|mejor\s+no|"
+    r"no\s+gracias|deja|dejalo|d[eé]jalo|para|para\s+ya"
+    r")\b",
+    re.IGNORECASE,
+)
 
 
 def is_affirmative_reply(text: str) -> bool:

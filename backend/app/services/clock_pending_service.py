@@ -7,7 +7,6 @@ from uuid import UUID
 
 from sqlmodel import Session
 
-from app.models.models import ClockInType
 from app.models.project import ClockPendingFichaje
 
 
@@ -19,7 +18,7 @@ def set_pending(
     session: Session,
     *,
     employee_id: UUID,
-    record_type: ClockInType,
+    record_type: str,
     latitude: float | None = None,
     longitude: float | None = None,
     whatsapp_message_id: str | None = None,
@@ -28,7 +27,7 @@ def set_pending(
 ) -> ClockPendingFichaje:
     row = session.get(ClockPendingFichaje, employee_id)
     if row:
-        row.record_type = record_type.value
+        row.record_type = record_type if isinstance(record_type, str) else record_type.value
         row.latitude = latitude
         row.longitude = longitude
         row.whatsapp_message_id = whatsapp_message_id
@@ -38,7 +37,7 @@ def set_pending(
     else:
         row = ClockPendingFichaje(
             employee_id=employee_id,
-            record_type=record_type.value,
+            record_type=record_type if isinstance(record_type, str) else record_type.value,
             latitude=latitude,
             longitude=longitude,
             whatsapp_message_id=whatsapp_message_id,

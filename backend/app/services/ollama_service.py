@@ -9,7 +9,7 @@ import httpx
 from sqlmodel import Session
 
 from app.config import get_settings
-from app.models.models import BreakType, ClockInType, Employee
+from app.models.models import BreakType, Employee
 from app.services.break_service import BreakService
 from app.models.tenant import Tenant
 from app.models.clock_settings import ClockSettings
@@ -93,7 +93,8 @@ class OllamaService:
             infer_break=infer_break,
         )
 
-        # Siempre pasar por Ollama: el historial + contexto determinan la intención
+        # IA como decisor: DeepSeek si hay API key configurada, Ollama local si no.
+        cfg = get_settings()
         try:
             history = []
             if self._session and employee and self._tenant_id:
@@ -103,17 +104,38 @@ class OllamaService:
                     employee.id,
                     exclude_last_user_content=message_text.strip(),
                 )
-            intent, prompt_tokens, completion_tokens = await self._call_ollama(
-                message_text,
-                employee=employee,
-                tenant=tenant,
-                clock_settings=clock_settings,
-                history=history,
-                nlu_hint=None,
-            )
+            if cfg.deepseek_api_key:
+                intent, prompt_tokens, completion_tokens = await self._call_openai_compatible(
+                    message_text,
+                    api_key=cfg.deepseek_api_key,
+                    base_url=cfg.deepseek_base_url,
+                    model=cfg.deepseek_model,
+                    employee=employee,
+                    tenant=tenant,
+                    clock_settings=clock_settings,
+                    history=history,
+                )
+            else:
+                intent, prompt_tokens, completion_tokens = await self._call_ollama(
+                    message_text,
+                    employee=employee,
+                    tenant=tenant,
+                    clock_settings=clock_settings,
+                    history=history,
+                    nlu_hint=None,
+                )
         except Exception:
             success = False
-            # Solo si Ollama falla (red, timeout) usar respaldo por reglas
+            # Respaldo solo si la IA falla por causas técnicas (red/timeout).
+            intent = keyword_rescue
+
+        # Si Ollama duda (desconocido o confianza baja) pero el keyword match es preciso,
+        # confiar en el keyword — modelos pequeños son poco fiables en frases simples.
+        if (
+            (intent.intent == "desconocido" or intent.confidence < 0.5)
+            and keyword_rescue.confidence >= 0.7
+            and keyword_rescue.intent != "desconocido"
+        ):
             intent = keyword_rescue
 
         if allowed and intent.intent not in allowed and intent.intent != "desconocido":
@@ -128,8 +150,8 @@ class OllamaService:
                 tenant_id=self._tenant_id,
                 profile_key=self.profile_key,
                 action_code=intent.intent,
-                source="whatsapp" if success else "whatsapp_keyword",
-                model=self._model,
+                source="whatsapp_ai" if success else "whatsapp_fallback",
+                model=cfg.deepseek_model if (success and cfg.deepseek_api_key) else self._model,
                 prompt_tokens=prompt_tokens,
                 completion_tokens=completion_tokens,
                 duration_ms=duration_ms,
@@ -149,7 +171,7 @@ class OllamaService:
             last = ClockService(self._session, self._tenant_id).get_last_clock(
                 employee.id
             )
-            if last and last.record_type == ClockInType.ENTRADA:
+            if last and last.salida_at is None:
                 return "fichar_salida"
             return "fichar_entrada"
 
@@ -210,6 +232,55 @@ class OllamaService:
         content = data.get("message", {}).get("content", "{}")
         prompt_tokens = int(data.get("prompt_eval_count") or 0)
         completion_tokens = int(data.get("eval_count") or 0)
+        parsed = self._parse_json_content(content)
+        return OllamaIntentResponse.model_validate(parsed), prompt_tokens, completion_tokens
+
+    async def _call_openai_compatible(
+        self,
+        message_text: str,
+        *,
+        api_key: str,
+        base_url: str,
+        model: str,
+        employee: Employee | None = None,
+        tenant: Tenant | None = None,
+        clock_settings: ClockSettings | None = None,
+        history: list[dict[str, str]] | None = None,
+    ) -> tuple[OllamaIntentResponse, int, int]:
+        messages: list[dict[str, str]] = [
+            {
+                "role": "system",
+                "content": self._system_prompt(employee, tenant, clock_settings),
+            },
+        ]
+        if history:
+            messages.extend(history)
+        messages.append({"role": "user", "content": message_text.strip()})
+
+        payload = {
+            "model": model,
+            "stream": False,
+            "response_format": {"type": "json_object"},
+            "messages": messages,
+            "temperature": 0.25,
+            "top_p": 0.9,
+        }
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                f"{base_url.rstrip('/')}/v1/chat/completions",
+                json=payload,
+                headers=headers,
+            )
+            response.raise_for_status()
+            data = response.json()
+        content = data.get("choices", [{}])[0].get("message", {}).get("content", "{}")
+        usage = data.get("usage", {})
+        prompt_tokens = int(usage.get("prompt_tokens") or 0)
+        completion_tokens = int(usage.get("completion_tokens") or 0)
         parsed = self._parse_json_content(content)
         return OllamaIntentResponse.model_validate(parsed), prompt_tokens, completion_tokens
 

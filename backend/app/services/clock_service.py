@@ -3,7 +3,7 @@ from uuid import UUID
 
 from sqlmodel import Session, select
 
-from app.models.models import ClockIn, ClockInType, Employee
+from app.models.models import ClockIn, Employee
 from app.models.tenant import Company
 from app.services.clock_incident_hook import process_clock_in_incidents
 
@@ -38,10 +38,25 @@ class ClockService:
                 return emp
         return None
 
-    def register_clock(
+    def get_open_clock(self, employee_id: UUID) -> ClockIn | None:
+        """Jornada abierta: entrada sin salida."""
+        return self._session.exec(
+            select(ClockIn)
+            .where(ClockIn.employee_id == employee_id, ClockIn.salida_at == None)  # noqa: E711
+            .order_by(ClockIn.entrada_at.desc())  # type: ignore[attr-defined]
+        ).first()
+
+    def get_last_clock(self, employee_id: UUID) -> ClockIn | None:
+        """Último registro de jornada (abierto o cerrado)."""
+        return self._session.exec(
+            select(ClockIn)
+            .where(ClockIn.employee_id == employee_id)
+            .order_by(ClockIn.entrada_at.desc())  # type: ignore[attr-defined]
+        ).first()
+
+    def open_clock(
         self,
         employee_id: UUID,
-        record_type: ClockInType,
         latitude: float | None = None,
         longitude: float | None = None,
         whatsapp_message_id: str | None = None,
@@ -52,8 +67,7 @@ class ClockService:
     ) -> ClockIn:
         record = ClockIn(
             employee_id=employee_id,
-            record_type=record_type,
-            recorded_at=datetime.utcnow(),
+            entrada_at=datetime.utcnow(),
             latitude=latitude,
             longitude=longitude,
             whatsapp_message_id=whatsapp_message_id,
@@ -79,10 +93,27 @@ class ClockService:
                 )
         return record
 
-    def get_last_clock(self, employee_id: UUID) -> ClockIn | None:
-        statement = (
-            select(ClockIn)
-            .where(ClockIn.employee_id == employee_id)
-            .order_by(ClockIn.recorded_at.desc())  # type: ignore[attr-defined]
-        )
-        return self._session.exec(statement).first()
+    def close_clock(
+        self,
+        employee_id: UUID,
+        work_summary: str | None = None,
+        whatsapp_message_id: str | None = None,
+        *,
+        commit: bool = True,
+    ) -> ClockIn | None:
+        """Cierra la jornada abierta. Devuelve None si no hay jornada abierta."""
+        record = self.get_open_clock(employee_id)
+        if not record:
+            return None
+        record.salida_at = datetime.utcnow()
+        if work_summary:
+            record.work_summary = work_summary
+        if whatsapp_message_id:
+            record.whatsapp_message_id = whatsapp_message_id
+        self._session.add(record)
+        if commit:
+            self._session.commit()
+            self._session.refresh(record)
+        else:
+            self._session.flush()
+        return record
