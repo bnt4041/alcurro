@@ -395,6 +395,22 @@ class WebhookService:
             return {"ok": True, "action": "media_no_path"}
 
         path = Path(path_str)
+        # goWA puede enviar solo el nombre del archivo (sin ruta) o ruta completa
+        if not path.is_file():
+            # Intentar en el directorio de storages de goWA (volumen compartido)
+            alt_path = Path("/app/storages") / path.name
+            if alt_path.is_file():
+                path = alt_path
+        if not path.is_file():
+            # Intentar descargar desde goWA vía HTTP (statics/media/)
+            data = await self._gowa.download_media(path_str)
+            if data:
+                # Guardar el archivo descargado en uploads para procesarlo
+                from app.services.document_service import store_upload_file
+                UPLOAD_DIR = Path("/app/uploads")
+                filename = message.file_name or path.name
+                saved_path, _ = store_upload_file(UPLOAD_DIR, filename, data)
+                path = Path(saved_path)
         if not path.is_file():
             reply = (
                 "Archivo no disponible en el servidor. "
@@ -447,20 +463,51 @@ class WebhookService:
                 pass
             return {"ok": True, "action": "inbound_pick_document"}
 
-        ok, reply = receive_inbound_file(
+        if len(file_pending) == 1:
+            ok, reply = receive_inbound_file(
+                self._session,
+                employee,
+                tenant_id=self._tenant_id,
+                file_bytes=file_bytes,
+                filename=filename,
+                document_code=file_pending[0].document_code,
+            )
+            self._session.commit()
+            try:
+                await self._gowa.send_text(phone, reply)
+            except Exception:
+                pass
+            return {"ok": ok, "action": "inbound_document" if ok else "inbound_rejected"}
+
+        # ── NO hay documentos pendientes: preguntar si es incidencia o permiso ──
+        set_pending_upload(
             self._session,
-            employee,
-            tenant_id=self._tenant_id,
+            employee_id=employee.id,
             file_bytes=file_bytes,
             filename=filename,
-            document_code=file_pending[0].document_code if len(file_pending) == 1 else None,
+            whatsapp_message_id=message.id,
+        )
+        set_pending(
+            self._session,
+            employee_id=employee.id,
+            record_type="media",
+            whatsapp_message_id=message.id,
+            pending_confirmation=False,
+            pending_intent="media_classify",
+        )
+        reply = (
+            f"📎 He recibido tu archivo *{filename}*.\n\n"
+            "¿Para qué es?\n"
+            "1️⃣ *Incidencia* — reportar un problema, retraso, avería…\n"
+            "2️⃣ *Permiso* — solicitar vacaciones, días libres, baja…\n\n"
+            "Responde *1* o *2*, o escribe _incidencia_ o _permiso_."
         )
         self._session.commit()
         try:
             await self._gowa.send_text(phone, reply)
         except Exception:
             pass
-        return {"ok": ok, "action": "inbound_document" if ok else "inbound_rejected"}
+        return {"ok": True, "action": "media_classify"}
 
     async def _handle_text(
         self,
@@ -504,6 +551,13 @@ class WebhookService:
             except Exception:
                 pass
             return {"ok": True, "action": "debug_prompt"}
+
+        # 0. Flujo de clasificación de archivo multimedia (incidencia / permiso)
+        pending = get_pending(self._session, employee.id)
+        if pending and pending.pending_intent and pending.pending_intent.startswith("media_"):
+            return await self._handle_media_classification(
+                employee, phone, text, message_id, pending
+            )
 
         # 1. Pendiente de subir documento
         upload_pending = get_pending_upload(self._session, employee.id)
@@ -864,6 +918,301 @@ class WebhookService:
         except Exception:
             pass
         return {"ok": True, "action": "inbound_document_assigned"}
+
+    async def _handle_media_classification(
+        self,
+        employee: Employee,
+        phone: str,
+        text: str,
+        message_id: str | None,
+        pending,
+    ) -> dict:
+        """Flujo: archivo recibido sin docs pendientes → ¿incidencia o permiso? → crear."""
+        from app.services.incident_service import create_incident
+        from app.services.inbound_pending_service import clear_pending_upload, get_pending_upload
+        from app.services.document_service import create_delivery, store_upload_file
+        from pathlib import Path as _Path
+
+        UPLOAD_DIR = _Path("/app/uploads")
+        intent = pending.pending_intent
+        t = text.strip().lower()
+
+        # Registrar mensaje del usuario en el historial
+        append_message(
+            self._session,
+            tenant_id=self._tenant_id,
+            employee_id=employee.id,
+            role="user",
+            content=text,
+        )
+
+        if intent == "media_classify":
+            # Paso 1: ¿incidencia o permiso?
+            if t in ("cancelar", "cancel", "no", "nada"):
+                clear_pending_upload(self._session, employee.id)
+                clear_pending(self._session, employee.id)
+                self._session.commit()
+                reply = "👍 De acuerdo, he descartado el archivo. Si necesitas algo más, aquí estoy."
+                try:
+                    await self._gowa.send_text(phone, reply)
+                except Exception:
+                    pass
+                return {"ok": True, "action": "media_cancelled"}
+            if t in ("1", "incidencia", "reportar", "reportar incidencia", "problema", "avería", "retraso"):
+                set_pending(
+                    self._session,
+                    employee_id=employee.id,
+                    record_type="media",
+                    pending_intent="media_incidencia_title",
+                )
+                reply = (
+                    "✍️ Describe la incidencia en una frase:\n"
+                    "ej: _Llegada tarde por tráfico_, _Avería en el vehículo_, _Error en el fichaje_…"
+                )
+            elif t in ("2", "permiso", "solicitar permiso", "baja", "vacaciones", "días libres", "dias libres"):
+                set_pending(
+                    self._session,
+                    employee_id=employee.id,
+                    record_type="media",
+                    pending_intent="media_permiso_dates",
+                )
+                reply = (
+                    "📅 Indica las fechas del permiso.\n"
+                    "ej: _del 5 al 10 de junio_ o _10/06 - 15/06_"
+                )
+            else:
+                reply = "No he entendido. Responde *1* para incidencia o *2* para permiso."
+
+            self._session.commit()
+            try:
+                await self._gowa.send_text(phone, reply)
+            except Exception:
+                pass
+            return {"ok": True, "action": intent}
+
+        elif intent == "media_incidencia_title":
+            # Paso 2: crear incidencia con el archivo adjunto
+            upload = get_pending_upload(self._session, employee.id)
+            title = text.strip()[:300] or "Incidencia reportada por WhatsApp"
+
+            # Mover archivo de pending a uploads definitivo
+            doc_path = None
+            doc_name = None
+            if upload and _Path(upload.file_path).is_file():
+                data = _Path(upload.file_path).read_bytes()
+                doc_path, doc_name = store_upload_file(UPLOAD_DIR, upload.filename, data)
+
+            incident = create_incident(
+                self._session,
+                tenant_id=self._tenant_id,
+                employee_id=employee.id,
+                category="fichaje",
+                incident_type="manual",
+                title=title,
+                description=f"Archivo adjunto: {doc_name or upload.filename if upload else 'N/A'}",
+                source="whatsapp",
+            )
+
+            # Vincular archivo como document_delivery
+            if doc_path and doc_name:
+                create_delivery(
+                    self._session,
+                    tenant_id=self._tenant_id,
+                    company_id=None,
+                    employee_id=employee.id,
+                    document_type_id=None,
+                    document_type_code="otro",
+                    file_path=doc_path,
+                    file_name=doc_name,
+                    title=f"Incidencia: {title}",
+                    requires_acknowledgment=False,
+                )
+
+            clear_pending_upload(self._session, employee.id)
+            clear_pending(self._session, employee.id)
+            self._session.commit()
+
+            reply = f"✅ Incidencia registrada: *{incident.title}*\nPuedes consultarla en el panel de RRHH."
+            try:
+                await self._gowa.send_text(phone, reply)
+            except Exception:
+                pass
+            return {"ok": True, "action": "media_incidencia_created"}
+
+        elif intent == "media_permiso_dates":
+            # Paso 2: parsear fechas y crear solicitud de permiso
+            from datetime import date as _date
+            from app.models.models import LeaveRequest
+
+            upload = get_pending_upload(self._session, employee.id)
+            start_date, end_date = self._parse_leave_dates(text)
+
+            if not start_date or not end_date:
+                reply = (
+                    "No he podido entender las fechas. Intenta de nuevo:\n"
+                    "ej: _del 5 al 10 de junio_ o _10/06/2025 - 15/06/2025_"
+                )
+                self._session.commit()
+                try:
+                    await self._gowa.send_text(phone, reply)
+                except Exception:
+                    pass
+                return {"ok": True, "action": "media_permiso_dates_retry"}
+
+            days = self._leave.count_business_days(start_date, end_date)
+
+            # Mover archivo de pending a uploads definitivo
+            doc_path = None
+            doc_name = None
+            if upload and _Path(upload.file_path).is_file():
+                data = _Path(upload.file_path).read_bytes()
+                doc_path, doc_name = store_upload_file(UPLOAD_DIR, upload.filename, data)
+
+            leave_req = LeaveRequest(
+                employee_id=employee.id,
+                start_date=start_date,
+                end_date=end_date,
+                days_requested=days,
+                status="pending",
+                reason=f"Solicitado por WhatsApp. Archivo: {doc_name or upload.filename if upload else 'N/A'}",
+                supervisor_id=employee.supervisor_id,
+                raw_message=text,
+            )
+            self._session.add(leave_req)
+            self._session.flush()
+
+            if doc_path and doc_name:
+                create_delivery(
+                    self._session,
+                    tenant_id=self._tenant_id,
+                    company_id=None,
+                    employee_id=employee.id,
+                    document_type_id=None,
+                    document_type_code="otro",
+                    file_path=doc_path,
+                    file_name=doc_name,
+                    title=f"Permiso: {start_date} → {end_date}",
+                    requires_acknowledgment=False,
+                )
+
+            clear_pending_upload(self._session, employee.id)
+            clear_pending(self._session, employee.id)
+            self._session.commit()
+
+            reply = (
+                f"✅ Permiso registrado: *{start_date} → {end_date}* ({days:.1f} días).\n"
+                "Pendiente de aprobación por tu supervisor."
+            )
+            try:
+                await self._gowa.send_text(phone, reply)
+            except Exception:
+                pass
+            return {"ok": True, "action": "media_permiso_created"}
+
+        # fallback
+        return {"ok": True, "action": "media_unknown"}
+
+    @staticmethod
+    def _parse_leave_dates(text: str) -> tuple:
+        """Intenta extraer fecha inicio y fecha fin de un texto en español."""
+        from datetime import date as _date, timedelta
+        import re as _re
+
+        t = text.strip()
+
+        # Patrones tipo "del X al Y de mes" o "X - Y" o "X/Y/Z - A/B/C"
+        # dd/mm/aaaa o dd/mm/aa
+        date_pattern = r"(\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?)"
+        dates = _re.findall(date_pattern, t)
+        if len(dates) >= 2:
+            d1 = _parse_date_flex(dates[0])
+            d2 = _parse_date_flex(dates[1])
+            if d1 and d2:
+                return (d1, d2) if d1 <= d2 else (d2, d1)
+
+        # Patrón "del X al Y de mes"
+        meses = {
+            "enero": 1, "febrero": 2, "marzo": 3, "abril": 4, "mayo": 5, "junio": 6,
+            "julio": 7, "agosto": 8, "septiembre": 9, "octubre": 10, "noviembre": 11, "diciembre": 12,
+            "ene": 1, "feb": 2, "mar": 3, "abr": 4, "may": 5, "jun": 6,
+            "jul": 7, "ago": 8, "sep": 9, "oct": 10, "nov": 11, "dic": 12,
+        }
+        range_pattern = r"del\s+(\d{1,2})\s+al\s+(\d{1,2})\s+de\s+(\w+)"
+        m = _re.search(range_pattern, t, _re.IGNORECASE)
+        if m:
+            d1 = int(m.group(1))
+            d2 = int(m.group(2))
+            mes_key = m.group(3).lower().rstrip("s")
+            mes = meses.get(mes_key)
+            if mes:
+                year = _date.today().year
+                # Si el mes ya pasó, asumir próximo año
+                today = _date.today()
+                d1_date = _date(year, mes, d1)
+                if d1_date < today:
+                    d1_date = _date(year + 1, mes, d1)
+                d2_date = _date(d1_date.year, mes, d2)
+                if d2_date < d1_date:
+                    d2_date = _date(d1_date.year + 1, mes, d2)
+                return (d1_date, d2_date) if d1_date <= d2_date else (d2_date, d1_date)
+
+        # Un solo día: "mañana", "hoy", "el 10 de junio"
+        single_day = _parse_date_flex(t)
+        if single_day:
+            return (single_day, single_day + timedelta(days=1))
+
+        return (None, None)
+
+
+def _parse_date_flex(raw: str):
+    """Parsea una fecha en múltiples formatos. Retorna date o None."""
+    from datetime import date as _date, timedelta
+    import re as _re
+
+    raw = raw.strip().lower()
+    today = _date.today()
+
+    if raw in ("hoy", "today"):
+        return today
+    if raw in ("mañana", "manana", "tomorrow"):
+        return today + timedelta(days=1)
+    if raw in ("pasado mañana", "pasado manana"):
+        return today + timedelta(days=2)
+
+    # dd/mm/yyyy, dd/mm/yy, dd-mm-yyyy
+    for sep in ("/", "-"):
+        parts = raw.split(sep)
+        if len(parts) == 3:
+            try:
+                d = int(parts[0])
+                m = int(parts[1])
+                y = int(parts[2])
+                if y < 100:
+                    y += 2000
+                return _date(y, m, d)
+            except (ValueError, TypeError):
+                pass
+
+    # dd de mes
+    meses = {
+        "enero": 1, "febrero": 2, "marzo": 3, "abril": 4, "mayo": 5, "junio": 6,
+        "julio": 7, "agosto": 8, "septiembre": 9, "octubre": 10, "noviembre": 11, "diciembre": 12,
+        "ene": 1, "feb": 2, "mar": 3, "abr": 4, "may": 5, "jun": 6,
+        "jul": 7, "ago": 8, "sep": 9, "oct": 10, "nov": 11, "dic": 12,
+    }
+    m = _re.match(r"(\d{1,2})\s+de\s+(\w+)", raw)
+    if m:
+        d = int(m.group(1))
+        mes_key = m.group(2).lower().rstrip("s")
+        mes = meses.get(mes_key)
+        if mes:
+            year = today.year
+            result = _date(year, mes, d)
+            if result < today:
+                result = _date(year + 1, mes, d)
+            return result
+
+    return None
 
     async def _execute_intent(
         self,

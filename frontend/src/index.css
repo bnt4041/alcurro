@@ -480,11 +480,65 @@ tbody tr:nth-child(even):hover td {
 
 .btn-icon {
   background: none;
-  border: none;
+  border: 1px solid transparent;
   color: var(--muted);
-  font-size: 1.5rem;
   cursor: pointer;
   line-height: 1;
+  padding: 0.35rem;
+  border-radius: 6px;
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  min-height: 28px;
+  vertical-align: middle;
+}
+
+.btn-icon svg {
+  display: block;
+  opacity: .65;
+  transition: opacity 0.15s ease;
+}
+
+.btn-icon:hover {
+  background: var(--c-bg-muted);
+  border-color: var(--c-border);
+  color: var(--c-text);
+}
+
+.btn-icon:hover svg {
+  opacity: 1;
+}
+
+.btn-icon.btn-danger {
+  color: var(--danger);
+}
+
+.btn-icon.btn-danger:hover {
+  background: var(--danger);
+  color: #fff;
+  border-color: var(--danger);
+}
+
+.btn-icon.btn-primary {
+  color: var(--primary);
+}
+
+.btn-icon.btn-primary:hover {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+}
+
+.btn-icon.btn-success {
+  color: var(--success, #16a34a);
+}
+
+.btn-icon.btn-success:hover {
+  background: var(--success, #16a34a);
+  color: #fff;
+  border-color: var(--success, #16a34a);
 }
 
 .badge {

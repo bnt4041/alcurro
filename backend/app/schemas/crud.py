@@ -2,7 +2,7 @@ from datetime import date, datetime, time
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.models.models import (
     LeaveStatus,
@@ -109,7 +109,15 @@ class EmployeeRead(BaseModel):
     supervisor_id: UUID | None = None
     vacation_days_balance: float
     is_active: bool
+    avatar_delivery_id: UUID | None = None
+    avatar_url: str | None = None
     shift_configuration_id: UUID | None = None
+
+    @model_validator(mode="after")
+    def set_avatar_url(self) -> "EmployeeRead":
+        if self.avatar_delivery_id and not self.avatar_url:
+            self.avatar_url = f"/api/employees/{self.id}/avatar"
+        return self
     work_start_time: time | None = None
     work_end_time: time | None = None
     work_days: list[int] = Field(default_factory=list)

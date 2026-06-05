@@ -35,6 +35,8 @@ export interface Employee {
   supervisor_id: string | null;
   vacation_days_balance: number;
   is_active: boolean;
+  avatar_delivery_id: string | null;
+  avatar_url: string | null;
   shift_configuration_id: string | null;
   work_start_time: string | null;
   work_end_time: string | null;

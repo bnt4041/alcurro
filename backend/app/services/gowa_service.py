@@ -90,3 +90,35 @@ class GoWAService:
             if response.content:
                 return response.json()
             return {"ok": True}
+
+    async def download_media(self, media_path: str) -> bytes | None:
+        """Descarga un archivo multimedia desde goWA vía HTTP.
+        
+        goWA sirve archivos en /statics/media/{filename}.
+        media_path puede ser ruta completa (/app/statics/media/xxx.jpeg) o solo nombre.
+        """
+        from pathlib import Path
+        import re
+
+        # Extraer el nombre del archivo
+        filename = Path(media_path).name
+
+        # Construir URL base de goWA desde self._send_url
+        if not self._send_url:
+            return None
+        # self._send_url es como http://gowa:3000/send/message
+        base = re.sub(r"/send/message$", "", self._send_url)
+        url = f"{base}/statics/media/{filename}"
+
+        headers = {}
+        if self._basic_auth and ":" in self._basic_auth:
+            token = base64.b64encode(self._basic_auth.encode()).decode()
+            headers["Authorization"] = f"Basic {token}"
+
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.get(url, headers=headers)
+                response.raise_for_status()
+                return response.content
+        except Exception:
+            return None

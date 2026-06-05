@@ -322,6 +322,26 @@ def get_employee(
     return row
 
 
+def public_employee_avatar(
+    employee_id: UUID,
+    session: Session = Depends(get_session),
+):
+    """Avatar público (sin auth) para usar en etiquetas <img>."""
+    from pathlib import Path as _Path
+    from fastapi.responses import FileResponse
+    from app.models.documents import DocumentDelivery
+
+    row = session.get(Employee, employee_id)
+    if not row or not row.avatar_delivery_id:
+        raise HTTPException(status_code=404, detail="Sin avatar")
+
+    doc = session.get(DocumentDelivery, row.avatar_delivery_id)
+    if not doc or not _Path(doc.file_path).is_file():
+        raise HTTPException(status_code=404, detail="Archivo no encontrado")
+
+    return FileResponse(doc.file_path, media_type="image/jpeg")
+
+
 @router.post("", response_model=EmployeeRead, status_code=201)
 def create_employee(
     data: EmployeeCreate,

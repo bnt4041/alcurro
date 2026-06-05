@@ -350,6 +350,7 @@ export default function DocumentsPage() {
     tags_label: string;
     expiry_label: string;
     wa_ack_label: string;
+    is_image: boolean;
   };
 
   const docTableData = useMemo<DocRow[]>(
@@ -379,6 +380,7 @@ export default function DocumentsPage() {
           tags_label: tagsHtml,
           expiry_label: `${expiry}${expiredBadge}`,
           wa_ack_label: `WA: ${d.sent_at ? new Date(d.sent_at).toLocaleString("es-ES") : "No"} · Acuse: ${d.acknowledged_at ? new Date(d.acknowledged_at).toLocaleString("es-ES") : "Pendiente"}`,
+          is_image: /\.(jpe?g|png|gif|webp|svg|bmp)$/i.test(d.file_name ?? ""),
         };
       }),
     [rows, byId]
@@ -386,6 +388,21 @@ export default function DocumentsPage() {
 
   const docColumns = useMemo<DataTableColumn<DocRow>[]>(() => {
     const cols: DataTableColumn<DocRow>[] = [
+      {
+        title: "",
+        field: "file_name",
+        headerFilter: false,
+        sorter: false,
+        download: false,
+        width: 44,
+        formatter: (cell) => {
+          const r = cell.getRow().getData() as DocRow;
+          const url = `/api/documents/${r.id}/preview`;
+          return r.is_image
+            ? `<img src="${url}" alt="prev" style="width:34px;height:34px;object-fit:cover;border-radius:4px;" loading="lazy" />`
+            : `<span style="font-size:16px;opacity:.35;">📄</span>`;
+        },
+      },
       {
         title: "Archivo",
         field: "file_name",

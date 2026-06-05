@@ -45,6 +45,22 @@ api_router.include_router(platform_stripe.router)
 api_router.include_router(platform_whatsapp.router)
 api_router.include_router(platform_mail.router)
 api_router.include_router(platform_ai.router)
+
+# Vista previa pública de documentos (imágenes) — sin autenticación
+api_router.add_api_route(
+    "/documents/{doc_id}/preview",
+    documents.preview_document,
+    methods=["GET"],
+    tags=["documents"],
+)
+
+# Avatar público del empleado — sin autenticación (usado en <img>)
+api_router.add_api_route(
+    "/employees/{employee_id}/avatar",
+    employees.public_employee_avatar,
+    methods=["GET"],
+    tags=["employees"],
+)
 api_router.add_api_route(
     "/tenants/public/{slug}/branding",
     tenants.public_branding,

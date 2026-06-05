@@ -125,6 +125,9 @@ class Employee(SQLModel, table=True):
     vacation_days_balance: float = Field(default=22.0, ge=0)
     is_active: bool = Field(default=True)
     password_hash: str | None = Field(default=None, max_length=255)
+    avatar_delivery_id: UUID | None = Field(
+        default=None, foreign_key="document_deliveries.id", index=True
+    )
     shift_configuration_id: UUID | None = Field(
         default=None, foreign_key="shift_configurations.id", index=True
     )

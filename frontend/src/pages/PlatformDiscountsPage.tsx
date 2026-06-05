@@ -204,12 +204,12 @@ export default function PlatformDiscountsPage() {
         field: "id",
         headerFilter: false,
         download: false,
-        width: 220,
+        width: 110,
         formatter: () =>
           tableActionButtons([
             { id: "toggle", label: "Activar/Desactivar" },
             { id: "edit", label: "Editar" },
-            { id: "delete", label: "Eliminar" },
+            { id: "delete", label: "Eliminar", className: "btn-danger" },
           ]),
       },
     ],

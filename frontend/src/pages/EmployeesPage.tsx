@@ -176,6 +176,20 @@ export default function EmployeesPage() {
   const employeeColumns = useMemo<DataTableColumn<EmployeeTableRow>[]>(() => {
     const cols: DataTableColumn<EmployeeTableRow>[] = [
       {
+        title: "",
+        field: "avatar_url",
+        headerFilter: false,
+        sorter: false,
+        download: false,
+        width: 44,
+        formatter: (c) => {
+          const url = c.getValue() as string | null;
+          return url
+            ? `<img src="${url}" alt="" style="width:32px;height:32px;border-radius:50%;object-fit:cover;" />`
+            : `<span style="display:inline-block;width:32px;height:32px;border-radius:50%;background:var(--c-bg-muted);text-align:center;line-height:32px;font-size:14px;opacity:.5;">👤</span>`;
+        },
+      },
+      {
         title: "Código",
         field: "employee_code",
         headerFilter: "input",
@@ -710,6 +724,18 @@ export default function EmployeesPage() {
               className="form-grid employee-modal-form modal-form-scroll"
             >
               {error && <div className="alert alert-error form-grid-full">{error}</div>}
+              {editing?.avatar_url && (
+                <div className="form-grid-full" style={{ textAlign: "center", marginBottom: "0.5rem" }}>
+                  <img
+                    src={editing.avatar_url}
+                    alt={editing.full_name}
+                    style={{
+                      width: 80, height: 80, borderRadius: "50%",
+                      objectFit: "cover", border: "2px solid var(--c-border)"
+                    }}
+                  />
+                </div>
+              )}
               {editing && (
             <label>
               Código (automático)

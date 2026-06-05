@@ -88,6 +88,23 @@ export default function EmployeeProfileTabs({
 
   const deliveryColumns = useMemo<DataTableColumn<Record<string, unknown>>[]>(
     () => [
+      {
+        title: "",
+        field: "file_name",
+        headerFilter: false,
+        sorter: false,
+        download: false,
+        width: 50,
+        formatter: (cell) => {
+          const d = cell.getRow().getData() as Record<string, unknown>;
+          const isImg = d.is_image as boolean;
+          const docId = d.id as string;
+          const url = `/api/documents/${docId}/preview`;
+          return isImg
+            ? `<img src="${url}" alt="prev" style="width:36px;height:36px;object-fit:cover;border-radius:4px;" loading="lazy" />`
+            : `<span style="font-size:18px;opacity:.4;">📄</span>`;
+        },
+      },
       { title: "Título", field: "title_label", headerFilter: "input" },
       { title: "Tipo", field: "type_label", headerFilter: "input" },
       { title: "Caducidad", field: "expires_label", headerFilter: "input" },
@@ -281,6 +298,7 @@ export default function EmployeeProfileTabs({
                   expires_label: d.expires_at
                     ? new Date(d.expires_at).toLocaleDateString("es-ES")
                     : "—",
+                  is_image: /\.(jpe?g|png|gif|webp|svg|bmp)$/i.test(d.file_name ?? ""),
                 }))}
                 columns={deliveryColumns}
                 exportFilename="documentos_empleado"

@@ -522,7 +522,41 @@ def download_document(
     path = Path(row.file_path)
     if not path.is_file():
         raise HTTPException(status_code=404, detail="Archivo no encontrado en disco")
-    return FileResponse(path, filename=row.file_name, media_type="application/octet-stream")
+    # Detectar MIME type por extensión para que imágenes se muestren en <img>
+    ext = path.suffix.lower()
+    mime_map = {
+        ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+        ".png": "image/png", ".gif": "image/gif",
+        ".webp": "image/webp", ".svg": "image/svg+xml",
+        ".bmp": "image/bmp", ".ico": "image/x-icon",
+        ".pdf": "application/pdf",
+    }
+    media_type = mime_map.get(ext, "application/octet-stream")
+    return FileResponse(path, filename=row.file_name, media_type=media_type)
+
+
+def preview_document(
+    doc_id: UUID,
+    session: Session = Depends(get_session),
+) -> FileResponse:
+    """Vista previa pública de imagen (usable en <img> sin auth)."""
+    row = session.get(DocumentDelivery, doc_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Documento no encontrado")
+    path = Path(row.file_path)
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="Archivo no encontrado en disco")
+    ext = path.suffix.lower()
+    mime_map = {
+        ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+        ".png": "image/png", ".gif": "image/gif",
+        ".webp": "image/webp", ".svg": "image/svg+xml",
+        ".bmp": "image/bmp",
+    }
+    media_type = mime_map.get(ext)
+    if not media_type:
+        raise HTTPException(status_code=404, detail="No disponible como vista previa")
+    return FileResponse(path, media_type=media_type)
 
 
 @router.get("/{doc_id}", response_model=DocumentDeliveryRead)

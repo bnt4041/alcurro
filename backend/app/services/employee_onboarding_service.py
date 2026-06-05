@@ -291,6 +291,13 @@ def receive_inbound_file(
     session.add(target)
     session.flush()
 
+    # Si es la foto del empleado, asignarla como avatar
+    if target.document_code == "photo":
+        emp = session.get(Employee, employee.id)
+        if emp:
+            emp.avatar_delivery_id = delivery.id
+            session.flush()
+
     doc_name = inbound_name(session, target.document_code)
     remaining = len(pending_inbound_codes(session, employee.id))
     return True, format_inbound_received(doc_name, remaining)

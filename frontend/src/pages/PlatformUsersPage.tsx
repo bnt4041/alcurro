@@ -77,7 +77,7 @@ export default function PlatformUsersPage() {
         field: "id",
         headerFilter: false,
         download: false,
-        width: 200,
+        width: 90,
         formatter: () =>
           tableActionButtons([
             { id: "password", label: "Contraseña" },
