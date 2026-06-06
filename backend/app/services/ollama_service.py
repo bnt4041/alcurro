@@ -1,4 +1,5 @@
 import json
+import logging
 import re
 import time
 from collections.abc import Callable
@@ -7,6 +8,8 @@ from uuid import UUID
 
 import httpx
 from sqlmodel import Session
+
+logger = logging.getLogger(__name__)
 
 from app.config import get_settings
 from app.models.models import BreakType, Employee
@@ -124,8 +127,14 @@ class OllamaService:
                     history=history,
                     nlu_hint=None,
                 )
-        except Exception:
+        except Exception as exc:
             success = False
+            logger.warning(
+                "IA orquestador falló para tenant=%s msg=%r — usando fallback NLU: %s",
+                self._tenant_id,
+                message_text[:80],
+                exc,
+            )
             # Respaldo solo si la IA falla por causas técnicas (red/timeout).
             intent = keyword_rescue
 
@@ -282,6 +291,15 @@ class OllamaService:
         prompt_tokens = int(usage.get("prompt_tokens") or 0)
         completion_tokens = int(usage.get("completion_tokens") or 0)
         parsed = self._parse_json_content(content)
+        logger.debug(
+            "DeepSeek response: model=%s intent=%s stage=%s confidence=%s tokens=%s/%s",
+            model,
+            parsed.get("intent"),
+            parsed.get("stage"),
+            parsed.get("confidence"),
+            prompt_tokens,
+            completion_tokens,
+        )
         return OllamaIntentResponse.model_validate(parsed), prompt_tokens, completion_tokens
 
     # Intenciones que requieren confirmación → stage="confirm"

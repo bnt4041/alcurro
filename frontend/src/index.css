@@ -490,9 +490,11 @@ tbody tr:nth-child(even):hover td {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 0.35rem;
   min-width: 28px;
   min-height: 28px;
   vertical-align: middle;
+  font-size: 0.8rem;
 }
 
 .btn-icon svg {

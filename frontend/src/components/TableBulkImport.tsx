@@ -69,19 +69,23 @@ export default function TableBulkImport({
     <div className="table-bulk-import">
       <button
         type="button"
-        className="btn btn-sm"
+        className="btn btn-sm btn-icon"
         disabled={disabled}
         onClick={downloadTemplate}
+        title="Descargar plantilla Excel"
       >
-        Plantilla Excel
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        <span>Plantilla</span>
       </button>
       <button
         type="button"
-        className="btn btn-sm"
+        className="btn btn-sm btn-icon"
         disabled={disabled || running}
         onClick={() => inputRef.current?.click()}
+        title="Importar desde archivo"
       >
-        {running ? "Importando…" : "Importar"}
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        <span>{running ? "Importando…" : "Importar"}</span>
       </button>
       <input
         ref={inputRef}

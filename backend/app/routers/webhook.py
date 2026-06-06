@@ -1,4 +1,6 @@
 import hashlib
+import logging
+import traceback
 from typing import Any
 from uuid import UUID
 
@@ -8,6 +10,8 @@ from sqlmodel import Session, select
 
 from app.database import get_session
 from app.models.models import Employee
+
+logger = logging.getLogger(__name__)
 from app.models.tenant import Company, Tenant
 from app.schemas.whatsapp import GoWAWebhookPayload
 from app.services.webhook_service import WebhookService
@@ -109,6 +113,12 @@ async def whatsapp_webhook_tenant(
     try:
         return await _process_global(session, payload)
     except Exception as exc:
+        logger.error(
+            "Webhook tenant error: %s\nPayload: %s\n%s",
+            exc,
+            payload.model_dump_json(),
+            traceback.format_exc(),
+        )
         raise HTTPException(
             status_code=500,
             detail=f"Error procesando webhook: {exc}",
@@ -123,6 +133,12 @@ async def whatsapp_webhook(
     try:
         return await _process_global(session, payload)
     except Exception as exc:
+        logger.error(
+            "Webhook error: %s\nPayload: %s\n%s",
+            exc,
+            payload.model_dump_json(),
+            traceback.format_exc(),
+        )
         raise HTTPException(
             status_code=500,
             detail=f"Error procesando webhook: {exc}",

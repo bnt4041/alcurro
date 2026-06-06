@@ -609,6 +609,9 @@ class WebhookService:
         stage = intent_data.stage
         intent_code = intent_data.intent
         ollama_message = (intent_data.message or "").strip()
+        # Descartar el mensaje si la IA repite textualmente el input del usuario
+        if ollama_message and ollama_message.lower() == raw_text.strip().lower():
+            ollama_message = ""
 
         # Verificar permisos para la intención (excepto stage=ask que es solo conversación)
         if stage in ("confirm", "execute") and intent_code != "desconocido":
@@ -711,6 +714,46 @@ class WebhookService:
         if pending and pending.pending_confirmation:
             clear_pending(self._session, employee.id)
 
+        # Guard: detectar intent inconsistente con el estado real — solo informar, no ejecutar
+        is_open = self._is_open(employee.id)
+        if intent_code == "fichar_entrada" and is_open:
+            last = self._clock.get_open_clock(employee.id)
+            hora = _to_spain(last.entrada_at).strftime("%H:%M") if last else "?"
+            reply = (
+                f"Ya tienes una jornada abierta desde las *{hora}*.\n"
+                "Si quieres fichar la *salida*, dímelo."
+            )
+            append_message(
+                self._session,
+                tenant_id=self._tenant_id,
+                employee_id=employee.id,
+                role="assistant",
+                content=reply[:_REPLY_MAX],
+                intent_code="guard_already_open",
+            )
+            self._session.commit()
+            try:
+                await self._gowa.send_text(phone, reply)
+            except Exception:
+                pass
+            return {"ok": True, "action": "guard_already_open"}
+        elif intent_code == "fichar_salida" and not is_open:
+            reply = "No tienes ninguna jornada abierta. Si quieres fichar la *entrada*, dímelo."
+            append_message(
+                self._session,
+                tenant_id=self._tenant_id,
+                employee_id=employee.id,
+                role="assistant",
+                content=reply[:_REPLY_MAX],
+                intent_code="guard_not_open",
+            )
+            self._session.commit()
+            try:
+                await self._gowa.send_text(phone, reply)
+            except Exception:
+                pass
+            return {"ok": True, "action": "guard_not_open"}
+
         reply = await self._execute_intent(
             employee, intent_data, raw_text, message_id
         )
@@ -746,7 +789,7 @@ class WebhookService:
         message_id: str | None,
         pending,
     ) -> dict:
-        """Procesa la respuesta sí/no a una confirmación pendiente."""
+        """Procesa la respuesta a una confirmación pendiente — siempre pasa por el orquestador."""
         intent_code = pending.pending_intent or "fichar_entrada"
 
         append_message(
@@ -757,61 +800,7 @@ class WebhookService:
             content=text,
         )
 
-        if is_affirmative_reply(text):
-            # Limpiar el pending ANTES de ejecutar (evita que _register_clock_with_project_flow
-            # confunda el pending de confirmación con uno de proyecto)
-            clear_pending(self._session, employee.id)
-
-            # Ejecutar la acción pendiente directamente (no necesita Ollama para un "sí")
-            intent_data = OllamaIntentResponse(
-                stage="execute",
-                intent=intent_code,
-                confidence=1.0,
-                message="¡Perfecto!",
-            )
-            reply = await self._execute_intent(
-                employee, intent_data, text, message_id
-            )
-            if intent_code in ("fichar_entrada", "fichar_salida"):
-                reply += self._geo_hint()
-            if intent_data.message and intent_data.message not in reply:
-                reply = f"{intent_data.message}\n\n{reply}"
-            append_message(
-                self._session,
-                tenant_id=self._tenant_id,
-                employee_id=employee.id,
-                role="assistant",
-                content=reply[:_REPLY_MAX],
-                intent_code=intent_code,
-            )
-            self._session.commit()
-            try:
-                await self._gowa.send_text(phone, reply)
-                if intent_code in ("fichar_entrada", "fichar_salida"):
-                    await self._notify_incident_if_needed(phone)
-            except Exception:
-                pass
-            return {"ok": True, "action": intent_code, "reply": reply}
-
-        if is_negative_reply(text):
-            reply = format_confirmation_cancelled(employee.full_name)
-            clear_pending(self._session, employee.id)
-            append_message(
-                self._session,
-                tenant_id=self._tenant_id,
-                employee_id=employee.id,
-                role="assistant",
-                content=reply[:_REPLY_MAX],
-                intent_code="cancelled",
-            )
-            self._session.commit()
-            try:
-                await self._gowa.send_text(phone, reply)
-            except Exception:
-                pass
-            return {"ok": True, "action": "cancelled"}
-
-        # No es un sí/no claro: dejar que Ollama (orquestador) decida el siguiente paso
+        # Siempre pasar por el orquestador; el historial le da el contexto de la confirmación pendiente
         self._ollama.profile_key = profile_key_for_employee(employee.role)
         intent_data = await self._ollama.extract_intent(
             text,
@@ -819,6 +808,24 @@ class WebhookService:
             tenant=self._tenant,
             clock_settings=self._settings,
         )
+
+        # Si el orquestador dice execute pero no sabe el intent (desconocido),
+        # o si no dice execute pero el texto es claramente afirmativo →
+        # forzar la ejecución de la intención pendiente
+        if (
+            intent_data.stage != "execute" or intent_data.intent == "desconocido"
+        ) and is_affirmative_reply(text):
+            intent_data = OllamaIntentResponse(
+                stage="execute",
+                intent=intent_code,
+                confidence=1.0,
+                message="",
+            )
+
+        # Si el orquestador no va a ejecutar, limpiar el pending para evitar loops
+        if intent_data.stage != "execute":
+            clear_pending(self._session, employee.id)
+
         return await self._handle_stage(employee, phone, intent_data, text, message_id)
 
     async def _handle_project_selection(
@@ -1163,57 +1170,6 @@ class WebhookService:
 
         return (None, None)
 
-
-def _parse_date_flex(raw: str):
-    """Parsea una fecha en múltiples formatos. Retorna date o None."""
-    from datetime import date as _date, timedelta
-    import re as _re
-
-    raw = raw.strip().lower()
-    today = _date.today()
-
-    if raw in ("hoy", "today"):
-        return today
-    if raw in ("mañana", "manana", "tomorrow"):
-        return today + timedelta(days=1)
-    if raw in ("pasado mañana", "pasado manana"):
-        return today + timedelta(days=2)
-
-    # dd/mm/yyyy, dd/mm/yy, dd-mm-yyyy
-    for sep in ("/", "-"):
-        parts = raw.split(sep)
-        if len(parts) == 3:
-            try:
-                d = int(parts[0])
-                m = int(parts[1])
-                y = int(parts[2])
-                if y < 100:
-                    y += 2000
-                return _date(y, m, d)
-            except (ValueError, TypeError):
-                pass
-
-    # dd de mes
-    meses = {
-        "enero": 1, "febrero": 2, "marzo": 3, "abril": 4, "mayo": 5, "junio": 6,
-        "julio": 7, "agosto": 8, "septiembre": 9, "octubre": 10, "noviembre": 11, "diciembre": 12,
-        "ene": 1, "feb": 2, "mar": 3, "abr": 4, "may": 5, "jun": 6,
-        "jul": 7, "ago": 8, "sep": 9, "oct": 10, "nov": 11, "dic": 12,
-    }
-    m = _re.match(r"(\d{1,2})\s+de\s+(\w+)", raw)
-    if m:
-        d = int(m.group(1))
-        mes_key = m.group(2).lower().rstrip("s")
-        mes = meses.get(mes_key)
-        if mes:
-            year = today.year
-            result = _date(year, mes, d)
-            if result < today:
-                result = _date(year + 1, mes, d)
-            return result
-
-    return None
-
     async def _execute_intent(
         self,
         employee: Employee,
@@ -1230,7 +1186,6 @@ def _parse_date_flex(raw: str):
                 )
 
             case "fichar_salida":
-                # Extraer work_summary si el mensaje tiene texto más allá del verbo de salida
                 summary = _extract_work_summary(raw_text)
                 return self._close_clock(
                     employee,
@@ -1295,3 +1250,54 @@ def _parse_date_flex(raw: str):
                     employee_name=employee.full_name,
                     lead=intent.message or None,
                 )
+
+
+def _parse_date_flex(raw: str):
+    """Parsea una fecha en múltiples formatos. Retorna date o None."""
+    from datetime import date as _date, timedelta
+    import re as _re
+
+    raw = raw.strip().lower()
+    today = _date.today()
+
+    if raw in ("hoy", "today"):
+        return today
+    if raw in ("mañana", "manana", "tomorrow"):
+        return today + timedelta(days=1)
+    if raw in ("pasado mañana", "pasado manana"):
+        return today + timedelta(days=2)
+
+    # dd/mm/yyyy, dd/mm/yy, dd-mm-yyyy
+    for sep in ("/", "-"):
+        parts = raw.split(sep)
+        if len(parts) == 3:
+            try:
+                d = int(parts[0])
+                m = int(parts[1])
+                y = int(parts[2])
+                if y < 100:
+                    y += 2000
+                return _date(y, m, d)
+            except (ValueError, TypeError):
+                pass
+
+    # dd de mes
+    meses = {
+        "enero": 1, "febrero": 2, "marzo": 3, "abril": 4, "mayo": 5, "junio": 6,
+        "julio": 7, "agosto": 8, "septiembre": 9, "octubre": 10, "noviembre": 11, "diciembre": 12,
+        "ene": 1, "feb": 2, "mar": 3, "abr": 4, "may": 5, "jun": 6,
+        "jul": 7, "ago": 8, "sep": 9, "oct": 10, "nov": 11, "dic": 12,
+    }
+    m = _re.match(r"(\d{1,2})\s+de\s+(\w+)", raw)
+    if m:
+        d = int(m.group(1))
+        mes_key = m.group(2).lower().rstrip("s")
+        mes = meses.get(mes_key)
+        if mes:
+            year = today.year
+            result = _date(year, mes, d)
+            if result < today:
+                result = _date(year + 1, mes, d)
+            return result
+
+    return None
