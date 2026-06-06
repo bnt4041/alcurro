@@ -24,6 +24,7 @@ def set_pending(
     whatsapp_message_id: str | None = None,
     pending_confirmation: bool = False,
     pending_intent: str | None = None,
+    pending_meta: dict | None = None,
 ) -> ClockPendingFichaje:
     row = session.get(ClockPendingFichaje, employee_id)
     if row:
@@ -33,6 +34,7 @@ def set_pending(
         row.whatsapp_message_id = whatsapp_message_id
         row.pending_confirmation = pending_confirmation
         row.pending_intent = pending_intent
+        row.pending_meta = pending_meta
         row.created_at = datetime.utcnow()
     else:
         row = ClockPendingFichaje(
@@ -43,6 +45,7 @@ def set_pending(
             whatsapp_message_id=whatsapp_message_id,
             pending_confirmation=pending_confirmation,
             pending_intent=pending_intent,
+            pending_meta=pending_meta,
         )
         session.add(row)
     session.flush()

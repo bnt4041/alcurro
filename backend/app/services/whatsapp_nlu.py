@@ -136,6 +136,27 @@ _INTENT_PATTERNS: list[tuple[re.Pattern, str, str, float, str | None]] = [
         ),
         "solicitar_vacaciones", "ask", 0.5, "¿Qué período de vacaciones deseas solicitar? Indícame las fechas.",
     ),
+
+    # --- Reportar incidencia (ask → necesita detalles) ---
+    (
+        re.compile(
+            r"\b("
+            r"tuve\s+un\s+problema|no\s+pude\s+fichar|"
+            r"reportar\s+incidencia|registrar\s+incidencia|"
+            r"incidencia\s+(en|de)\s+(el\s+)?fichaje|"
+            r"problema\s+(con|de)\s+(el\s+)?fichaje|"
+            r"no\s+(pude|he\s+podido)\s+(fichar|registrar)|"
+            r"tuve\s+un\s+inconveniente|"
+            r"perd[ií]\s+(el\s+)?m[oó]vil|"
+            r"reportar\s+un\s+problema|"
+            r"notificar\s+incidencia|"
+            r"comunicar\s+incidencia|"
+            r"ayer\s+(tuve|no\s+pude|pas[oó]|hubo)\b"
+            r")\b", re.IGNORECASE
+        ),
+        "reportar_incidencia", "ask", 0.7,
+        "Cuéntame qué pasó para registrar la incidencia. Por ejemplo: «perdí el móvil», «no pude fichar por una avería», «llegué tarde por tráfico»…",
+    ),
 ]
 
 
@@ -289,6 +310,7 @@ def build_confirmation_message(intent_code: str, employee_name: str) -> str:
         "consultar_saldo_vacaciones": "consultar tu saldo de vacaciones",
         "confirmar_documento": "confirmar un documento",
         "resumen_dia": "ver el resumen del día",
+        "reportar_incidencia": "registrar esta incidencia",
     }
     action_label = labels.get(intent_code, intent_code.replace("_", " "))
     return (

@@ -51,6 +51,13 @@ DEFAULT_ACTIONS: list[tuple[str, str, str, str, int]] = [
         "fichajes",
         7,
     ),
+    (
+        "reportar_incidencia",
+        "Reportar incidencia",
+        "Registra una incidencia de fichaje (problema, retraso, avería…)",
+        "fichajes",
+        8,
+    ),
 ]
 
 # Perfil -> códigos habilitados por defecto
@@ -64,6 +71,7 @@ DEFAULT_PROFILE_MATRIX: dict[str, set[str]] = {
         "consultar_saldo_vacaciones",
         "confirmar_documento",
         "resumen_dia",
+        "reportar_incidencia",
     },
     "manager": {code for code, *_ in DEFAULT_ACTIONS},
     "tenant_admin": {code for code, *_ in DEFAULT_ACTIONS},

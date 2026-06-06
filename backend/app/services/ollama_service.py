@@ -306,7 +306,7 @@ class OllamaService:
     _CONFIRM_INTENTS = frozenset({
         "fichar_entrada", "fichar_salida",
         "inicio_parada", "fin_parada",
-        "solicitar_vacaciones",
+        "solicitar_vacaciones", "reportar_incidencia",
     })
     # Intenciones de solo lectura → stage="execute"  
     _EXECUTE_INTENTS = frozenset({

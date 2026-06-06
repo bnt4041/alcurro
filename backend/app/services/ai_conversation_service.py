@@ -224,6 +224,7 @@ def _build_actions_catalog(
         "consultar_saldo_vacaciones": {"c":"consultar_saldo_vacaciones","n":"Consultar saldo","d":"Días disponibles","cat":"vacaciones","cf":False,"p":{},"cq":None,"tr":["cuantas vacaciones me quedan","cuantos dias me quedan","dias de vacaciones","saldo de vacaciones","cuantas vacaciones tengo","dias disponibles","balance de vacaciones","saldo"]},
         "confirmar_documento":  {"c":"confirmar_documento","n":"Confirmar documento","d":"Acuse de recibo","cat":"documentos","cf":False,"p":{},"cq":None,"tr":["confirmo","recibido","de acuerdo","acepto el documento"]},
         "resumen_dia":          {"c":"resumen_dia","n":"Resumen del día","d":"Fichajes y paradas de hoy","cat":"fichajes","cf":False,"p":{},"cq":None,"tr":["resumen","como voy","que he hecho hoy","mi dia","resumen del dia"]},
+        "reportar_incidencia":  {"c":"reportar_incidencia","n":"Reportar incidencia","d":"Registrar un problema o incidencia de fichaje","cat":"fichajes","cf":True,"p":{"title":"string","description":"string"},"cq":"¿Quieres que registre esta incidencia?","tr":["tuve un problema","no pude fichar","reportar incidencia","registrar incidencia","perdí el móvil","tuve un inconveniente"]},
     }
 
     catalog: list[dict] = []
@@ -294,6 +295,7 @@ def build_system_prompt(
         ("consultar_saldo_vacaciones", "cuantas vacaciones me quedan, cuantos dias me quedan, saldo, dias disponibles, cuantas vacaciones tengo"),
         ("resumen_dia", "resumen, como voy, que he hecho hoy, mi dia"),
         ("confirmar_documento", "confirmo, recibido, de acuerdo, acepto"),
+        ("reportar_incidencia", "tuve un problema, no pude fichar, reportar incidencia, registrar incidencia, perdí el móvil, tuve un inconveniente, ayer no pude, problema con el fichaje"),
     ]
     for code, phrases in _PHRASE_MAP:
         if code in allowed_effective:
@@ -302,7 +304,7 @@ def build_system_prompt(
     lines.extend([
         "",
         "CONFIRMACIÓN:",
-        "- fichar/paradas/vacaciones NUEVAS: stage=confirm (pregunta sí/no)",
+        "- fichar/paradas/vacaciones/reportar_incidencia NUEVAS: stage=confirm (pregunta sí/no)",
         "- consultar_saldo/resumen_dia/confirmar_documento: stage=execute (directo)",
         "- usuario dice sí/ok/vale/dale/confirmo/adelante/anda/venga: stage=execute",
         "- usuario dice no/cancelar: stage=ask",

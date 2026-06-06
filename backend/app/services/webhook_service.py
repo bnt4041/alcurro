@@ -659,13 +659,17 @@ class WebhookService:
 
         if stage == "confirm":
             # Guardar intención pendiente de confirmación y preguntar sí/no
+            _record_type = "salida" if intent_code == "fichar_salida" else "entrada"
+            if intent_code == "reportar_incidencia":
+                _record_type = "incidencia"
             set_pending(
                 self._session,
                 employee_id=employee.id,
-                record_type="salida" if intent_code == "fichar_salida" else "entrada",
+                record_type=_record_type,
                 whatsapp_message_id=message_id,
                 pending_confirmation=True,
                 pending_intent=intent_code,
+                pending_meta=intent_data.entities if intent_code == "reportar_incidencia" else None,
             )
             reply = ollama_message or build_confirmation_message(
                 intent_code, employee.full_name
@@ -820,6 +824,7 @@ class WebhookService:
                 intent=intent_code,
                 confidence=1.0,
                 message="",
+                entities=pending.pending_meta or {},
             )
 
         # Si el orquestador no va a ejecutar, limpiar el pending para evitar loops
@@ -1233,6 +1238,9 @@ class WebhookService:
             case "confirmar_documento":
                 return self._leave.acknowledge_document(employee.id, raw_text)
 
+            case "reportar_incidencia":
+                return self._execute_reportar_incidencia(employee, intent, raw_text)
+
             case _:
                 allowed = list_whatsapp_actions_for_employee(
                     self._session, employee, self._tenant_id
@@ -1250,6 +1258,47 @@ class WebhookService:
                     employee_name=employee.full_name,
                     lead=intent.message or None,
                 )
+
+    def _execute_reportar_incidencia(
+        self,
+        employee: Employee,
+        intent: OllamaIntentResponse,
+        raw_text: str,
+    ) -> str:
+        """Crea una incidencia de fichaje desde WhatsApp."""
+        from app.services.incident_service import create_incident
+
+        title = (
+            intent.entities.get("title")
+            or intent.entities.get("titulo")
+            or intent.message
+            or raw_text[:300]
+            or "Incidencia reportada por WhatsApp"
+        )
+        description = (
+            intent.entities.get("description")
+            or intent.entities.get("descripcion")
+            or intent.entities.get("motivo")
+            or raw_text[:2000]
+            or None
+        )
+
+        incident = create_incident(
+            self._session,
+            tenant_id=self._tenant_id,
+            employee_id=employee.id,
+            category="fichaje",
+            incident_type="manual",
+            title=str(title)[:300],
+            description=str(description)[:2000] if description else None,
+            source="whatsapp",
+        )
+
+        self._session.commit()
+        return (
+            f"✅ Incidencia registrada: *{incident.title}*\n"
+            "Puedes consultarla en el panel de RRHH."
+        )
 
 
 def _parse_date_flex(raw: str):

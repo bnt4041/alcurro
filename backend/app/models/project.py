@@ -3,6 +3,7 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
+from sqlalchemy import JSON, Column
 from sqlmodel import Field, SQLModel
 
 
@@ -47,5 +48,10 @@ class ClockPendingFichaje(SQLModel, table=True):
         default=None,
         max_length=50,
         description="Intención pendiente de confirmación (fichar_entrada, fichar_salida, etc.)",
+    )
+    pending_meta: dict | None = Field(
+        default=None,
+        sa_column=Column(JSON, nullable=True),
+        description="Metadatos auxiliares para la intención pendiente (título, descripción, etc.)",
     )
     created_at: datetime = Field(default_factory=datetime.utcnow)

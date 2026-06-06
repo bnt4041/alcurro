@@ -29,6 +29,7 @@ ACTION_RBAC_ANY: dict[str, tuple[str, ...]] = {
         "legal.update_own",
     ),
     "resumen_dia": ("clock_ins.read_own", "clock_ins.read"),
+    "reportar_incidencia": ("clock_ins.create_own", "clock_ins.write"),
 }
 
 ACTION_LABELS: dict[str, str] = {
@@ -40,6 +41,7 @@ ACTION_LABELS: dict[str, str] = {
     "consultar_saldo_vacaciones": "Consultar saldo de vacaciones",
     "confirmar_documento": "Confirmar documento / enviar archivo",
     "resumen_dia": "Resumen del día (fichajes y paradas)",
+    "reportar_incidencia": "Reportar incidencia de fichaje",
     "desconocido": "Sin acción (ayuda)",
 }
 
