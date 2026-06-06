@@ -147,6 +147,25 @@ class OllamaService:
         ):
             intent = keyword_rescue
 
+        # Anti-sesgo de fichaje: si el NLU detecta con alta confianza un intent no-fichaje
+        # (permiso, vacaciones, incidencia…) pero DeepSeek devolvió un intent de fichaje,
+        # confiar en el NLU — el contexto de "jornada abierta" sesga al modelo hacia salida.
+        _CLOCK_INTENTS = {"fichar_entrada", "fichar_salida", "inicio_parada", "fin_parada"}
+        _NON_CLOCK_INTENTS = {
+            "solicitar_permiso", "solicitar_vacaciones", "consultar_saldo_vacaciones",
+            "resumen_dia", "confirmar_documento", "reportar_incidencia",
+        }
+        if (
+            keyword_rescue.intent in _NON_CLOCK_INTENTS
+            and keyword_rescue.confidence >= 0.7
+            and intent.intent in _CLOCK_INTENTS
+        ):
+            logger.info(
+                "Anti-clock-bias override: DeepSeek=%s → NLU=%s (msg=%r)",
+                intent.intent, keyword_rescue.intent, message_text[:60],
+            )
+            intent = keyword_rescue
+
         if allowed and intent.intent not in allowed and intent.intent != "desconocido":
             intent = OllamaIntentResponse(intent="desconocido", confidence=0.2)
 
@@ -306,7 +325,7 @@ class OllamaService:
     _CONFIRM_INTENTS = frozenset({
         "fichar_entrada", "fichar_salida",
         "inicio_parada", "fin_parada",
-        "solicitar_vacaciones", "reportar_incidencia",
+        "solicitar_vacaciones", "solicitar_permiso", "reportar_incidencia",
     })
     # Intenciones de solo lectura → stage="execute"  
     _EXECUTE_INTENTS = frozenset({

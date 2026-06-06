@@ -68,6 +68,7 @@ DEFAULT_PROFILE_MATRIX: dict[str, set[str]] = {
         "inicio_parada",
         "fin_parada",
         "solicitar_vacaciones",
+        "solicitar_permiso",
         "consultar_saldo_vacaciones",
         "confirmar_documento",
         "resumen_dia",

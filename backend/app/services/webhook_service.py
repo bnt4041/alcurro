@@ -662,6 +662,16 @@ class WebhookService:
             _record_type = "salida" if intent_code == "fichar_salida" else "entrada"
             if intent_code == "reportar_incidencia":
                 _record_type = "incidencia"
+            elif intent_code == "solicitar_permiso":
+                _record_type = "permiso"
+            # Para reportar_incidencia/solicitar_permiso: guardar entities de la IA
+            _meta = None
+            if intent_code in ("reportar_incidencia", "solicitar_permiso"):
+                _meta = dict(intent_data.entities) if intent_data.entities else {}
+            if intent_code == "reportar_incidencia":
+                # Si la IA no dio title, extraerlo de su mensaje de confirmación
+                if not _meta.get("title") and not _meta.get("titulo"):
+                    _meta["_ai_summary"] = ollama_message
             set_pending(
                 self._session,
                 employee_id=employee.id,
@@ -669,7 +679,7 @@ class WebhookService:
                 whatsapp_message_id=message_id,
                 pending_confirmation=True,
                 pending_intent=intent_code,
-                pending_meta=intent_data.entities if intent_code == "reportar_incidencia" else None,
+                pending_meta=_meta,
             )
             reply = ollama_message or build_confirmation_message(
                 intent_code, employee.full_name
@@ -1232,6 +1242,17 @@ class WebhookService:
                 _, msg = self._leave.create_request(employee, intent, raw_text)
                 return msg
 
+            case "solicitar_permiso":
+                # Permiso de un solo día: mapear "fecha" → fecha_inicio/fecha_fin
+                if "fecha" in intent.entities and "fecha_inicio" not in intent.entities:
+                    intent.entities["fecha_inicio"] = intent.entities["fecha"]
+                    intent.entities["fecha_fin"] = intent.entities["fecha"]
+                # Si no hay motivo explícito, usar el mensaje del usuario
+                if "motivo" not in intent.entities and raw_text:
+                    intent.entities["motivo"] = raw_text[:200]
+                _, msg = self._leave.create_request(employee, intent, raw_text)
+                return msg
+
             case "consultar_saldo_vacaciones":
                 return self._leave.get_balance_message(employee)
 
@@ -1267,19 +1288,38 @@ class WebhookService:
     ) -> str:
         """Crea una incidencia de fichaje desde WhatsApp."""
         from app.services.incident_service import create_incident
+        import re as _re
 
         title = (
             intent.entities.get("title")
             or intent.entities.get("titulo")
             or intent.message
-            or raw_text[:300]
-            or "Incidencia reportada por WhatsApp"
+            or None
         )
+        # Fallback: extraer resumen del mensaje de confirmación de la IA
+        # ej: "¿Quieres que registre una incidencia por no haber podido fichar ayer?"
+        #      → "No haber podido fichar ayer"
+        if not title:
+            ai_summary = intent.entities.get("_ai_summary", "")
+            if ai_summary:
+                m = _re.search(
+                    r'(?:incidencia\s+(?:por|de)\s+|registre\s+(?:una\s+)?incidencia\s+(?:por|de)\s+)(.+)',
+                    ai_summary, _re.IGNORECASE
+                )
+                if m:
+                    title = m.group(1).rstrip("?.").strip().capitalize()
+        if not title:
+            title = raw_text[:300] if raw_text and raw_text.lower() not in (
+                "si", "sí", "vale", "ok", "okey", "confirmo", "dale", "claro",
+                "si, por favor", "sí, por favor", "si por favor", "sí por favor",
+            ) else None
+        if not title:
+            title = "Incidencia reportada por WhatsApp"
+
         description = (
             intent.entities.get("description")
             or intent.entities.get("descripcion")
             or intent.entities.get("motivo")
-            or raw_text[:2000]
             or None
         )
 

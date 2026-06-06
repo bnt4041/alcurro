@@ -64,31 +64,62 @@ def purge_clock_ins(session: Session, tenant_id: UUID) -> int:
     company_ids = _company_ids(session, tenant_id)
     if not company_ids:
         return 0
+    emp_subquery = select(Employee.id).where(col(Employee.company_id).in_(company_ids))
     result = session.exec(
-        delete(ClockIn).where(  
-        select(SignatureEnvelope.id).where(
-            SignatureEnvelope.tenant_id == tenant_id
-        )
-    ).all()
-    if envelope_ids:
-        session.exec(
-            delete(SignatureEvent).where(
-                col(SignatureEvent.envelope_id).in_(envelope_ids)
-            )
-        )
-        session.exec(
-            delete(SignatureSigner).where(
-                col(SignatureSigner.envelope_id).in_(envelope_ids)
-            )
-        )
-        session.exec(
-            delete(SignatureEnvelope).where(
-                SignatureEnvelope.tenant_id == tenant_id
-            )
-        )
+        delete(ClockIn).where(col(ClockIn.employee_id).in_(emp_subquery))
+    )
+    session.flush()
+    return result.rowcount
 
-    session.exec(delete(ShiftAssignment).where(
-        col(ShiftAssignment.employee_id).in_(emp_subquery)
+
+def purge_work_breaks(session: Session, tenant_id: UUID) -> int:
+    """Elimina todas las paradas / descansos de un tenant."""
+    company_ids = _company_ids(session, tenant_id)
+    if not company_ids:
+        return 0
+    emp_subquery = select(Employee.id).where(col(Employee.company_id).in_(company_ids))
+    result = session.exec(
+        delete(WorkBreak).where(col(WorkBreak.employee_id).in_(emp_subquery))
+    )
+    session.flush()
+    return result.rowcount
+
+
+def purge_leave_requests(session: Session, tenant_id: UUID) -> int:
+    """Elimina todas las solicitudes de vacaciones / permisos de un tenant."""
+    company_ids = _company_ids(session, tenant_id)
+    if not company_ids:
+        return 0
+    emp_subquery = select(Employee.id).where(col(Employee.company_id).in_(company_ids))
+    result = session.exec(
+        delete(LeaveRequest).where(col(LeaveRequest.employee_id).in_(emp_subquery))
+    )
+    session.flush()
+    return result.rowcount
+
+
+def purge_incidents(session: Session, tenant_id: UUID) -> int:
+    """Elimina todas las incidencias de un tenant."""
+    result = session.exec(
+        delete(Incident).where(Incident.tenant_id == tenant_id)
+    )
+    session.exec(
+        delete(IncidentAutoRule).where(IncidentAutoRule.tenant_id == tenant_id)
+    )
+    session.flush()
+    return result.rowcount
+
+
+def purge_employees(session: Session, tenant_id: UUID) -> int:
+    """Elimina todos los empleados y datos asociados de un tenant."""
+    company_ids = _company_ids(session, tenant_id)
+    if not company_ids:
+        return 0
+    emp_subquery = select(Employee.id).where(col(Employee.company_id).in_(company_ids))
+
+    # Datos dependientes de empleados
+    session.exec(delete(ClockPendingFichaje).where(
+        col(ClockPendingFichaje.employee_id).in_(emp_subquery)
     ))
     session.exec(delete(AiWhatsappMessage).where(
         col(AiWhatsappMessage.employee_id).in_(emp_subquery)
@@ -99,8 +130,14 @@ def purge_clock_ins(session: Session, tenant_id: UUID) -> int:
     session.exec(delete(InboundPendingUpload).where(
         col(InboundPendingUpload.employee_id).in_(emp_subquery)
     ))
+    session.exec(delete(EmployeeGroup).where(
+        col(EmployeeGroup.employee_id).in_(emp_subquery)
+    ))
+    session.exec(delete(LegalAcceptance).where(
+        col(LegalAcceptance.employee_id).in_(emp_subquery)
+    ))
 
-    # 2. Empleados
+    # Empleados
     result = session.exec(
         delete(Employee).where(col(Employee.company_id).in_(company_ids))
     )

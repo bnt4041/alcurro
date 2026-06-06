@@ -22,7 +22,7 @@ class OllamaIntentResponse(BaseModel):
         description=(
             "fichar_entrada | fichar_salida | inicio_parada | fin_parada | "
             "solicitar_vacaciones | consultar_saldo_vacaciones | confirmar_documento | "
-            "resumen_dia | desconocido"
+            "resumen_dia | reportar_incidencia | desconocido"
         ),
     )
     entities: dict[str, Any] = Field(default_factory=dict)

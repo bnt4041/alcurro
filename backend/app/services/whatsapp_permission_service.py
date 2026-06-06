@@ -22,6 +22,7 @@ ACTION_RBAC_ANY: dict[str, tuple[str, ...]] = {
     "inicio_parada": ("breaks.create_own", "breaks.write"),
     "fin_parada": ("breaks.create_own", "breaks.write"),
     "solicitar_vacaciones": ("leave.create_own", "leave.write"),
+    "solicitar_permiso": ("leave.create_own", "leave.write"),
     "consultar_saldo_vacaciones": ("leave.read_own", "leave.read"),
     "confirmar_documento": (
         "documents.read_own",
@@ -38,6 +39,7 @@ ACTION_LABELS: dict[str, str] = {
     "inicio_parada": "Iniciar parada",
     "fin_parada": "Finalizar parada",
     "solicitar_vacaciones": "Solicitar vacaciones",
+    "solicitar_permiso": "Solicitar permiso / ausencia",
     "consultar_saldo_vacaciones": "Consultar saldo de vacaciones",
     "confirmar_documento": "Confirmar documento / enviar archivo",
     "resumen_dia": "Resumen del día (fichajes y paradas)",
