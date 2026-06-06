@@ -30,6 +30,7 @@ import PlatformWhatsAppPage from "./pages/PlatformWhatsAppPage";
 import PlatformMailPage from "./pages/PlatformMailPage";
 import PlatformAIPage from "./pages/PlatformAIPage";
 import PlatformPurgePage from "./pages/PlatformPurgePage";
+import OrgChartPage from "./pages/OrgChartPage";
 import ShiftsPage from "./pages/ShiftsPage";
 import SignupPage from "./pages/SignupPage";
 import SignupSimulatePaymentPage from "./pages/SignupSimulatePaymentPage";
@@ -83,6 +84,7 @@ export default function App() {
                 <Route path="incidencias" element={<IncidentsPage />} />
                 <Route path="paradas" element={<BreaksPage />} />
                 <Route path="organizacion" element={<OrganizationPage />} />
+                <Route path="organigrama" element={<OrgChartPage />} />
                 <Route path="proyectos" element={<ProjectsPage />} />
                 <Route path="empleados" element={<EmployeesPage />} />
                 <Route path="vacaciones" element={<LeaveRequestsPage />} />

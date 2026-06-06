@@ -95,6 +95,16 @@ class OllamaService:
             infer_fichar=infer_fichar,
             infer_break=infer_break,
         )
+        # NLU sin filtro de permisos: solo para detectar sesgo del modelo hacia fichajes
+        keyword_unfiltered = match_whatsapp_intent(
+            message_text,
+            allowed=None,
+            infer_fichar=infer_fichar,
+            infer_break=infer_break,
+        )
+        logger.info("NLU rescue: intent=%s stage=%s conf=%.2f | unfiltered: intent=%s conf=%.2f | msg=%r",
+                    keyword_rescue.intent, keyword_rescue.stage, keyword_rescue.confidence,
+                    keyword_unfiltered.intent, keyword_unfiltered.confidence, message_text[:60])
 
         # IA como decisor: DeepSeek si hay API key configurada, Ollama local si no.
         cfg = get_settings()
@@ -138,6 +148,8 @@ class OllamaService:
             # Respaldo solo si la IA falla por causas técnicas (red/timeout).
             intent = keyword_rescue
 
+        logger.info("DeepSeek raw: intent=%s stage=%s conf=%.2f", intent.intent, intent.stage, intent.confidence)
+
         # Si Ollama duda (desconocido o confianza baja) pero el keyword match es preciso,
         # confiar en el keyword — modelos pequeños son poco fiables en frases simples.
         if (
@@ -156,15 +168,36 @@ class OllamaService:
             "resumen_dia", "confirmar_documento", "reportar_incidencia",
         }
         if (
-            keyword_rescue.intent in _NON_CLOCK_INTENTS
-            and keyword_rescue.confidence >= 0.7
+            keyword_unfiltered.intent in _NON_CLOCK_INTENTS
+            and keyword_unfiltered.confidence >= 0.7
             and intent.intent in _CLOCK_INTENTS
         ):
-            logger.info(
-                "Anti-clock-bias override: DeepSeek=%s → NLU=%s (msg=%r)",
-                intent.intent, keyword_rescue.intent, message_text[:60],
+            logger.warning(
+                "Anti-clock-bias override: DeepSeek=%s → NLU=%s (allowed=%s) msg=%r",
+                intent.intent, keyword_unfiltered.intent, keyword_rescue.intent, message_text[:60],
             )
-            intent = keyword_rescue
+            override_nlu = keyword_rescue if keyword_rescue.intent == keyword_unfiltered.intent else keyword_unfiltered
+            # Mejorar el mensaje estático del NLU con contexto del empleado
+            if override_nlu.intent == "solicitar_permiso" and employee:
+                first = employee.full_name.split()[0] if employee.full_name else ""
+                txt_low = message_text.lower()
+                _DAYS = ["lunes","martes","miércoles","miercoles","jueves","viernes","sábado","sabado","domingo","mañana","pasado","hoy","este","próximo","proximo"]
+                _REASONS = ["médico","medico","hospital","dentista","cita","personal","asuntos","permiso","baja","urgencia"]
+                has_day = any(d in txt_low for d in _DAYS)
+                has_reason = any(r in txt_low for r in _REASONS)
+                if has_day and has_reason:
+                    override_nlu = OllamaIntentResponse(
+                        stage="confirm", intent="solicitar_permiso", confidence=0.9,
+                        message=f"Entendido, {first}. ¿Te confirmo el permiso para ese día?",
+                        entities={},
+                    )
+                else:
+                    override_nlu = OllamaIntentResponse(
+                        stage="ask", intent="solicitar_permiso", confidence=0.8,
+                        message=f"Claro, {first}. ¿Para qué día necesitas el permiso y cuál es el motivo?",
+                        entities={},
+                    )
+            intent = override_nlu
 
         if allowed and intent.intent not in allowed and intent.intent != "desconocido":
             intent = OllamaIntentResponse(intent="desconocido", confidence=0.2)

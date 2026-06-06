@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
-import type { DocumentDelivery } from "../api/types";
+import type { DocumentDelivery, NotificationPreference } from "../api/types";
 import DataTable, { type DataTableColumn } from "./DataTable";
 
 interface InboundDoc {
@@ -32,7 +32,7 @@ interface SignatureEnvelope {
   signers: SignatureSigner[];
 }
 
-type TabId = "data" | "documents" | "signatures";
+type TabId = "data" | "documents" | "signatures" | "notifications";
 
 interface Props {
   employeeId: string;
@@ -56,7 +56,21 @@ const TABS: { id: TabId; label: string; show?: (p: Props) => boolean }[] = [
     label: "Firmas",
     show: (p) => p.showSignatures,
   },
+  { id: "notifications", label: "Notificaciones" },
 ];
+
+const EVENT_LABELS: Record<string, string> = {
+  clock_in: "Fichaje entrada",
+  clock_out: "Fichaje salida",
+  leave_request: "Vacaciones / permisos",
+  incident: "Incidencias",
+  document: "Documentos",
+};
+const CHANNEL_LABELS: Record<string, string> = {
+  inapp: "En la app",
+  whatsapp: "WhatsApp",
+  email: "Email",
+};
 
 const INBOUND_STATUS: Record<string, string> = {
   pending: "Pendiente",
@@ -82,6 +96,9 @@ export default function EmployeeProfileTabs({
   const [loadingDocs, setLoadingDocs] = useState(false);
   const [loadingSigs, setLoadingSigs] = useState(false);
   const [docsMsg, setDocsMsg] = useState("");
+  const [prefs, setPrefs] = useState<NotificationPreference[]>([]);
+  const [loadingPrefs, setLoadingPrefs] = useState(false);
+  const [savingPrefs, setSavingPrefs] = useState(false);
   const [uploadCode, setUploadCode] = useState("");
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -174,6 +191,39 @@ export default function EmployeeProfileTabs({
   useEffect(() => {
     if (activeTab === "signatures" && showSignatures) loadSignatures();
   }, [activeTab, showSignatures, loadSignatures]);
+
+  useEffect(() => {
+    if (activeTab !== "notifications") return;
+    setLoadingPrefs(true);
+    api
+      .get<NotificationPreference[]>(`/employees/${employeeId}/notification-preferences`)
+      .then(setPrefs)
+      .catch(() => setPrefs([]))
+      .finally(() => setLoadingPrefs(false));
+  }, [activeTab, employeeId]);
+
+  function togglePref(event_type: string, channel: string) {
+    setPrefs((prev) =>
+      prev.map((p) =>
+        p.event_type === event_type && p.channel === channel
+          ? { ...p, enabled: !p.enabled }
+          : p
+      )
+    );
+  }
+
+  async function savePrefs() {
+    setSavingPrefs(true);
+    try {
+      const updated = await api.put<NotificationPreference[]>(
+        `/employees/${employeeId}/notification-preferences`,
+        { preferences: prefs }
+      );
+      setPrefs(updated);
+    } finally {
+      setSavingPrefs(false);
+    }
+  }
 
   return (
     <div className="employee-profile-tabs">
@@ -345,6 +395,56 @@ export default function EmployeeProfileTabs({
           <p className="muted small">
             <Link to="/app/firmas">Ver módulo Firmas</Link>
           </p>
+        </div>
+      )}
+
+      {activeTab === "notifications" && (
+        <div className="employee-profile-panel">
+          {loadingPrefs && <p className="muted">Cargando preferencias…</p>}
+          {!loadingPrefs && prefs.length > 0 && (
+            <>
+              <p className="muted small">
+                Canales por los que {employeeName} recibirá notificaciones de sus subordinados o de acciones propias.
+              </p>
+              <table className="notif-prefs-table">
+                <thead>
+                  <tr>
+                    <th>Evento</th>
+                    {["inapp", "whatsapp", "email"].map((ch) => (
+                      <th key={ch}>{CHANNEL_LABELS[ch]}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {["clock_in", "clock_out", "leave_request", "incident", "document"].map((ev) => (
+                    <tr key={ev}>
+                      <td>{EVENT_LABELS[ev] ?? ev}</td>
+                      {["inapp", "whatsapp", "email"].map((ch) => {
+                        const pref = prefs.find((p) => p.event_type === ev && p.channel === ch);
+                        return (
+                          <td key={ch} className="notif-prefs-table__cell">
+                            <input
+                              type="checkbox"
+                              checked={pref?.enabled ?? true}
+                              onChange={() => togglePref(ev, ch)}
+                            />
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={savingPrefs}
+                onClick={savePrefs}
+              >
+                {savingPrefs ? "Guardando…" : "Guardar preferencias"}
+              </button>
+            </>
+          )}
         </div>
       )}
     </div>

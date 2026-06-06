@@ -30,33 +30,34 @@ DEFAULT_ACTIONS: list[tuple[str, str, str, str, int]] = [
     ("inicio_parada", "Inicio de parada", "Inicia parada / descanso", "paradas", 2),
     ("fin_parada", "Fin de parada", "Finaliza parada / descanso", "paradas", 3),
     ("solicitar_vacaciones", "Solicitar vacaciones", "Crea solicitud de vacaciones", "vacaciones", 4),
+    ("solicitar_permiso", "Solicitar permiso", "Registra permiso médico, personal o similar", "permisos", 5),
     (
         "consultar_saldo_vacaciones",
         "Consultar saldo vacaciones",
         "Informa días disponibles",
         "vacaciones",
-        5,
+        6,
     ),
     (
         "confirmar_documento",
         "Confirmar documento",
         "Acuse de recibo de documento",
         "documentos",
-        6,
+        7,
     ),
     (
         "resumen_dia",
         "Resumen del día",
         "Muestra fichajes y paradas del día actual",
         "fichajes",
-        7,
+        8,
     ),
     (
         "reportar_incidencia",
         "Reportar incidencia",
         "Registra una incidencia de fichaje (problema, retraso, avería…)",
         "fichajes",
-        8,
+        9,
     ),
 ]
 

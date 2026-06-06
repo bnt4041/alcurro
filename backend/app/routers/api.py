@@ -13,6 +13,7 @@ from app.routers import (
     groups,
     leave_requests,
     legal,
+    notifications,
     organization,
     projects,
     platform,
@@ -71,6 +72,7 @@ api_router.add_api_route(
 
 protected = APIRouter(dependencies=[Depends(get_current_user)])
 protected.include_router(tenants.router)
+protected.include_router(notifications.router)  # antes de employees para evitar conflicto con /{employee_id}
 protected.include_router(employees.router)
 protected.include_router(clock_ins.router)
 protected.include_router(clock_settings.router)

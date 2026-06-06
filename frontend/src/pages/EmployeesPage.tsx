@@ -107,6 +107,7 @@ const empty = (defaults?: {
   vacation_days_balance: 22,
   is_active: true,
   supervisor_id: null,
+  job_title: null,
   password: "",
   company_id: defaults?.company_id ?? null,
   department_id: defaults?.department_id ?? null,
@@ -158,7 +159,7 @@ export default function EmployeesPage() {
     user && canModule(user.permissions, "read", "documents");
   const canSignaturesRead =
     user && canModule(user.permissions, "read", "signatures");
-  const [empTab, setEmpTab] = useState<"data" | "documents" | "signatures">("data");
+  const [empTab, setEmpTab] = useState<"data" | "documents" | "signatures" | "notifications">("data");
 
   const panelGroupId = groups.find((g) => g.name === PANEL_GROUP_NAME)?.id;
 
@@ -446,6 +447,7 @@ export default function EmployeesPage() {
         vacation_days_balance: form.vacation_days_balance,
         is_active: form.is_active,
         supervisor_id: form.supervisor_id,
+        job_title: form.job_title ?? null,
         department_id: form.department_id,
         rotating_shift: form.rotating_shift ?? false,
         shift_configuration_id: form.shift_configuration_id,
@@ -797,6 +799,31 @@ export default function EmployeesPage() {
                   {r.label}
                 </option>
               ))}
+            </select>
+          </label>
+          <label>
+            Puesto de trabajo
+            <input
+              placeholder="p. ej. Oficial 1ª, Técnico, Responsable de turno…"
+              value={form.job_title ?? ""}
+              onChange={(ev) => setForm({ ...form, job_title: ev.target.value || null })}
+            />
+          </label>
+          <label>
+            Supervisor directo
+            <select
+              value={form.supervisor_id ?? ""}
+              onChange={(ev) => setForm({ ...form, supervisor_id: ev.target.value || null })}
+            >
+              <option value="">Sin supervisor</option>
+              {rows
+                .filter((e) => e.is_active && e.id !== editing?.id)
+                .sort((a, b) => a.full_name.localeCompare(b.full_name))
+                .map((e) => (
+                  <option key={e.id} value={e.id}>
+                    {e.full_name}{e.job_title ? ` — ${e.job_title}` : ""}
+                  </option>
+                ))}
             </select>
           </label>
           <label className="form-grid-full">

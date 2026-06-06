@@ -1,10 +1,12 @@
 from datetime import date, timedelta
 from uuid import UUID
 
-from sqlmodel import Session, select
+from sqlmodel import Session, select  # noqa: F401
 
 from app.models.models import Employee, LeaveRequest, LeaveStatus
+from app.models.tenant import Company
 from app.schemas.ollama import OllamaIntentResponse
+from app.services.notification_service import notify_supervisor_sync
 
 
 class LeaveService:
@@ -54,6 +56,21 @@ class LeaveService:
             raw_message=raw_message,
         )
         self._session.add(request)
+        self._session.flush()
+        if employee.supervisor_id:
+            company = self._session.exec(
+                select(Company).where(Company.id == employee.company_id)
+            ).first()
+            if company:
+                notify_supervisor_sync(
+                    self._session,
+                    tenant_id=company.tenant_id,
+                    actor=employee,
+                    event_type="leave_request",
+                    title=f"Solicitud de vacaciones — {employee.full_name}",
+                    body=f"{employee.full_name} solicita vacaciones del {start} al {end} ({days:.1f} días).",
+                    link=f"/app/vacaciones",
+                )
         self._session.commit()
         self._session.refresh(request)
         return request, (

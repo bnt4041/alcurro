@@ -33,6 +33,7 @@ export interface Employee {
   employee_code: string;
   role: Role;
   supervisor_id: string | null;
+  job_title: string | null;
   vacation_days_balance: number;
   is_active: boolean;
   avatar_delivery_id: string | null;
@@ -365,4 +366,31 @@ export interface MailLog {
   tenant_id: string | null;
   envelope_id: string | null;
   created_at: string;
+}
+
+export interface AppNotification {
+  id: string;
+  event_type: string;
+  title: string;
+  body: string;
+  link: string | null;
+  actor_name: string | null;
+  read_at: string | null;
+  created_at: string;
+}
+
+export interface NotificationPreference {
+  event_type: string;
+  channel: string;
+  enabled: boolean;
+}
+
+export interface OrgChartNode {
+  id: string;
+  full_name: string;
+  job_title: string | null;
+  role: Role;
+  supervisor_id: string | null;
+  avatar_url: string | null;
+  children: OrgChartNode[];
 }

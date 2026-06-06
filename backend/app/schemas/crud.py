@@ -21,6 +21,7 @@ class EmployeeCreate(BaseModel):
     department_id: UUID | None = None
     role: Role = Role.EMPLOYEE
     supervisor_id: UUID | None = None
+    job_title: str | None = None
     vacation_days_balance: float = 22.0
     is_active: bool = True
     password: str | None = None
@@ -82,6 +83,7 @@ class EmployeeUpdate(BaseModel):
     department_id: UUID | None = None
     role: Role | None = None
     supervisor_id: UUID | None = None
+    job_title: str | None = None
     vacation_days_balance: float | None = None
     is_active: bool | None = None
     password: str | None = None
@@ -107,6 +109,7 @@ class EmployeeRead(BaseModel):
     employee_code: str
     role: Role
     supervisor_id: UUID | None = None
+    job_title: str | None = None
     vacation_days_balance: float
     is_active: bool
     avatar_delivery_id: UUID | None = None

@@ -160,6 +160,12 @@ def _run_startup_migrations() -> None:
         migrate_wa_dedup()
     except Exception as exc:
         print(f"migrate_wa_dedup: {exc}")
+    try:
+        from scripts.migrate_notifications_v1 import main as migrate_notifications_v1
+
+        migrate_notifications_v1()
+    except Exception as exc:
+        print(f"migrate_notifications_v1: {exc}")
 
 
 @asynccontextmanager

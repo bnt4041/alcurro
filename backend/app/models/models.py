@@ -122,6 +122,7 @@ class Employee(SQLModel, table=True):
         sa_column=Column(RoleType, nullable=False),
     )
     supervisor_id: UUID | None = Field(default=None, foreign_key="employees.id")
+    job_title: str | None = Field(default=None, max_length=100)
     vacation_days_balance: float = Field(default=22.0, ge=0)
     is_active: bool = Field(default=True)
     password_hash: str | None = Field(default=None, max_length=255)

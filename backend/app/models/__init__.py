@@ -1,3 +1,4 @@
+from app.models.notification import Notification, NotificationPreference  # noqa: F401 — registrar tablas
 from app.models.models import (
     BreakType,
     ClockIn,

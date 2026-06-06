@@ -3,6 +3,7 @@ import { NavLink, Outlet } from "react-router-dom";
 import { useResponsiveSidebar } from "../hooks/useResponsiveSidebar";
 import { api } from "../api/client";
 import BrandLogo from "./BrandLogo";
+import NotificationBell from "./NotificationBell";
 import OrgSelector from "./OrgSelector";
 import { useAuth } from "../context/AuthContext";
 import { applyBranding, getStoredTenantSlug } from "../hooks/useBranding";
@@ -12,6 +13,7 @@ import LegalAcceptanceModal from "./LegalAcceptanceModal";
 const nav = [
   { to: "/app", label: "Inicio", always: true as const },
   { to: "/app/organizacion", label: "Organización", module: "companies" as const },
+  { to: "/app/organigrama", label: "Organigrama", module: "employees" as const },
   { to: "/app/proyectos", label: "Proyectos", module: "companies" as const },
   { to: "/app/empleados", label: "Empleados", module: "employees" as const },
   { to: "/app/fichajes", label: "Fichajes", module: "clock_ins" as const },
@@ -102,16 +104,19 @@ export default function Layout() {
         </button>
       </aside>
       <main className="main">
-        <button
-          type="button"
-          className="sidebar-toggle"
-          aria-expanded={sidebarOpen}
-          aria-controls="app-sidebar"
-          onClick={toggleSidebar}
-        >
-          <span className="sidebar-toggle__bars" aria-hidden />
-          <span className="sidebar-toggle__label">Menú</span>
-        </button>
+        <div className="main-topbar">
+          <button
+            type="button"
+            className="sidebar-toggle"
+            aria-expanded={sidebarOpen}
+            aria-controls="app-sidebar"
+            onClick={toggleSidebar}
+          >
+            <span className="sidebar-toggle__bars" aria-hidden />
+            <span className="sidebar-toggle__label">Menú</span>
+          </button>
+          <NotificationBell />
+        </div>
         <LegalAcceptanceModal />
         {user.role === "labor_inspector" && (
           <div className="alert alert-info">

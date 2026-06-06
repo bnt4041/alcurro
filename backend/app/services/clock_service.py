@@ -6,6 +6,7 @@ from sqlmodel import Session, select
 from app.models.models import ClockIn, Employee
 from app.models.tenant import Company
 from app.services.clock_incident_hook import process_clock_in_incidents
+from app.services.notification_service import notify_supervisor_sync
 
 
 class ClockService:
@@ -91,6 +92,16 @@ class ClockService:
                     employee=emp,
                     clock=record,
                 )
+                if emp.supervisor_id:
+                    notify_supervisor_sync(
+                        self._session,
+                        tenant_id=self._tenant_id,
+                        actor=emp,
+                        event_type="clock_in",
+                        title=f"Fichaje de entrada — {emp.full_name}",
+                        body=f"{emp.full_name} ha fichado la entrada.",
+                        link=f"/app/fichajes?employee_id={emp.id}",
+                    )
         return record
 
     def close_clock(
@@ -111,6 +122,18 @@ class ClockService:
         if whatsapp_message_id:
             record.whatsapp_message_id = whatsapp_message_id
         self._session.add(record)
+        if self._tenant_id:
+            emp = self._session.get(Employee, employee_id)
+            if emp and emp.supervisor_id:
+                notify_supervisor_sync(
+                    self._session,
+                    tenant_id=self._tenant_id,
+                    actor=emp,
+                    event_type="clock_out",
+                    title=f"Fichaje de salida — {emp.full_name}",
+                    body=f"{emp.full_name} ha fichado la salida.",
+                    link=f"/app/fichajes?employee_id={emp.id}",
+                )
         if commit:
             self._session.commit()
             self._session.refresh(record)
