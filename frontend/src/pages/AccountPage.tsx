@@ -123,20 +123,20 @@ export default function AccountPage() {
         <section className="card settings-section">
           <h3>Identidad visual</h3>
           <p className="muted small">
-            Logo opcional de tu cuenta. Se muestra en el panel de inicio y en la página
-            pública de firma de documentos.
+            Logo opcional de tu cuenta. Se muestra en el panel de inicio y en la
+            página pública de firma de documentos.
           </p>
           <div className="account-logo-row">
             <div className="account-logo-preview">
               {tenant.logo_url ? (
                 <img src={tenant.logo_url} alt={`Logo ${tenant.name}`} />
               ) : (
-                <span className="muted small">Sin logo personalizado</span>
+                <span className="muted small">Sin logo</span>
               )}
             </div>
             {canWriteTenant && (
               <div className="account-logo-actions">
-                <label className="btn btn-ghost">
+                <label className={`btn btn-sm btn-primary${logoUploading ? " disabled" : ""}`}>
                   {logoUploading ? "Subiendo…" : tenant.logo_url ? "Cambiar logo" : "Subir logo"}
                   <input
                     type="file"
@@ -163,7 +163,9 @@ export default function AccountPage() {
               </div>
             )}
           </div>
-          <p className="muted small">PNG, JPG, WEBP o SVG. Máximo 2 MB.</p>
+          <p className="muted small" style={{ marginTop: "0.25rem" }}>
+            PNG, JPG, WEBP o SVG · máx. 2 MB
+          </p>
         </section>
       )}
 
