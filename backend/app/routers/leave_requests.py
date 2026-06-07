@@ -8,7 +8,7 @@ from app.core.deps import get_current_user
 from app.core.org_context import OrgContext, get_org_context
 from app.core.permissions import Permission, require_permission, require_write
 from app.database import get_session
-from app.models.models import Employee, LeaveRequest, LeaveStatus
+from app.models.models import Employee, LeaveRequest, LeaveStatus, LeaveType
 from app.routers.crud_helpers import get_or_404
 from app.schemas.crud import LeaveRequestCreate, LeaveRequestRead, LeaveRequestUpdate
 from app.services.scope_service import (
@@ -18,6 +18,16 @@ from app.services.scope_service import (
 )
 
 router = APIRouter(prefix="/leave-requests", tags=["leave-requests"])
+
+
+def _enrich(row: LeaveRequest, session: Session) -> dict:
+    data = row.model_dump()
+    if row.leave_type_id:
+        lt = session.get(LeaveType, row.leave_type_id)
+        data["leave_type_name"] = lt.name if lt else None
+    else:
+        data["leave_type_name"] = None
+    return data
 
 
 def _scope_ids(ctx: OrgContext, session: Session, user: Employee) -> list[UUID]:
@@ -41,7 +51,7 @@ def list_leave_requests(
     status: LeaveStatus | None = None,
     q: str | None = None,
     _: object = Depends(require_permission(Permission.READ, "leave")),
-) -> list[LeaveRequest]:
+) -> list[LeaveRequestRead]:
     ids = _scope_ids(ctx, session, user)
     if not ids:
         return []
@@ -71,7 +81,7 @@ def list_leave_requests(
             if (emp := emp_map.get(r.employee_id))
             and (term in emp.full_name.lower() or term in emp.employee_code.lower())
         ]
-    return rows
+    return [LeaveRequestRead(**_enrich(r, session)) for r in rows]
 
 
 @router.get("/{request_id}", response_model=LeaveRequestRead)
@@ -81,11 +91,11 @@ def get_leave_request(
     session: Session = Depends(get_session),
     user: Employee = Depends(get_current_user),
     _: object = Depends(require_permission(Permission.READ, "leave")),
-) -> LeaveRequest:
+) -> LeaveRequestRead:
     row = get_or_404(session, LeaveRequest, request_id)
     if row.employee_id not in _scope_ids(ctx, session, user):
         raise HTTPException(status_code=404, detail="Solicitud no encontrada")
-    return row
+    return LeaveRequestRead(**_enrich(row, session))
 
 
 @router.post("", response_model=LeaveRequestRead, status_code=201)
@@ -95,7 +105,7 @@ def create_leave_request(
     session: Session = Depends(get_session),
     user: Employee = Depends(get_current_user),
     _: object = Depends(require_write("leave", "create")),
-) -> LeaveRequest:
+) -> LeaveRequestRead:
     emp_id = resolve_write_employee_id(
         session, user, ctx, "leave", data.employee_id, "create"
     )
@@ -103,7 +113,7 @@ def create_leave_request(
     session.add(row)
     session.commit()
     session.refresh(row)
-    return row
+    return LeaveRequestRead(**_enrich(row, session))
 
 
 @router.patch("/{request_id}", response_model=LeaveRequestRead)
@@ -114,18 +124,17 @@ def update_leave_request(
     session: Session = Depends(get_session),
     user: Employee = Depends(get_current_user),
     _: object = Depends(require_write("leave", "update")),
-) -> LeaveRequest:
+) -> LeaveRequestRead:
     row = get_or_404(session, LeaveRequest, request_id)
     if row.employee_id not in _scope_ids(ctx, session, user):
         raise HTTPException(status_code=404, detail="Solicitud no encontrada")
     assert_employee_target(session, user, ctx, "leave", row.employee_id, "update")
     for key, value in data.model_dump(exclude_unset=True).items():
         setattr(row, key, value)
-    row.updated_at = datetime.utcnow()
     session.add(row)
     session.commit()
     session.refresh(row)
-    return row
+    return LeaveRequestRead(**_enrich(row, session))
 
 
 @router.delete("/{request_id}", status_code=204)

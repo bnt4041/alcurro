@@ -14,6 +14,7 @@ def format_clock_registered(
     project_name: str | None = None,
     latitude: float | None = None,
     longitude: float | None = None,
+    address: str | None = None,
 ) -> str:
     lines = [
         f"✅ {bold(f'Fichaje {label}')}",
@@ -21,8 +22,10 @@ def format_clock_registered(
     ]
     if project_name:
         lines.append(f"📁 Proyecto: {bold(project_name)}")
-    if latitude is not None and longitude is not None:
-        lines.append(f"📍 Ubicación: {latitude:.5f}, {longitude:.5f}")
+    if address:
+        lines.append(f"📍 {address}")
+    elif latitude is not None and longitude is not None:
+        lines.append(f"📍 {latitude:.5f}, {longitude:.5f}")
     return "\n".join(lines)
 
 
@@ -89,13 +92,17 @@ def format_denial_list(title: str, items: list[str]) -> str:
 
 def format_geo_hint(required: bool) -> str:
     if required:
-        return (
-            "\n\n📍 _Comparte tu ubicación_ (clip → Ubicación) "
-            "para fichar con geolocalización."
-        )
+        return ""
     return (
         "\n\n📍 Puedes compartir tu *ubicación* al fichar "
         "(clip → Ubicación) si lo deseas."
+    )
+
+
+def format_geo_request() -> str:
+    return (
+        "📍 *Necesito tu ubicación para fichar.*\n\n"
+        "Pulsa el 📎 (adjuntar) → *Ubicación* → *Enviar tu ubicación actual*."
     )
 
 

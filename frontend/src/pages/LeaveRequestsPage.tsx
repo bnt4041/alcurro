@@ -1,6 +1,6 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
-import type { LeaveRequest, LeaveStatus } from "../api/types";
+import type { LeaveRequest, LeaveStatus, LeaveType } from "../api/types";
 import DataTable, { type DataTableColumn } from "../components/DataTable";
 import Modal from "../components/Modal";
 import PageHeader from "../components/PageHeader";
@@ -18,6 +18,19 @@ const STATUSES: { value: LeaveStatus; label: string }[] = [
 
 type LeaveRow = LeaveRequest & { employee_name: string; status_label: string };
 
+function emptyForm(leaveTypes: LeaveType[]) {
+  return {
+    employee_id: "",
+    start_date: "",
+    end_date: "",
+    days_requested: 1,
+    status: "pending" as LeaveStatus,
+    leave_type_id: leaveTypes[0]?.id ?? "",
+    reason: "",
+    review_notes: "",
+  };
+}
+
 export default function LeaveRequestsPage() {
   const { user } = useAuth();
   const { employees, byId } = useEmployees();
@@ -25,18 +38,25 @@ export default function LeaveRequestsPage() {
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<LeaveRequest | null>(null);
-  const [form, setForm] = useState({
-    employee_id: "",
-    start_date: "",
-    end_date: "",
-    days_requested: 1,
-    status: "pending" as LeaveStatus,
-    reason: "",
-    review_notes: "",
-  });
+  const [leaveTypes, setLeaveTypes] = useState<LeaveType[]>([]);
+  const [form, setForm] = useState(emptyForm([]));
+
+  // Leave-type management state
+  const [typeModalOpen, setTypeModalOpen] = useState(false);
+  const [editingType, setEditingType] = useState<LeaveType | null>(null);
+  const [typeForm, setTypeForm] = useState({ name: "", deducts_balance: true });
+
   const canCreate = user && canModule(user.permissions, "create", "leave");
   const canUpdate = user && canModule(user.permissions, "update", "leave");
   const canAdmin = user && canModule(user.permissions, "admin", "leave");
+
+  const loadTypes = useCallback(async () => {
+    try {
+      setLeaveTypes(await api.get<LeaveType[]>("/leave-types"));
+    } catch {
+      setLeaveTypes([]);
+    }
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -48,8 +68,9 @@ export default function LeaveRequestsPage() {
   }, []);
 
   useEffect(() => {
+    loadTypes();
     load();
-  }, [load]);
+  }, [load, loadTypes]);
 
   const tableData = useMemo<LeaveRow[]>(
     () =>
@@ -64,9 +85,11 @@ export default function LeaveRequestsPage() {
   const columns = useMemo<DataTableColumn<LeaveRow>[]>(() => {
     const cols: DataTableColumn<LeaveRow>[] = [
       { title: "Empleado", field: "employee_name", headerFilter: "input", minWidth: 150 },
-      { title: "Inicio", field: "start_date", headerFilter: "input", width: 120 },
-      { title: "Fin", field: "end_date", headerFilter: "input", width: 120 },
-      { title: "Días", field: "days_requested", headerFilter: "number", width: 80 },
+      { title: "Tipo", field: "leave_type_name", headerFilter: "input", width: 130,
+        formatter: (c) => String(c.getValue() ?? "—") },
+      { title: "Inicio", field: "start_date", headerFilter: "input", width: 110 },
+      { title: "Fin", field: "end_date", headerFilter: "input", width: 110 },
+      { title: "Días", field: "days_requested", headerFilter: "number", width: 75 },
       {
         title: "Estado",
         field: "status_label",
@@ -103,15 +126,7 @@ export default function LeaveRequestsPage() {
 
   const openCreate = () => {
     setEditing(null);
-    setForm({
-      employee_id: "",
-      start_date: "",
-      end_date: "",
-      days_requested: 1,
-      status: "pending",
-      reason: "",
-      review_notes: "",
-    });
+    setForm(emptyForm(leaveTypes));
     setOpen(true);
   };
 
@@ -123,6 +138,7 @@ export default function LeaveRequestsPage() {
       end_date: r.end_date,
       days_requested: r.days_requested,
       status: r.status,
+      leave_type_id: r.leave_type_id ?? leaveTypes[0]?.id ?? "",
       reason: r.reason ?? "",
       review_notes: r.review_notes ?? "",
     });
@@ -131,8 +147,9 @@ export default function LeaveRequestsPage() {
 
   const save = async (e: FormEvent) => {
     e.preventDefault();
-    if (editing) await api.patch(`/leave-requests/${editing.id}`, form);
-    else await api.post("/leave-requests", form);
+    const payload = { ...form, leave_type_id: form.leave_type_id || null };
+    if (editing) await api.patch(`/leave-requests/${editing.id}`, payload);
+    else await api.post("/leave-requests", payload);
     setOpen(false);
     load();
   };
@@ -148,11 +165,41 @@ export default function LeaveRequestsPage() {
     else if (action === "delete") remove(row.id);
   };
 
+  // Leave-type management
+  const openTypeCreate = () => {
+    setEditingType(null);
+    setTypeForm({ name: "", deducts_balance: true });
+    setTypeModalOpen(true);
+  };
+
+  const openTypeEdit = (lt: LeaveType) => {
+    setEditingType(lt);
+    setTypeForm({ name: lt.name, deducts_balance: lt.deducts_balance });
+    setTypeModalOpen(true);
+  };
+
+  const saveType = async (e: FormEvent) => {
+    e.preventDefault();
+    if (editingType) {
+      await api.patch(`/leave-types/${editingType.id}`, typeForm);
+    } else {
+      await api.post("/leave-types", typeForm);
+    }
+    setTypeModalOpen(false);
+    loadTypes();
+  };
+
+  const deleteType = async (lt: LeaveType) => {
+    if (!confirm(`¿Eliminar tipo "${lt.name}"?`)) return;
+    await api.delete(`/leave-types/${lt.id}`);
+    loadTypes();
+  };
+
   return (
     <>
       <PageHeader
-        title="Vacaciones"
-        subtitle="Solicitudes, aprobaciones y saldo"
+        title="Permisos"
+        subtitle="Solicitudes, aprobaciones y saldo de vacaciones"
         action={
           canCreate ? (
             <button type="button" className="btn btn-primary" onClick={openCreate}>
@@ -161,16 +208,56 @@ export default function LeaveRequestsPage() {
           ) : undefined
         }
       />
+
+      {canAdmin && (
+        <section className="leave-types-section">
+          <div className="leave-types-header">
+            <h3 className="leave-types-title">Tipos de permiso</h3>
+            <button type="button" className="btn btn-sm" onClick={openTypeCreate}>
+              + Añadir tipo
+            </button>
+          </div>
+          <div className="leave-types-list">
+            {leaveTypes.map((lt) => (
+              <div key={lt.id} className="leave-type-chip">
+                <span className="leave-type-chip__name">{lt.name}</span>
+                <span className={`leave-type-chip__tag ${lt.deducts_balance ? "deducts" : "no-deducts"}`}>
+                  {lt.deducts_balance ? "resta vacaciones" : "no resta"}
+                </span>
+                <button
+                  type="button"
+                  className="btn btn-xs"
+                  onClick={() => openTypeEdit(lt)}
+                >
+                  Editar
+                </button>
+                {!lt.is_default && (
+                  <button
+                    type="button"
+                    className="btn btn-xs btn-danger"
+                    onClick={() => deleteType(lt)}
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       <DataTable
         data={tableData}
         columns={columns}
         loading={loading}
-        exportFilename="vacaciones"
+        exportFilename="permisos"
         height="520px"
         onCellAction={onCellAction}
       />
+
+      {/* Request modal */}
       <Modal
-        title={editing ? "Editar vacaciones" : "Nueva solicitud"}
+        title={editing ? "Editar permiso" : "Nueva solicitud"}
         open={open && !!(editing ? canUpdate : canCreate)}
         onClose={() => setOpen(false)}
         wide
@@ -188,6 +275,20 @@ export default function LeaveRequestsPage() {
               {employees.map((e) => (
                 <option key={e.id} value={e.id}>
                   {e.full_name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Tipo de permiso
+            <select
+              value={form.leave_type_id}
+              onChange={(ev) => setForm({ ...form, leave_type_id: ev.target.value })}
+            >
+              <option value="">Sin tipo…</option>
+              {leaveTypes.map((lt) => (
+                <option key={lt.id} value={lt.id}>
+                  {lt.name}{lt.deducts_balance ? " (resta vacaciones)" : ""}
                 </option>
               ))}
             </select>
@@ -254,6 +355,42 @@ export default function LeaveRequestsPage() {
               />
             </label>
           )}
+          <div className="form-actions">
+            <button type="submit" className="btn btn-primary">
+              Guardar
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Leave type modal */}
+      <Modal
+        title={editingType ? "Editar tipo de permiso" : "Nuevo tipo de permiso"}
+        open={typeModalOpen}
+        onClose={() => setTypeModalOpen(false)}
+      >
+        <form onSubmit={saveType} className="form-grid">
+          <label className="full">
+            Nombre
+            <input
+              type="text"
+              required
+              value={typeForm.name}
+              onChange={(ev) => setTypeForm({ ...typeForm, name: ev.target.value })}
+              placeholder="Ej: Permiso retribuido"
+            />
+          </label>
+          <label className="full">
+            <input
+              type="checkbox"
+              checked={typeForm.deducts_balance}
+              onChange={(ev) =>
+                setTypeForm({ ...typeForm, deducts_balance: ev.target.checked })
+              }
+              style={{ marginRight: "0.5rem" }}
+            />
+            Resta días de vacaciones
+          </label>
           <div className="form-actions">
             <button type="submit" className="btn btn-primary">
               Guardar

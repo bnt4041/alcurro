@@ -60,6 +60,7 @@ class ClockService:
         employee_id: UUID,
         latitude: float | None = None,
         longitude: float | None = None,
+        address: str | None = None,
         whatsapp_message_id: str | None = None,
         notes: str | None = None,
         project_id: UUID | None = None,
@@ -71,6 +72,7 @@ class ClockService:
             entrada_at=datetime.utcnow(),
             latitude=latitude,
             longitude=longitude,
+            address=address,
             whatsapp_message_id=whatsapp_message_id,
             notes=notes,
             project_id=project_id,
@@ -109,6 +111,9 @@ class ClockService:
         employee_id: UUID,
         work_summary: str | None = None,
         whatsapp_message_id: str | None = None,
+        latitude: float | None = None,
+        longitude: float | None = None,
+        address: str | None = None,
         *,
         commit: bool = True,
     ) -> ClockIn | None:
@@ -121,6 +126,12 @@ class ClockService:
             record.work_summary = work_summary
         if whatsapp_message_id:
             record.whatsapp_message_id = whatsapp_message_id
+        if latitude is not None:
+            record.latitude = latitude
+        if longitude is not None:
+            record.longitude = longitude
+        if address:
+            record.address = address
         self._session.add(record)
         if self._tenant_id:
             emp = self._session.get(Employee, employee_id)

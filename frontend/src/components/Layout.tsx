@@ -19,7 +19,7 @@ const nav = [
   { to: "/app/fichajes", label: "Fichajes", module: "clock_ins" as const },
   { to: "/app/incidencias", label: "Incidencias", module: "clock_ins" as const },
   { to: "/app/paradas", label: "Paradas", module: "breaks" as const },
-  { to: "/app/vacaciones", label: "Vacaciones", module: "leave" as const },
+  { to: "/app/permisos", label: "Permisos", module: "leave" as const },
   { to: "/app/turnos", label: "Turnos", module: "shifts" as const },
   { to: "/app/documentos", label: "Documentos", module: "documents" as const },
   { to: "/app/firmas", label: "Firmas", module: "signatures" as const },

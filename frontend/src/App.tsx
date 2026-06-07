@@ -87,6 +87,7 @@ export default function App() {
                 <Route path="organigrama" element={<OrgChartPage />} />
                 <Route path="proyectos" element={<ProjectsPage />} />
                 <Route path="empleados" element={<EmployeesPage />} />
+                <Route path="permisos" element={<LeaveRequestsPage />} />
                 <Route path="vacaciones" element={<LeaveRequestsPage />} />
                 <Route path="turnos" element={<ShiftsPage />} />
                 <Route path="documentos" element={<DocumentsPage />} />

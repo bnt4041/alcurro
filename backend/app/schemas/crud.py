@@ -138,6 +138,7 @@ class ClockInCreate(BaseModel):
     salida_at: datetime | None = None
     latitude: float | None = None
     longitude: float | None = None
+    address: str | None = None
     source: str = "panel"
     notes: str | None = None
     work_summary: str | None = None
@@ -152,6 +153,7 @@ class ClockInRead(BaseModel):
     salida_at: datetime | None = None
     latitude: float | None = None
     longitude: float | None = None
+    address: str | None = None
     source: str
     notes: str | None = None
     work_summary: str | None = None
@@ -201,12 +203,35 @@ class BreakSummaryResponse(BaseModel):
     period_to: date | None = None
 
 
+class LeaveTypeCreate(BaseModel):
+    name: str
+    deducts_balance: bool = True
+
+
+class LeaveTypeUpdate(BaseModel):
+    name: str | None = None
+    deducts_balance: bool | None = None
+    is_active: bool | None = None
+    sort_order: int | None = None
+
+
+class LeaveTypeRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    name: str
+    deducts_balance: bool
+    is_default: bool
+    is_active: bool
+    sort_order: int
+
+
 class LeaveRequestCreate(BaseModel):
     employee_id: UUID
     start_date: date
     end_date: date
     days_requested: float = Field(ge=0.5)
     status: LeaveStatus = LeaveStatus.PENDING
+    leave_type_id: UUID | None = None
     reason: str | None = None
     supervisor_id: UUID | None = None
 
@@ -216,6 +241,7 @@ class LeaveRequestUpdate(BaseModel):
     end_date: date | None = None
     days_requested: float | None = None
     status: LeaveStatus | None = None
+    leave_type_id: UUID | None = None
     reason: str | None = None
     supervisor_id: UUID | None = None
     review_notes: str | None = None
@@ -228,6 +254,7 @@ class LeaveRequestRead(LeaveRequestCreate):
     review_notes: str | None = None
     created_at: datetime
     raw_message: str | None = None
+    leave_type_name: str | None = None
 
 
 class ShiftConfigurationCreate(BaseModel):

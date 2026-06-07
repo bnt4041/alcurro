@@ -3,7 +3,7 @@ from uuid import UUID
 
 from sqlmodel import Session, select  # noqa: F401
 
-from app.models.models import Employee, LeaveRequest, LeaveStatus
+from app.models.models import Employee, LeaveRequest, LeaveStatus, LeaveType
 from app.models.tenant import Company
 from app.schemas.ollama import OllamaIntentResponse
 from app.services.notification_service import notify_supervisor_sync
@@ -39,7 +39,27 @@ class LeaveService:
             )
         days = self.count_business_days(start, end)
 
-        if days > employee.vacation_days_balance:
+        # Resolve leave type — default to "Vacaciones" if available
+        company = self._session.exec(
+            select(Company).where(Company.id == employee.company_id)
+        ).first()
+        leave_type_id = None
+        if company:
+            lt = self._session.exec(
+                select(LeaveType).where(
+                    LeaveType.tenant_id == company.tenant_id,
+                    LeaveType.name == "Vacaciones",
+                    LeaveType.is_active == True,  # noqa: E712
+                )
+            ).first()
+            if lt:
+                leave_type_id = lt.id
+                if lt.deducts_balance and days > employee.vacation_days_balance:
+                    return None, (
+                        f"No tienes saldo suficiente. Disponibles: "
+                        f"{employee.vacation_days_balance:.1f} días; solicitados: {days:.1f}."
+                    )
+        elif days > employee.vacation_days_balance:
             return None, (
                 f"No tienes saldo suficiente. Disponibles: "
                 f"{employee.vacation_days_balance:.1f} días; solicitados: {days:.1f}."
@@ -51,31 +71,30 @@ class LeaveService:
             end_date=end,
             days_requested=days,
             status=LeaveStatus.PENDING,
+            leave_type_id=leave_type_id,
             reason=intent.entities.get("motivo"),
             supervisor_id=employee.supervisor_id,
             raw_message=raw_message,
         )
         self._session.add(request)
         self._session.flush()
-        if employee.supervisor_id:
-            company = self._session.exec(
-                select(Company).where(Company.id == employee.company_id)
-            ).first()
-            if company:
-                notify_supervisor_sync(
-                    self._session,
-                    tenant_id=company.tenant_id,
-                    actor=employee,
-                    event_type="leave_request",
-                    title=f"Solicitud de vacaciones — {employee.full_name}",
-                    body=f"{employee.full_name} solicita vacaciones del {start} al {end} ({days:.1f} días).",
-                    link=f"/app/vacaciones",
-                )
+        if employee.supervisor_id and company:
+            notify_supervisor_sync(
+                self._session,
+                tenant_id=company.tenant_id,
+                actor=employee,
+                event_type="leave_request",
+                title=f"Solicitud de permiso — {employee.full_name}",
+                body=f"{employee.full_name} solicita permiso del {start} al {end} ({days:.1f} días).",
+                link="/app/permisos",
+            )
         self._session.commit()
         self._session.refresh(request)
+        motivo = intent.entities.get("motivo")
         return request, (
-            f"Solicitud registrada ({start} → {end}, {days:.1f} días). "
-            "Pendiente de aprobación de tu supervisor."
+            f"Solicitud registrada ({start} → {end}, {days:.1f} días)"
+            + (f" — {motivo}" if motivo else "")
+            + ". Pendiente de aprobación de tu supervisor."
         )
 
     def get_balance_message(self, employee: Employee) -> str:

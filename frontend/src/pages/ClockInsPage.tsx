@@ -20,6 +20,8 @@ type ClockInRow = ClockIn & {
   salida_label: string;
   duration_label: string;
   gps_label: string;
+  address_label: string;
+  map_url: string | null;
   project_label: string;
 };
 
@@ -93,8 +95,13 @@ export default function ClockInsPage() {
           duration_label: mins != null ? formatMins(mins) : "En curso",
           gps_label:
             r.latitude != null
-              ? `${r.latitude.toFixed(4)}, ${r.longitude?.toFixed(4)}`
+              ? `${r.latitude.toFixed(5)}, ${r.longitude?.toFixed(5)}`
               : "—",
+          address_label: r.address ?? (r.latitude != null ? `${r.latitude.toFixed(5)}, ${r.longitude?.toFixed(5)}` : "—"),
+          map_url:
+            r.latitude != null && r.longitude != null
+              ? `https://www.openstreetmap.org/?mlat=${r.latitude}&mlon=${r.longitude}&zoom=17`
+              : null,
           project_label: r.project_name ?? "—",
         };
       }),
@@ -143,10 +150,19 @@ export default function ClockInsPage() {
         width: 100,
       },
       {
-        title: "GPS",
-        field: "gps_label",
+        title: "Ubicación",
+        field: "address_label",
         headerFilter: "input",
-        minWidth: 140,
+        width: 200,
+        formatter: (cell) => {
+          const row = cell.getRow().getData() as ClockInRow;
+          const addr = row.address_label;
+          if (addr === "—") return "—";
+          const mapLink = row.map_url
+            ? `<a href="${row.map_url}" target="_blank" rel="noopener" class="clock-map-link" title="Ver en mapa">&#x1F5FA;</a>`
+            : "";
+          return `<span class="clock-addr-text" title="${row.gps_label}">${addr}</span>${mapLink}`;
+        },
       },
       {
         title: "Resumen del día",

@@ -204,11 +204,21 @@ export interface ClockIn {
   salida_at: string | null;
   latitude: number | null;
   longitude: number | null;
+  address: string | null;
   source: string;
   notes: string | null;
   work_summary: string | null;
   project_id?: string | null;
   project_name?: string | null;
+}
+
+export interface LeaveType {
+  id: string;
+  name: string;
+  deducts_balance: boolean;
+  is_default: boolean;
+  is_active: boolean;
+  sort_order: number;
 }
 
 export interface LeaveRequest {
@@ -218,6 +228,8 @@ export interface LeaveRequest {
   end_date: string;
   days_requested: number;
   status: LeaveStatus;
+  leave_type_id: string | null;
+  leave_type_name: string | null;
   reason: string | null;
   supervisor_id: string | null;
   reviewed_at: string | null;

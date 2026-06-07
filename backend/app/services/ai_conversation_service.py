@@ -291,10 +291,7 @@ def build_system_prompt(
         "══ INTENTS DISPONIBLES ══",
         "Códigos válidos: " + intent_list,
         "",
-        "══ MAPA DE INTENCIONES ══",
-    ]
-
-    _PHRASE_MAP = [
+        "══ MAPA DE INTENCIONES ══",  
         ("fichar_entrada",  "ficho, fichar, quiero fichar, voy a fichar, llego, entro a trabajar, he llegado, empiezo, comienzo, entrada, ya estoy, a trabajar, a currar, vamos a currar, curro, currando"),
         ("fichar_salida",   "me voy, termino, acabo, salida, me marcho, salgo, finalizo, me piro, fin de jornada, hasta mañana"),
         ("inicio_parada",   "descanso, pausa, café, a comer, paro un rato, me desconecto, voy a almorzar"),

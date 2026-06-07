@@ -87,6 +87,19 @@ class LeaveStatus(StrEnum):
     CANCELLED = "cancelled"
 
 
+class LeaveType(SQLModel, table=True):
+    __tablename__ = "leave_types"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(foreign_key="tenants.id", index=True)
+    name: str = Field(max_length=100)
+    deducts_balance: bool = Field(default=True)
+    is_default: bool = Field(default=False)
+    is_active: bool = Field(default=True)
+    sort_order: int = Field(default=0)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 class ShiftPatternType(StrEnum):
     """Tipos de configuración de turno según normativa laboral española."""
 
@@ -192,6 +205,7 @@ class ClockIn(SQLModel, table=True):
     salida_at: datetime | None = Field(default=None)
     latitude: float | None = Field(default=None)
     longitude: float | None = Field(default=None)
+    address: str | None = Field(default=None, max_length=500)
     source: str = Field(default="whatsapp", max_length=50)
     notes: str | None = Field(default=None, max_length=500)
     work_summary: str | None = Field(default=None, max_length=2000)
@@ -234,6 +248,7 @@ class LeaveRequest(SQLModel, table=True):
     end_date: date
     days_requested: float = Field(ge=0.5)
     status: LeaveStatus = Field(default=LeaveStatus.PENDING)
+    leave_type_id: UUID | None = Field(default=None, foreign_key="leave_types.id")
     reason: str | None = Field(default=None, max_length=1000)
     supervisor_id: UUID | None = Field(default=None, foreign_key="employees.id")
     reviewed_at: datetime | None = Field(default=None)

@@ -12,6 +12,7 @@ from app.routers import (
     employees,
     groups,
     leave_requests,
+    leave_types,
     legal,
     notifications,
     organization,
@@ -80,6 +81,7 @@ protected.include_router(incidents.router)
 protected.include_router(breaks.router)
 protected.include_router(legal.router)
 protected.include_router(leave_requests.router)
+protected.include_router(leave_types.router)
 protected.include_router(shifts.router)
 protected.include_router(documents.router)
 protected.include_router(signatures.router)

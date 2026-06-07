@@ -37,12 +37,14 @@ from app.services.inbound_pending_service import (
     set_pending_upload,
 )
 from app.services.clock_settings_service import inbound_name
+from app.services.geocoding import reverse_geocode
 from app.services.whatsapp_format import (
     format_break_registered,
     format_clock_registered,
     format_confirmation_cancelled,
     format_conversational_help,
     format_geo_hint,
+    format_geo_request,
     format_inbound_document_picker,
 )
 from app.services.leave_service import LeaveService
@@ -193,6 +195,7 @@ class WebhookService:
             project_name=project_name,
             latitude=record.latitude,
             longitude=record.longitude,
+            address=record.address,
         )
 
     def _open_clock_with_project_flow(
@@ -201,6 +204,7 @@ class WebhookService:
         *,
         latitude: float | None = None,
         longitude: float | None = None,
+        address: str | None = None,
         whatsapp_message_id: str | None = None,
         picker_text: str | None = None,
     ) -> str:
@@ -210,6 +214,7 @@ class WebhookService:
                 employee_id=employee.id,
                 latitude=latitude,
                 longitude=longitude,
+                address=address,
                 whatsapp_message_id=whatsapp_message_id,
                 commit=False,
             )
@@ -222,6 +227,7 @@ class WebhookService:
                     employee_id=employee.id,
                     latitude=latitude,
                     longitude=longitude,
+                    address=address,
                     whatsapp_message_id=whatsapp_message_id,
                     project_id=direct.id,
                     commit=False,
@@ -244,6 +250,7 @@ class WebhookService:
                 employee_id=employee.id,
                 latitude=pending.latitude,
                 longitude=pending.longitude,
+                address=address,
                 whatsapp_message_id=pending.whatsapp_message_id or whatsapp_message_id,
                 project_id=project.id,
                 commit=False,
@@ -267,11 +274,17 @@ class WebhookService:
         employee: Employee,
         work_summary: str | None = None,
         whatsapp_message_id: str | None = None,
+        latitude: float | None = None,
+        longitude: float | None = None,
+        address: str | None = None,
     ) -> str:
         record = self._clock.close_clock(
             employee_id=employee.id,
             work_summary=work_summary,
             whatsapp_message_id=whatsapp_message_id,
+            latitude=latitude,
+            longitude=longitude,
+            address=address,
             commit=False,
         )
         if not record:
@@ -324,6 +337,9 @@ class WebhookService:
         if not employee:
             return {"ok": False, "error": "Empleado no encontrado"}
 
+        # Reverse geocoding (best-effort, non-blocking)
+        geo_address = await reverse_geocode(lat, lng)
+
         # Si hay confirmación pendiente por ubicación, ejecutar directamente
         pending = get_pending(self._session, employee_id)
         is_open = self._is_open(employee_id)
@@ -342,10 +358,20 @@ class WebhookService:
                     pass
                 return {"ok": True, "action": "denied_location"}
             if is_open:
-                reply = self._close_clock(employee, whatsapp_message_id=message.id)
+                reply = self._close_clock(
+                    employee,
+                    whatsapp_message_id=message.id,
+                    latitude=lat,
+                    longitude=lng,
+                    address=geo_address,
+                )
             else:
                 reply = self._open_clock_with_project_flow(
-                    employee, latitude=lat, longitude=lng, whatsapp_message_id=message.id,
+                    employee,
+                    latitude=lat,
+                    longitude=lng,
+                    address=geo_address,
+                    whatsapp_message_id=message.id,
                 )
             clear_pending(self._session, employee_id)
             self._session.commit()
@@ -369,10 +395,20 @@ class WebhookService:
             return {"ok": True, "action": "denied_location"}
 
         if is_open:
-            reply = self._close_clock(employee, whatsapp_message_id=message.id)
+            reply = self._close_clock(
+                employee,
+                whatsapp_message_id=message.id,
+                latitude=lat,
+                longitude=lng,
+                address=geo_address,
+            )
         else:
             reply = self._open_clock_with_project_flow(
-                employee, latitude=lat, longitude=lng, whatsapp_message_id=message.id,
+                employee,
+                latitude=lat,
+                longitude=lng,
+                address=geo_address,
+                whatsapp_message_id=message.id,
             )
         self._session.commit()
         try:
@@ -767,6 +803,36 @@ class WebhookService:
             except Exception:
                 pass
             return {"ok": True, "action": "guard_not_open"}
+
+        # Si require_geolocation y es un fichaje de texto → pedir ubicación primero
+        if (
+            intent_code in ("fichar_entrada", "fichar_salida")
+            and self._settings.require_geolocation
+        ):
+            _record_type = "salida" if intent_code == "fichar_salida" else "entrada"
+            set_pending(
+                self._session,
+                employee_id=employee.id,
+                record_type=_record_type,
+                whatsapp_message_id=message_id,
+                pending_confirmation=True,
+                pending_intent=intent_code,
+            )
+            reply = format_geo_request()
+            append_message(
+                self._session,
+                tenant_id=self._tenant_id,
+                employee_id=employee.id,
+                role="assistant",
+                content=reply[:_REPLY_MAX],
+                intent_code="await_location",
+            )
+            self._session.commit()
+            try:
+                await self._gowa.send_text(phone, reply)
+            except Exception:
+                pass
+            return {"ok": True, "action": "await_location"}
 
         reply = await self._execute_intent(
             employee, intent_data, raw_text, message_id
