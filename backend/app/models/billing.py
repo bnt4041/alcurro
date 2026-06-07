@@ -148,5 +148,8 @@ class StripePayment(SQLModel, table=True):
     currency: str = Field(default="EUR", max_length=3)
     status: StripePaymentStatus = Field(default=StripePaymentStatus.PENDING)
     description: str | None = Field(default=None, max_length=500)
+    invoice_number: str | None = Field(default=None, max_length=50)
+    invoice_pdf_url: str | None = Field(default=None)
+    invoice_url: str | None = Field(default=None)
     paid_at: datetime | None = Field(default=None)
     created_at: datetime = Field(default_factory=datetime.utcnow)

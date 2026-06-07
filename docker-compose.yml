@@ -8,7 +8,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hrm_secret}
       POSTGRES_DB: ${POSTGRES_DB:-hrm}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - ./data/postgres:/var/lib/postgresql/data   # bind mount → migración fácil
     ports:
       - "5432:5432"
     healthcheck:
@@ -44,7 +44,7 @@ services:
       APP_OS: Chrome
       APP_ACCOUNT_VALIDATION: "false"
     volumes:
-      - gowa_data:/app/storages
+      - ./data/gowa:/app/storages                  # bind mount → sesiones WA portables
     ports:
       - "3000:3000"
     networks:
@@ -73,7 +73,7 @@ services:
       DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
     volumes:
       - ./backend:/app
-      - uploads_data:/app/uploads
+      - ./data/uploads:/app/uploads                # bind mount → documentos portables
       - /var/run/docker.sock:/var/run/docker.sock
     ports:
       - "8000:8000"
@@ -106,11 +106,8 @@ services:
       - "traefik.http.services.frontend.loadbalancer.server.port=80"
 
 volumes:
-  postgres_data:
-  ollama_data:
-  gowa_data:
-  uploads_data:
-  frontend_node_modules:
+  ollama_data:            # modelos Ollama (grandes, re-descargables — no necesitan bind mount)
+  frontend_node_modules:  # caché de dependencias npm/bun en dev
 
 networks:
   hrm-net:

@@ -233,6 +233,174 @@ async def notify_supervisor(
     # Email — no SMTP directo aquí, se deja para una extensión futura
 
 
+def notify_leave_request_created(
+    session: Session,
+    *,
+    tenant_id: UUID,
+    employee: Employee,
+    start_date: str,
+    end_date: str,
+    days: float,
+    leave_type_name: str | None = None,
+    reason: str | None = None,
+) -> None:
+    """Notifica al supervisor directo y admins del tenant cuando se crea un permiso."""
+    from app.models.models import Role
+    from app.models.tenant import Company
+
+    supervisor_id = employee.supervisor_id
+    supervisor: Employee | None = session.get(Employee, supervisor_id) if supervisor_id else None
+    if supervisor and not supervisor.is_active:
+        supervisor = None
+
+    type_label = f" [{leave_type_name}]" if leave_type_name else ""
+    reason_label = f"\nMotivo: {reason}" if reason else ""
+    subject = f"Nueva solicitud de permiso{type_label} — {employee.full_name}"
+    body = (
+        f"{employee.full_name} ha solicitado un permiso{type_label}:\n\n"
+        f"• Desde: {start_date}\n"
+        f"• Hasta:  {end_date}\n"
+        f"• Días:   {days:.1f}{reason_label}\n\n"
+        "Accede al panel de Alcurro para aprobar o rechazar la solicitud."
+    )
+    body_inapp = f"{employee.full_name} solicita permiso del {start_date} al {end_date} ({days:.1f} días)."
+
+    # In-app al supervisor
+    if supervisor and _pref_enabled(session, supervisor.id, "leave_request", "inapp"):
+        create_notification(
+            session,
+            tenant_id=tenant_id,
+            employee_id=supervisor.id,
+            event_type="leave_request",
+            title=subject,
+            body=body_inapp,
+            link="/app/permisos",
+            actor_name=employee.full_name,
+        )
+
+    # Recoger destinatarios email: supervisor + admins del mismo tenant con email
+    from app.services.mail_service import MailService
+    mail = MailService(session)
+
+    # Empleados del mismo tenant con rol admin/tenant_admin que tengan email
+    company_ids = [
+        c.id
+        for c in session.exec(
+            select(Company).where(Company.tenant_id == tenant_id)
+        ).all()
+    ]
+    admin_roles = {Role.TENANT_ADMIN, Role.ADMIN}
+    tenant_admins = session.exec(
+        select(Employee).where(
+            Employee.company_id.in_(company_ids),  # type: ignore[attr-defined]
+            Employee.is_active == True,  # noqa: E712
+            Employee.role.in_(admin_roles),  # type: ignore[attr-defined]
+            Employee.email != None,  # noqa: E711
+        )
+    ).all()
+
+    recipients: dict[str, Employee] = {}  # email → employee (para pref check)
+    if supervisor and supervisor.email:
+        recipients[supervisor.email] = supervisor
+    for admin in tenant_admins:
+        if admin.id != employee.id and admin.email:
+            recipients[admin.email] = admin
+
+    for to_addr, recipient in recipients.items():
+        if _pref_enabled(session, recipient.id, "leave_request", "email"):
+            mail.send(
+                to_addr,
+                subject,
+                body,
+                event_type="leave_request",
+                tenant_id=tenant_id,
+            )
+
+    # In-app a admins del tenant (excepto el propio empleado)
+    for admin in tenant_admins:
+        if admin.id != employee.id and _pref_enabled(session, admin.id, "leave_request", "inapp"):
+            if not supervisor or admin.id != supervisor.id:  # no duplicar con el supervisor
+                create_notification(
+                    session,
+                    tenant_id=tenant_id,
+                    employee_id=admin.id,
+                    event_type="leave_request",
+                    title=subject,
+                    body=body_inapp,
+                    link="/app/permisos",
+                    actor_name=employee.full_name,
+                )
+
+
+def notify_leave_request_reviewed(
+    session: Session,
+    *,
+    tenant_id: UUID,
+    employee: Employee,
+    new_status: str,
+    start_date: str,
+    end_date: str,
+    days: float,
+    leave_type_name: str | None = None,
+    review_notes: str | None = None,
+) -> None:
+    """WhatsApp + email al empleado cuando su solicitud es aprobada o rechazada."""
+    if new_status == "approved":
+        verdict = "✅ *APROBADA*"
+        verdict_plain = "aprobada"
+    elif new_status == "rejected":
+        verdict = "❌ *RECHAZADA*"
+        verdict_plain = "rechazada"
+    else:
+        return
+
+    type_label = f" [{leave_type_name}]" if leave_type_name else ""
+    notes_label = f"\n📝 Nota: {review_notes}" if review_notes else ""
+    wa_msg = (
+        f"Tu solicitud de permiso{type_label} ha sido {verdict}.\n\n"
+        f"📅 Del {start_date} al {end_date} ({days:.1f} días){notes_label}"
+    )
+
+    # WhatsApp al empleado
+    if _pref_enabled(session, employee.id, "leave_request", "whatsapp"):
+        try:
+            from app.services.gowa_service import GoWAService
+            GoWAService(session).send_text_sync(employee.phone, wa_msg)
+        except Exception as exc:
+            logger.warning("notify_leave_reviewed WhatsApp failed for %s: %s", employee.id, exc)
+
+    # In-app al empleado
+    if _pref_enabled(session, employee.id, "leave_request", "inapp"):
+        create_notification(
+            session,
+            tenant_id=tenant_id,
+            employee_id=employee.id,
+            event_type="leave_request",
+            title=f"Solicitud de permiso{type_label} {verdict_plain}",
+            body=f"Tu permiso del {start_date} al {end_date} ha sido {verdict_plain}.",
+            link="/app/permisos",
+        )
+
+    # Email al empleado (si tiene email)
+    if employee.email and _pref_enabled(session, employee.id, "leave_request", "email"):
+        from app.services.mail_service import MailService
+        subject = f"Solicitud de permiso{type_label} {verdict_plain} — {start_date} al {end_date}"
+        body = (
+            f"Hola {employee.full_name.split()[0]},\n\n"
+            f"Tu solicitud de permiso{type_label} del {start_date} al {end_date} "
+            f"({days:.1f} días) ha sido {verdict_plain}."
+            + (f"\n\nNota del responsable: {review_notes}" if review_notes else "")
+            + "\n\n— Alcurro RRHH"
+        )
+        MailService(session).send(
+            employee.email,
+            subject,
+            body,
+            event_type="leave_request",
+            tenant_id=tenant_id,
+        )
+
+
 def build_org_chart(session: Session, tenant_id: UUID) -> list[dict]:
     """Devuelve el árbol jerárquico de empleados para el organigrama."""
     from app.models.tenant import Company

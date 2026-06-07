@@ -1,6 +1,6 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
-import type { LeaveRequest, LeaveStatus, LeaveType } from "../api/types";
+import type { EmployeeLeaveBalance, LeaveRequest, LeaveStatus, LeaveType } from "../api/types";
 import DataTable, { type DataTableColumn } from "../components/DataTable";
 import Modal from "../components/Modal";
 import PageHeader from "../components/PageHeader";
@@ -44,7 +44,17 @@ export default function LeaveRequestsPage() {
   // Leave-type management state
   const [typeModalOpen, setTypeModalOpen] = useState(false);
   const [editingType, setEditingType] = useState<LeaveType | null>(null);
-  const [typeForm, setTypeForm] = useState({ name: "", deducts_balance: true });
+  const [typeForm, setTypeForm] = useState({
+    name: "",
+    deducts_balance: true,
+    has_own_balance: false,
+    default_days: "" as string | number,
+  });
+
+  // Balance management state
+  const [balanceEmpId, setBalanceEmpId] = useState<string>("");
+  const [balances, setBalances] = useState<EmployeeLeaveBalance[]>([]);
+  const [savingBalance, setSavingBalance] = useState<string | null>(null);
 
   const canCreate = user && canModule(user.permissions, "create", "leave");
   const canUpdate = user && canModule(user.permissions, "update", "leave");
@@ -57,6 +67,17 @@ export default function LeaveRequestsPage() {
       setLeaveTypes([]);
     }
   }, []);
+
+  const loadBalances = useCallback(async (empId: string) => {
+    if (!empId) { setBalances([]); return; }
+    try {
+      setBalances(await api.get<EmployeeLeaveBalance[]>(`/employees/${empId}/leave-balances`));
+    } catch {
+      setBalances([]);
+    }
+  }, []);
+
+  useEffect(() => { loadBalances(balanceEmpId); }, [balanceEmpId, loadBalances]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -168,25 +189,44 @@ export default function LeaveRequestsPage() {
   // Leave-type management
   const openTypeCreate = () => {
     setEditingType(null);
-    setTypeForm({ name: "", deducts_balance: true });
+    setTypeForm({ name: "", deducts_balance: true, has_own_balance: false, default_days: "" });
     setTypeModalOpen(true);
   };
 
   const openTypeEdit = (lt: LeaveType) => {
     setEditingType(lt);
-    setTypeForm({ name: lt.name, deducts_balance: lt.deducts_balance });
+    setTypeForm({
+      name: lt.name,
+      deducts_balance: lt.deducts_balance,
+      has_own_balance: lt.has_own_balance,
+      default_days: lt.default_days ?? "",
+    });
     setTypeModalOpen(true);
   };
 
   const saveType = async (e: FormEvent) => {
     e.preventDefault();
+    const payload = {
+      ...typeForm,
+      default_days: typeForm.default_days !== "" ? Number(typeForm.default_days) : null,
+    };
     if (editingType) {
-      await api.patch(`/leave-types/${editingType.id}`, typeForm);
+      await api.patch(`/leave-types/${editingType.id}`, payload);
     } else {
-      await api.post("/leave-types", typeForm);
+      await api.post("/leave-types", payload);
     }
     setTypeModalOpen(false);
     loadTypes();
+  };
+
+  const saveBalance = async (empId: string, leaveTypeId: string, totalDays: number) => {
+    setSavingBalance(leaveTypeId);
+    try {
+      await api.put(`/employees/${empId}/leave-balances/${leaveTypeId}`, { total_days: totalDays });
+      await loadBalances(empId);
+    } finally {
+      setSavingBalance(null);
+    }
   };
 
   const deleteType = async (lt: LeaveType) => {
@@ -221,28 +261,76 @@ export default function LeaveRequestsPage() {
             {leaveTypes.map((lt) => (
               <div key={lt.id} className="leave-type-chip">
                 <span className="leave-type-chip__name">{lt.name}</span>
-                <span className={`leave-type-chip__tag ${lt.deducts_balance ? "deducts" : "no-deducts"}`}>
-                  {lt.deducts_balance ? "resta vacaciones" : "no resta"}
-                </span>
-                <button
-                  type="button"
-                  className="btn btn-xs"
-                  onClick={() => openTypeEdit(lt)}
-                >
+                {lt.has_own_balance && (
+                  <span className="leave-type-chip__tag own-balance">
+                    saldo propio{lt.default_days != null ? ` (${lt.default_days}d)` : ""}
+                  </span>
+                )}
+                {!lt.has_own_balance && (
+                  <span className={`leave-type-chip__tag ${lt.deducts_balance ? "deducts" : "no-deducts"}`}>
+                    {lt.deducts_balance ? "resta vacaciones" : "no resta"}
+                  </span>
+                )}
+                <button type="button" className="btn btn-xs" onClick={() => openTypeEdit(lt)}>
                   Editar
                 </button>
                 {!lt.is_default && (
-                  <button
-                    type="button"
-                    className="btn btn-xs btn-danger"
-                    onClick={() => deleteType(lt)}
-                  >
+                  <button type="button" className="btn btn-xs btn-danger" onClick={() => deleteType(lt)}>
                     ✕
                   </button>
                 )}
               </div>
             ))}
           </div>
+
+          {/* Balance por empleado */}
+          {leaveTypes.some((lt) => lt.has_own_balance) && (
+            <div className="leave-balance-panel">
+              <h4 className="leave-types-title" style={{ marginTop: "1rem" }}>
+                Saldos por empleado
+              </h4>
+              <div className="leave-balance-row" style={{ marginBottom: "0.5rem" }}>
+                <select
+                  className="leave-balance-emp-select"
+                  value={balanceEmpId}
+                  onChange={(e) => setBalanceEmpId(e.target.value)}
+                >
+                  <option value="">Seleccionar empleado…</option>
+                  {employees.map((e) => (
+                    <option key={e.id} value={e.id}>{e.full_name}</option>
+                  ))}
+                </select>
+              </div>
+              {balanceEmpId && (
+                <table className="leave-balance-table">
+                  <thead>
+                    <tr>
+                      <th>Tipo</th>
+                      <th>Total días</th>
+                      <th>Usados</th>
+                      <th>Restantes</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {balances
+                      .filter((b) => {
+                        const lt = leaveTypes.find((t) => t.id === b.leave_type_id);
+                        return lt?.has_own_balance;
+                      })
+                      .map((b) => (
+                        <BalanceRow
+                          key={b.leave_type_id}
+                          balance={b}
+                          saving={savingBalance === b.leave_type_id}
+                          onSave={(days) => saveBalance(balanceEmpId, b.leave_type_id, days)}
+                        />
+                      ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
         </section>
       )}
 
@@ -380,17 +468,41 @@ export default function LeaveRequestsPage() {
               placeholder="Ej: Permiso retribuido"
             />
           </label>
-          <label className="full">
+          <label className="full leave-type-check-label">
             <input
               type="checkbox"
-              checked={typeForm.deducts_balance}
+              checked={typeForm.has_own_balance}
               onChange={(ev) =>
-                setTypeForm({ ...typeForm, deducts_balance: ev.target.checked })
+                setTypeForm({ ...typeForm, has_own_balance: ev.target.checked, deducts_balance: ev.target.checked ? false : typeForm.deducts_balance })
               }
-              style={{ marginRight: "0.5rem" }}
             />
-            Resta días de vacaciones
+            Tiene saldo propio por empleado
           </label>
+          {typeForm.has_own_balance ? (
+            <label className="full">
+              Días por defecto
+              <input
+                type="number"
+                step="0.5"
+                min="0"
+                value={typeForm.default_days}
+                onChange={(ev) => setTypeForm({ ...typeForm, default_days: ev.target.value })}
+                placeholder="Ej: 3"
+              />
+              <span className="form-hint">Días que se asignan a cada empleado al crear su saldo</span>
+            </label>
+          ) : (
+            <label className="full leave-type-check-label">
+              <input
+                type="checkbox"
+                checked={typeForm.deducts_balance}
+                onChange={(ev) =>
+                  setTypeForm({ ...typeForm, deducts_balance: ev.target.checked })
+                }
+              />
+              Resta días de vacaciones
+            </label>
+          )}
           <div className="form-actions">
             <button type="submit" className="btn btn-primary">
               Guardar
@@ -399,5 +511,65 @@ export default function LeaveRequestsPage() {
         </form>
       </Modal>
     </>
+  );
+}
+
+function BalanceRow({
+  balance,
+  saving,
+  onSave,
+}: {
+  balance: EmployeeLeaveBalance;
+  saving: boolean;
+  onSave: (days: number) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(String(balance.total_days));
+
+  const handleSave = () => {
+    const n = parseFloat(value);
+    if (!isNaN(n) && n >= 0) {
+      onSave(n);
+      setEditing(false);
+    }
+  };
+
+  return (
+    <tr>
+      <td>{balance.leave_type_name}</td>
+      <td>
+        {editing ? (
+          <input
+            type="number"
+            step="0.5"
+            min="0"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            style={{ width: 70 }}
+            autoFocus
+            onKeyDown={(e) => { if (e.key === "Enter") handleSave(); if (e.key === "Escape") setEditing(false); }}
+          />
+        ) : (
+          <span
+            style={{ cursor: "pointer", borderBottom: "1px dashed #94a3b8" }}
+            onClick={() => { setValue(String(balance.total_days)); setEditing(true); }}
+            title="Clic para editar"
+          >
+            {balance.total_days}
+          </span>
+        )}
+      </td>
+      <td>{balance.used_days}</td>
+      <td style={{ fontWeight: balance.remaining_days < 0 ? 700 : undefined, color: balance.remaining_days < 0 ? "#dc2626" : undefined }}>
+        {balance.remaining_days}
+      </td>
+      <td>
+        {editing ? (
+          <button type="button" className="btn btn-xs btn-primary" disabled={saving} onClick={handleSave}>
+            {saving ? "…" : "✓"}
+          </button>
+        ) : null}
+      </td>
+    </tr>
   );
 }

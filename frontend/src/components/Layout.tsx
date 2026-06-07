@@ -17,6 +17,7 @@ const nav = [
   { to: "/app/proyectos", label: "Proyectos", module: "companies" as const },
   { to: "/app/empleados", label: "Empleados", module: "employees" as const },
   { to: "/app/fichajes", label: "Fichajes", module: "clock_ins" as const },
+  { to: "/app/informes", label: "Informes", module: "clock_ins" as const },
   { to: "/app/incidencias", label: "Incidencias", module: "clock_ins" as const },
   { to: "/app/paradas", label: "Paradas", module: "breaks" as const },
   { to: "/app/permisos", label: "Permisos", module: "leave" as const },

@@ -127,11 +127,11 @@ class ClockService:
         if whatsapp_message_id:
             record.whatsapp_message_id = whatsapp_message_id
         if latitude is not None:
-            record.latitude = latitude
+            record.latitude_out = latitude
         if longitude is not None:
-            record.longitude = longitude
+            record.longitude_out = longitude
         if address:
-            record.address = address
+            record.address_out = address
         self._session.add(record)
         if self._tenant_id:
             emp = self._session.get(Employee, employee_id)

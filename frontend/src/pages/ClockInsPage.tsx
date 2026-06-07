@@ -22,6 +22,8 @@ type ClockInRow = ClockIn & {
   gps_label: string;
   address_label: string;
   map_url: string | null;
+  address_out_label: string;
+  map_out_url: string | null;
   project_label: string;
 };
 
@@ -102,6 +104,11 @@ export default function ClockInsPage() {
             r.latitude != null && r.longitude != null
               ? `https://www.openstreetmap.org/?mlat=${r.latitude}&mlon=${r.longitude}&zoom=17`
               : null,
+          address_out_label: r.address_out ?? (r.latitude_out != null ? `${r.latitude_out.toFixed(5)}, ${r.longitude_out?.toFixed(5)}` : "—"),
+          map_out_url:
+            r.latitude_out != null && r.longitude_out != null
+              ? `https://www.openstreetmap.org/?mlat=${r.latitude_out}&mlon=${r.longitude_out}&zoom=17`
+              : null,
           project_label: r.project_name ?? "—",
         };
       }),
@@ -150,7 +157,7 @@ export default function ClockInsPage() {
         width: 100,
       },
       {
-        title: "Ubicación",
+        title: "GPS Entrada",
         field: "address_label",
         headerFilter: "input",
         width: 200,
@@ -162,6 +169,22 @@ export default function ClockInsPage() {
             ? `<a href="${row.map_url}" target="_blank" rel="noopener" class="clock-map-link" title="Ver en mapa">&#x1F5FA;</a>`
             : "";
           return `<span class="clock-addr-text" title="${row.gps_label}">${addr}</span>${mapLink}`;
+        },
+      },
+      {
+        title: "GPS Salida",
+        field: "address_out_label",
+        headerFilter: "input",
+        width: 200,
+        formatter: (cell) => {
+          const row = cell.getRow().getData() as ClockInRow;
+          const addr = row.address_out_label;
+          if (addr === "—") return "—";
+          const gpsTitle = row.latitude_out != null ? `${row.latitude_out?.toFixed(5)}, ${row.longitude_out?.toFixed(5)}` : "";
+          const mapLink = row.map_out_url
+            ? `<a href="${row.map_out_url}" target="_blank" rel="noopener" class="clock-map-link" title="Ver en mapa">&#x1F5FA;</a>`
+            : "";
+          return `<span class="clock-addr-text" title="${gpsTitle}">${addr}</span>${mapLink}`;
         },
       },
       {

@@ -53,31 +53,15 @@ export default function HomePage() {
             <div className="landing-phone">
               <div className="landing-phone__notch" aria-hidden />
               <div className="landing-phone__screen">
-                <div className="landing-wa-header">
-                  <div className="landing-wa-avatar" />
-                  <div>
-                    <strong>alcurro</strong>
-                    <span>En línea</span>
-                  </div>
-                </div>
-                <div className="landing-wa-chat">
-                  <div className="landing-wa-bubble-user">
-                    Ficho entrada
-                    <div className="landing-wa-time">10:00</div>
-                  </div>
-                  <div className="landing-wa-bubble-bot">
-                    <div className="landing-wa-bubble-bot__title">
-                      ¡Fichaje realizado!
-                    </div>
-                    <div className="landing-wa-bubble-bot__meta">
-                      Entrada: 10:01 AM
-                    </div>
-                    <div className="landing-wa-map">
-                      <Icon name="location_on" />
-                    </div>
-                    <span className="landing-wa-bubble-bot__btn">Ver detalles</span>
-                  </div>
-                </div>
+                <video
+                  className="landing-phone__video"
+                  autoPlay
+                  muted
+                  loop
+                  playsInline
+                >
+                  <source src="/Video_comienza_con_el_chat_vac.mp4" type="video/mp4" />
+                </video>
               </div>
             </div>
           </div>

@@ -11,6 +11,7 @@ from app.routers import (
     documents,
     employees,
     groups,
+    leave_balances,
     leave_requests,
     leave_types,
     legal,
@@ -25,6 +26,7 @@ from app.routers import (
     platform_mail,
     platform_ai,
     public,
+    reports,
     settings,
     shifts,
     signatures,
@@ -47,6 +49,7 @@ api_router.include_router(platform_stripe.router)
 api_router.include_router(platform_whatsapp.router)
 api_router.include_router(platform_mail.router)
 api_router.include_router(platform_ai.router)
+api_router.include_router(legal.public_router)
 
 # Vista previa pública de documentos (imágenes) — sin autenticación
 api_router.add_api_route(
@@ -82,6 +85,7 @@ protected.include_router(breaks.router)
 protected.include_router(legal.router)
 protected.include_router(leave_requests.router)
 protected.include_router(leave_types.router)
+protected.include_router(leave_balances.router)
 protected.include_router(shifts.router)
 protected.include_router(documents.router)
 protected.include_router(signatures.router)
@@ -89,4 +93,5 @@ protected.include_router(settings.router)
 protected.include_router(groups.router)
 protected.include_router(organization.router)
 protected.include_router(projects.router)
+protected.include_router(reports.router)
 api_router.include_router(protected)

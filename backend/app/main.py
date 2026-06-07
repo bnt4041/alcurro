@@ -181,6 +181,13 @@ def _run_startup_migrations() -> None:
     except Exception as exc:
         print(f"migrate_geocoding_v1: {exc}")
 
+    try:
+        from scripts.migrate_leave_balance_v1 import main as migrate_leave_balance_v1
+
+        migrate_leave_balance_v1()
+    except Exception as exc:
+        print(f"migrate_leave_balance_v1: {exc}")
+
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):

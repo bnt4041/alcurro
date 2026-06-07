@@ -31,6 +31,24 @@ export default function InvoiceHistoryTable({ invoices, loading }: Props) {
     () => [
       { title: "Fecha", field: "date_label", headerFilter: "input", width: 110 },
       {
+        title: "Factura",
+        field: "invoice_number",
+        headerFilter: "input",
+        formatter: (cell) => {
+          const r = cell.getRow().getData() as InvoiceTableRow;
+          const label = r.invoice_number || r.stripe_invoice_id || "—";
+          const pdfUrl = r.invoice_pdf_url || r.invoice_url;
+          if (pdfUrl) {
+            return `<a href="${pdfUrl}" target="_blank" rel="noopener" class="invoice-pdf-link" title="Ver / descargar factura PDF">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+              ${label}
+            </a>`;
+          }
+          return `<span class="mono small">${label}</span>`;
+        },
+        minWidth: 150,
+      },
+      {
         title: "Concepto",
         field: "description",
         headerFilter: "input",
@@ -56,14 +74,6 @@ export default function InvoiceHistoryTable({ invoices, loading }: Props) {
           return `<span class="badge ${cls}">${r.status_label}</span>`;
         },
         width: 120,
-      },
-      {
-        title: "Referencia",
-        field: "stripe_invoice_id",
-        headerFilter: "input",
-        formatter: (c) =>
-          `<span class="mono small">${String(c.getValue() ?? "—")}</span>`,
-        minWidth: 140,
       },
     ],
     []

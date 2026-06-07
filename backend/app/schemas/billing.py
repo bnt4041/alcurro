@@ -159,6 +159,9 @@ class InvoiceRead(BaseModel):
     status: str
     description: str | None
     stripe_invoice_id: str | None
+    invoice_number: str | None
+    invoice_pdf_url: str | None
+    invoice_url: str | None
     paid_at: datetime | None
     created_at: datetime
 

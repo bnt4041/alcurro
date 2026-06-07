@@ -69,3 +69,16 @@ class EmployeeLegalStatusRead(BaseModel):
 
 class LegalAcceptRequest(BaseModel):
     employee_id: UUID | None = None
+
+
+class LegalTokenPageRead(BaseModel):
+    employee_name: str
+    tenant_name: str
+    pending_items: list[EmployeeLegalStatusItem]
+    all_accepted: bool
+
+
+class LegalTokenAcceptResponse(BaseModel):
+    document_id: UUID
+    accepted: bool
+    remaining: int

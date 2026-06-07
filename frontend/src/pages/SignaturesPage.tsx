@@ -4,6 +4,7 @@ import type { DocumentDelivery } from "../api/types";
 import DataTable, { type DataTableColumn } from "../components/DataTable";
 import FileDropzone from "../components/FileDropzone";
 import Modal from "../components/Modal";
+import FilePreviewModal from "../components/FilePreviewModal";
 import PageHeader from "../components/PageHeader";
 import { useAuth } from "../context/AuthContext";
 import { useEmployees } from "../hooks/useEmployees";
@@ -71,6 +72,7 @@ export default function SignaturesPage() {
   const { employees } = useEmployees();
   const canCreate = user && canModule(user.permissions, "create", "signatures");
   const canUpdate = user && canModule(user.permissions, "update", "signatures");
+  const [previewPath, setPreviewPath] = useState<{ path: string; name: string } | null>(null);
   const [rows, setRows] = useState<SignatureEnvelope[]>([]);
   const [documents, setDocuments] = useState<DocumentDelivery[]>([]);
   const [loading, setLoading] = useState(true);
@@ -264,6 +266,7 @@ export default function SignaturesPage() {
           const r = cell.getRow().getData() as SignatureRow;
           const actions: TableAction[] = [];
           if (r.status === "completado") {
+            actions.push({ id: "preview", label: "Ver" });
             actions.push({ id: "signed", label: "PDF firmado" });
             actions.push({ id: "certificate", label: "Certificado" });
           }
@@ -294,6 +297,10 @@ export default function SignaturesPage() {
       void resend(row.id, ctx.signerId);
       return;
     }
+    if (action === "preview") {
+      setPreviewPath({ path: `/signatures/${row.id}/signed`, name: `${row.reference}_signed.pdf` });
+      return;
+    }
     if (action === "signed") {
       void api.download(`/signatures/${row.id}/signed`, `${row.reference}_signed.pdf`);
       return;
@@ -307,6 +314,11 @@ export default function SignaturesPage() {
 
   return (
     <>
+      <FilePreviewModal
+        apiPath={previewPath?.path ?? null}
+        filename={previewPath?.name}
+        onClose={() => setPreviewPath(null)}
+      />
       <PageHeader
         title="Firmas"
         subtitle="Envío de documentos con firma manuscrita, OTP y certificado"

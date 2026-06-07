@@ -94,9 +94,23 @@ class LeaveType(SQLModel, table=True):
     tenant_id: UUID = Field(foreign_key="tenants.id", index=True)
     name: str = Field(max_length=100)
     deducts_balance: bool = Field(default=True)
+    has_own_balance: bool = Field(default=False)
+    default_days: float | None = Field(default=None)
     is_default: bool = Field(default=False)
     is_active: bool = Field(default=True)
     sort_order: int = Field(default=0)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class EmployeeLeaveBalance(SQLModel, table=True):
+    __tablename__ = "employee_leave_balances"
+    __table_args__ = (UniqueConstraint("employee_id", "leave_type_id"),)
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    employee_id: UUID = Field(foreign_key="employees.id", index=True)
+    leave_type_id: UUID = Field(foreign_key="leave_types.id", index=True)
+    total_days: float = Field(default=0.0)
+    notes: str | None = Field(default=None, max_length=500)
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
@@ -206,6 +220,9 @@ class ClockIn(SQLModel, table=True):
     latitude: float | None = Field(default=None)
     longitude: float | None = Field(default=None)
     address: str | None = Field(default=None, max_length=500)
+    latitude_out: float | None = Field(default=None)
+    longitude_out: float | None = Field(default=None)
+    address_out: str | None = Field(default=None, max_length=500)
     source: str = Field(default="whatsapp", max_length=50)
     notes: str | None = Field(default=None, max_length=500)
     work_summary: str | None = Field(default=None, max_length=2000)

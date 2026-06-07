@@ -14,7 +14,7 @@ from app.models.billing import (  # noqa: F401
 from app.models.tenant import Company, Tenant  # noqa: F401
 from app.models.organization import Department, GroupTemplate, WorkCenter  # noqa: F401
 from app.models.rbac import EmployeeGroup, PlatformUser, UserGroup  # noqa: F401
-from app.models.legal import LegalAcceptance, LegalDocument  # noqa: F401
+from app.models.legal import LegalAcceptance, LegalDocument, LegalToken  # noqa: F401
 from app.models.mail import MailLog  # noqa: F401
 from app.models.signature import (  # noqa: F401
     SignatureEnvelope,

@@ -19,8 +19,17 @@ from app.schemas.legal import (
     LegalDocumentCreate,
     LegalDocumentRead,
     LegalDocumentUpdate,
+    LegalTokenAcceptResponse,
+    LegalTokenPageRead,
 )
-from app.services.legal_service import accept_document, employee_legal_status
+from app.services.legal_service import (
+    accept_document,
+    accept_document_with_pdf,
+    create_whatsapp_token,
+    employee_legal_status,
+    generate_acceptance_certificate,
+    validate_token,
+)
 from app.services.org_service import employee_ids_in_scope
 
 router = APIRouter(prefix="/legal", tags=["legal"])
@@ -154,7 +163,91 @@ def accept_legal_document(
             detail="No puedes registrar aceptaciones de otros empleados",
         )
     try:
-        row = accept_document(session, target_id, document_id, ctx.tenant.id)
+        row = accept_document_with_pdf(
+            session, employee_id=target_id, document_id=document_id, tenant_id=ctx.tenant.id, channel="web"
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    # Generate combined certificate if all required docs are now accepted
+    generate_acceptance_certificate(session, tenant_id=ctx.tenant.id, employee_id=target_id)
     return LegalAcceptanceRead.model_validate(row)
+
+
+# ─── Public token endpoints (no auth required) ────────────────────────────────
+
+public_router = APIRouter(prefix="/legal/public", tags=["legal-public"])
+
+
+@public_router.get("/token/{token}", response_model=LegalTokenPageRead)
+def token_page(
+    token: str,
+    session: Session = Depends(get_session),
+) -> LegalTokenPageRead:
+    """Devuelve los datos del empleado y los documentos pendientes de aceptar."""
+    try:
+        token_row, employee, tenant = validate_token(session, token)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    items, all_ok = employee_legal_status(session, tenant.id, employee.id)
+    pending = [i for i in items if i.is_required and not i.accepted]
+    return LegalTokenPageRead(
+        employee_name=employee.full_name,
+        tenant_name=tenant.name,
+        pending_items=pending,
+        all_accepted=all_ok,
+    )
+
+
+@public_router.post("/token/{token}/accept/{document_id}", response_model=LegalTokenAcceptResponse)
+def token_accept(
+    token: str,
+    document_id: UUID,
+    session: Session = Depends(get_session),
+) -> LegalTokenAcceptResponse:
+    """Acepta un documento legal usando el token de WhatsApp."""
+    try:
+        token_row, employee, tenant = validate_token(session, token)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    try:
+        accept_document_with_pdf(
+            session,
+            employee_id=employee.id,
+            document_id=document_id,
+            tenant_id=tenant.id,
+            channel="whatsapp",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    items, all_ok = employee_legal_status(session, tenant.id, employee.id)
+    remaining = sum(1 for i in items if i.is_required and not i.accepted)
+
+    if all_ok:
+        # Mark token as used
+        if token_row.used_at is None:
+            from datetime import datetime, timezone
+            token_row.used_at = datetime.now(tz=timezone.utc)
+            session.add(token_row)
+            session.commit()
+
+        # Generate combined PDF certificate
+        generate_acceptance_certificate(session, tenant_id=tenant.id, employee_id=employee.id)
+
+        # Send WhatsApp confirmation
+        try:
+            from app.services.gowa_service import GoWAService
+            gowa = GoWAService(session)
+            msg = (
+                f"Gracias, {employee.full_name}. Has aceptado todos los textos legales requeridos.\n\n"
+                "Se ha generado un certificado PDF que encontrarás en el apartado de documentos de la aplicación."
+            )
+            gowa.send_text_sync(employee.phone, msg)
+        except Exception:
+            pass
+
+    return LegalTokenAcceptResponse(
+        document_id=document_id,
+        accepted=True,
+        remaining=remaining,
+    )

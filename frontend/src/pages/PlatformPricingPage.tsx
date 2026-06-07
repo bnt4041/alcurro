@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
 import DataTable, { type DataTableColumn } from "../components/DataTable";
+import Modal from "../components/Modal";
 import PageHeader from "../components/PageHeader";
 import { useToast } from "../context/ToastContext";
 import { centsToEurosInput, formatMoney, parseEurosToCents } from "../lib/money";
@@ -165,6 +166,7 @@ export default function PlatformPricingPage() {
         headerFilter: false,
         download: false,
         width: 110,
+        minWidth: 110,
         formatter: () =>
           tableActionButtons([
             { id: "toggle", label: "Activar/Desactivar" },
@@ -212,121 +214,117 @@ export default function PlatformPricingPage() {
         onCellAction={onCellAction}
       />
 
-      {open && (
-        <div
-          className="modal-backdrop"
-          role="presentation"
-          onClick={(e) => e.target === e.currentTarget && setOpen(false)}
-        >
-          <div className="modal-panel">
-            <h3>{editingId ? "Editar tarifa" : "Nueva tarifa"}</h3>
-            <form onSubmit={save} className="form-grid">
-              <label>
-                Código
-                <input
-                  required
-                  disabled={!!editingId}
-                  pattern="[a-z0-9_-]+"
-                  value={form.code}
-                  onChange={(e) =>
-                    setForm({ ...form, code: e.target.value.toLowerCase() })
-                  }
-                />
-              </label>
-              <label>
-                Nombre
-                <input
-                  required
-                  value={form.name}
-                  onChange={(e) => setForm({ ...form, name: e.target.value })}
-                />
-              </label>
-              <label className="form-span-2">
-                Descripción
-                <input
-                  value={form.description}
-                  onChange={(e) =>
-                    setForm({ ...form, description: e.target.value })
-                  }
-                />
-              </label>
-              <label>
-                Precio mensual (€)
-                <input
-                  required
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={form.monthly_eur}
-                  onChange={(e) =>
-                    setForm({ ...form, monthly_eur: e.target.value })
-                  }
-                />
-              </label>
-              <label>
-                Precio anual (€/mes)
-                <input
-                  required
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={form.annual_monthly_eur}
-                  onChange={(e) =>
-                    setForm({ ...form, annual_monthly_eur: e.target.value })
-                  }
-                />
-                <span className="field-hint muted small">
-                  Equivalente mensual si contrata 12 meses
-                </span>
-              </label>
-              <label>
-                Usuarios activos máx.
-                <input
-                  required
-                  type="number"
-                  min="1"
-                  value={form.max_active_users}
-                  onChange={(e) =>
-                    setForm({ ...form, max_active_users: e.target.value })
-                  }
-                />
-              </label>
-              <label>
-                Orden
-                <input
-                  type="number"
-                  value={form.sort_order}
-                  onChange={(e) =>
-                    setForm({ ...form, sort_order: e.target.value })
-                  }
-                />
-              </label>
-              <label className="form-span-2 checkbox-row">
-                <input
-                  type="checkbox"
-                  checked={form.is_active}
-                  onChange={(e) =>
-                    setForm({ ...form, is_active: e.target.checked })
-                  }
-                />
-                Tarifa activa (disponible para nuevas suscripciones)
-              </label>
-              <div className="modal-actions form-span-2">
-                <button type="submit" className="btn btn-primary">
-                  Guardar
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-ghost"
-                  onClick={() => setOpen(false)}
-                >
-                  Cancelar
-                </button>
-              </div>
-            </form>
+      <Modal
+        title={editingId ? "Editar tarifa" : "Nueva tarifa"}
+        open={open}
+        onClose={() => setOpen(false)}
+        wide
+      >
+        <form onSubmit={save} className="form-grid">
+          <label>
+            Código
+            <input
+              required
+              disabled={!!editingId}
+              pattern="[a-z0-9_-]+"
+              value={form.code}
+              onChange={(e) =>
+                setForm({ ...form, code: e.target.value.toLowerCase() })
+              }
+            />
+          </label>
+          <label>
+            Nombre
+            <input
+              required
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+            />
+          </label>
+          <label className="form-span-2">
+            Descripción
+            <input
+              value={form.description}
+              onChange={(e) =>
+                setForm({ ...form, description: e.target.value })
+              }
+            />
+          </label>
+          <label>
+            Precio mensual (€)
+            <input
+              required
+              type="number"
+              step="0.01"
+              min="0"
+              value={form.monthly_eur}
+              onChange={(e) =>
+                setForm({ ...form, monthly_eur: e.target.value })
+              }
+            />
+          </label>
+          <label>
+            Precio anual (€/mes)
+            <input
+              required
+              type="number"
+              step="0.01"
+              min="0"
+              value={form.annual_monthly_eur}
+              onChange={(e) =>
+                setForm({ ...form, annual_monthly_eur: e.target.value })
+              }
+            />
+            <span className="field-hint muted small">
+              Equivalente mensual si contrata 12 meses
+            </span>
+          </label>
+          <label>
+            Usuarios activos máx.
+            <input
+              required
+              type="number"
+              min="1"
+              value={form.max_active_users}
+              onChange={(e) =>
+                setForm({ ...form, max_active_users: e.target.value })
+              }
+            />
+          </label>
+          <label>
+            Orden
+            <input
+              type="number"
+              value={form.sort_order}
+              onChange={(e) =>
+                setForm({ ...form, sort_order: e.target.value })
+              }
+            />
+          </label>
+          <label className="form-span-2 checkbox-row">
+            <input
+              type="checkbox"
+              checked={form.is_active}
+              onChange={(e) =>
+                setForm({ ...form, is_active: e.target.checked })
+              }
+            />
+            Tarifa activa (disponible para nuevas suscripciones)
+          </label>
+          <div className="modal-actions form-span-2">
+            <button type="submit" className="btn btn-primary">
+              Guardar
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() => setOpen(false)}
+            >
+              Cancelar
+            </button>
           </div>
-        </div>
-      )}
+        </form>
+      </Modal>
     </>
   );
 }

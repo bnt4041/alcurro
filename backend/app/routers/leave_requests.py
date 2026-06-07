@@ -113,6 +113,25 @@ def create_leave_request(
     session.add(row)
     session.commit()
     session.refresh(row)
+
+    employee = session.get(Employee, emp_id)
+    if employee:
+        lt = session.get(LeaveType, row.leave_type_id) if row.leave_type_id else None
+        from app.services.notification_service import notify_leave_request_created
+        try:
+            notify_leave_request_created(
+                session,
+                tenant_id=ctx.tenant.id,
+                employee=employee,
+                start_date=str(row.start_date),
+                end_date=str(row.end_date),
+                days=row.days_requested,
+                leave_type_name=lt.name if lt else None,
+                reason=row.reason,
+            )
+        except Exception:
+            pass
+
     return LeaveRequestRead(**_enrich(row, session))
 
 
@@ -129,11 +148,35 @@ def update_leave_request(
     if row.employee_id not in _scope_ids(ctx, session, user):
         raise HTTPException(status_code=404, detail="Solicitud no encontrada")
     assert_employee_target(session, user, ctx, "leave", row.employee_id, "update")
+    prev_status = row.status
     for key, value in data.model_dump(exclude_unset=True).items():
         setattr(row, key, value)
     session.add(row)
     session.commit()
     session.refresh(row)
+
+    # Notificar al empleado si cambia el estado a aprobado/rechazado
+    new_status = row.status
+    if prev_status != new_status and new_status in (LeaveStatus.APPROVED, LeaveStatus.REJECTED):
+        employee = session.get(Employee, row.employee_id)
+        if employee:
+            lt = session.get(LeaveType, row.leave_type_id) if row.leave_type_id else None
+            from app.services.notification_service import notify_leave_request_reviewed
+            try:
+                notify_leave_request_reviewed(
+                    session,
+                    tenant_id=ctx.tenant.id,
+                    employee=employee,
+                    new_status=new_status.value,
+                    start_date=str(row.start_date),
+                    end_date=str(row.end_date),
+                    days=row.days_requested,
+                    leave_type_name=lt.name if lt else None,
+                    review_notes=row.review_notes,
+                )
+            except Exception:
+                pass  # Notificación best-effort: no bloquear la respuesta
+
     return LeaveRequestRead(**_enrich(row, session))
 
 

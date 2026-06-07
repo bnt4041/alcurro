@@ -20,8 +20,8 @@ export default function Modal({ title, open, onClose, children, wide, tall, xlar
     .filter(Boolean)
     .join(" ");
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className={modalClass} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+    <div className="modal-overlay">
+      <div className={modalClass} role="dialog" aria-modal="true">
         <header className="modal-header">
           <h2>{title}</h2>
           <button type="button" className="btn-icon" onClick={onClose} aria-label="Cerrar">

@@ -329,12 +329,18 @@
 }
 
 .landing-phone__screen {
-  background: var(--lp-whatsapp-bg);
+  background: #000;
   border-radius: 2.2rem;
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  min-height: 36rem;
+}
+
+.landing-phone__video {
+  width: 100%;
+  height: auto;
+  display: block;
+  border-radius: 2.2rem;
 }
 
 .landing-wa-header {

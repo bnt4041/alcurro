@@ -6,3 +6,8 @@ node_modules/
 dist/
 uploads/
 *.db
+# Datos persistentes en host (bind mounts Docker)
+data/postgres/
+data/gowa/
+data/uploads/
+data/backups/

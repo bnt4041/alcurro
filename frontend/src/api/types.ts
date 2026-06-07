@@ -205,6 +205,9 @@ export interface ClockIn {
   latitude: number | null;
   longitude: number | null;
   address: string | null;
+  latitude_out: number | null;
+  longitude_out: number | null;
+  address_out: string | null;
   source: string;
   notes: string | null;
   work_summary: string | null;
@@ -216,9 +219,22 @@ export interface LeaveType {
   id: string;
   name: string;
   deducts_balance: boolean;
+  has_own_balance: boolean;
+  default_days: number | null;
   is_default: boolean;
   is_active: boolean;
   sort_order: number;
+}
+
+export interface EmployeeLeaveBalance {
+  id: string;
+  employee_id: string;
+  leave_type_id: string;
+  leave_type_name: string | null;
+  total_days: number;
+  used_days: number;
+  remaining_days: number;
+  notes: string | null;
 }
 
 export interface LeaveRequest {
@@ -395,6 +411,68 @@ export interface NotificationPreference {
   event_type: string;
   channel: string;
   enabled: boolean;
+}
+
+export interface BreakPairReport {
+  inicio_at: string | null;
+  fin_at: string | null;
+  duration_minutes: number;
+}
+
+export interface ClockEntryReport {
+  id: string;
+  entrada_at: string;
+  salida_at: string | null;
+  worked_minutes: number;
+  project_name: string | null;
+  address: string | null;
+  address_out: string | null;
+  source: string;
+  breaks: BreakPairReport[];
+  is_open: boolean;
+}
+
+export interface LeaveReportRow {
+  id: string;
+  leave_type_name: string | null;
+  status: string;
+  days_requested: number;
+  reason: string | null;
+}
+
+export interface IncidentReportRow {
+  id: string;
+  incident_type: string;
+  title: string;
+  status: string;
+  minutes_late: number | null;
+}
+
+export interface DayReportRow {
+  employee_id: string;
+  employee_name: string;
+  report_date: string;
+  weekday: string;
+  clock_entries: ClockEntryReport[];
+  leaves: LeaveReportRow[];
+  incidents: IncidentReportRow[];
+  worked_minutes: number;
+  break_minutes: number;
+  net_minutes: number;
+  has_open_clock: boolean;
+}
+
+export interface EmployeeSummaryRow {
+  employee_id: string;
+  employee_name: string;
+  days_worked: number;
+  total_worked_minutes: number;
+  total_break_minutes: number;
+  total_net_minutes: number;
+  total_leave_days: number;
+  leave_by_type: Record<string, number>;
+  total_incidents: number;
+  open_clocks: number;
 }
 
 export interface OrgChartNode {

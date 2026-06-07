@@ -139,6 +139,9 @@ class ClockInCreate(BaseModel):
     latitude: float | None = None
     longitude: float | None = None
     address: str | None = None
+    latitude_out: float | None = None
+    longitude_out: float | None = None
+    address_out: str | None = None
     source: str = "panel"
     notes: str | None = None
     work_summary: str | None = None
@@ -154,6 +157,9 @@ class ClockInRead(BaseModel):
     latitude: float | None = None
     longitude: float | None = None
     address: str | None = None
+    latitude_out: float | None = None
+    longitude_out: float | None = None
+    address_out: str | None = None
     source: str
     notes: str | None = None
     work_summary: str | None = None
@@ -206,11 +212,15 @@ class BreakSummaryResponse(BaseModel):
 class LeaveTypeCreate(BaseModel):
     name: str
     deducts_balance: bool = True
+    has_own_balance: bool = False
+    default_days: float | None = None
 
 
 class LeaveTypeUpdate(BaseModel):
     name: str | None = None
     deducts_balance: bool | None = None
+    has_own_balance: bool | None = None
+    default_days: float | None = None
     is_active: bool | None = None
     sort_order: int | None = None
 
@@ -220,9 +230,28 @@ class LeaveTypeRead(BaseModel):
     id: UUID
     name: str
     deducts_balance: bool
+    has_own_balance: bool
+    default_days: float | None
     is_default: bool
     is_active: bool
     sort_order: int
+
+
+class EmployeeLeaveBalanceRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    employee_id: UUID
+    leave_type_id: UUID
+    leave_type_name: str | None = None
+    total_days: float
+    used_days: float = 0.0
+    remaining_days: float = 0.0
+    notes: str | None
+
+
+class EmployeeLeaveBalanceUpdate(BaseModel):
+    total_days: float = Field(ge=0)
+    notes: str | None = None
 
 
 class LeaveRequestCreate(BaseModel):

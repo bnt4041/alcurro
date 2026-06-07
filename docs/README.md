@@ -15,6 +15,7 @@
 | [Firmas electrónicas](firmas-electronicas.md) | Envelopes, OTP, PDF firmado, firmantes externos |
 | [Correo SMTP](correo-smtp.md) | Configuración global y logs de envío |
 | [Legal](legal.md) | Textos legales y aceptación por empleado |
+| [Stripe](stripe.md) | Claves, webhook, productos, checkout, producción |
 | [API](api.md) | Prefijos, autenticación, endpoints principales |
 
 ## Referencia rápida

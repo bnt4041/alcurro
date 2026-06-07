@@ -159,7 +159,7 @@ export default function EmployeesPage() {
     user && canModule(user.permissions, "read", "documents");
   const canSignaturesRead =
     user && canModule(user.permissions, "read", "signatures");
-  const [empTab, setEmpTab] = useState<"data" | "documents" | "signatures" | "notifications">("data");
+  const [empTab, setEmpTab] = useState<"data" | "clock_ins" | "leaves" | "incidents" | "documents" | "signatures" | "notifications">("data");
 
   const panelGroupId = groups.find((g) => g.name === PANEL_GROUP_NAME)?.id;
 

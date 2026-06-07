@@ -151,6 +151,9 @@ def record_payment(
     stripe_payment_intent_id: str | None = None,
     stripe_invoice_id: str | None = None,
     stripe_checkout_session_id: str | None = None,
+    invoice_number: str | None = None,
+    invoice_pdf_url: str | None = None,
+    invoice_url: str | None = None,
 ) -> StripePayment:
     existing = None
     if stripe_invoice_id:
@@ -160,6 +163,13 @@ def record_payment(
             )
         ).first()
     if existing:
+        # Actualizar URLs si ahora las tenemos y antes no
+        if invoice_pdf_url and not existing.invoice_pdf_url:
+            existing.invoice_pdf_url = invoice_pdf_url
+            existing.invoice_url = invoice_url
+            existing.invoice_number = invoice_number
+            session.add(existing)
+            session.flush()
         return existing
 
     row = StripePayment(
@@ -172,6 +182,9 @@ def record_payment(
         stripe_payment_intent_id=stripe_payment_intent_id,
         stripe_invoice_id=stripe_invoice_id,
         stripe_checkout_session_id=stripe_checkout_session_id,
+        invoice_number=invoice_number,
+        invoice_pdf_url=invoice_pdf_url,
+        invoice_url=invoice_url,
         paid_at=datetime.utcnow() if status == StripePaymentStatus.SUCCEEDED else None,
     )
     session.add(row)
@@ -223,16 +236,30 @@ def _on_checkout_completed(session: Session, data: dict) -> None:
         session.add(tenant)
     amount = int(data.get("amount_total") or 0)
     if amount > 0 and tenant:
-        record_payment(
+        # Intentar obtener la factura asociada al checkout
+        invoice_id = data.get("invoice")
+        inv_data: dict = {}
+        if invoice_id and stripe_configured():
+            try:
+                _client()
+                inv_data = dict(stripe.Invoice.retrieve(invoice_id))
+            except Exception:
+                pass
+        payment = record_payment(
             session,
             tenant_id=tenant.id,
             subscription_id=sub.id if sub else None,
             amount_cents=amount,
             currency=(data.get("currency") or "eur").upper(),
             status=StripePaymentStatus.SUCCEEDED,
-            description="Alta y primer pago (Checkout)",
+            description=f"Alta — {inv_data.get('number') or 'primer pago'}",
             stripe_checkout_session_id=data.get("id"),
+            stripe_invoice_id=inv_data.get("id"),
+            invoice_number=inv_data.get("number"),
+            invoice_pdf_url=inv_data.get("invoice_pdf"),
+            invoice_url=inv_data.get("hosted_invoice_url"),
         )
+        _send_invoice_notification(session, tenant, payment, inv_data)
 
 
 def _on_invoice_paid(session: Session, data: dict) -> None:
@@ -248,7 +275,7 @@ def _on_invoice_paid(session: Session, data: dict) -> None:
     if sub:
         sub.status = SubscriptionStatus.ACTIVE
         session.add(sub)
-    record_payment(
+    payment = record_payment(
         session,
         tenant_id=tenant.id if tenant else None,
         subscription_id=sub.id if sub else None,
@@ -257,7 +284,12 @@ def _on_invoice_paid(session: Session, data: dict) -> None:
         status=StripePaymentStatus.SUCCEEDED,
         description=f"Factura {data.get('number') or data.get('id')}",
         stripe_invoice_id=data.get("id"),
+        invoice_number=data.get("number"),
+        invoice_pdf_url=data.get("invoice_pdf"),
+        invoice_url=data.get("hosted_invoice_url"),
     )
+    if tenant:
+        _send_invoice_notification(session, tenant, payment, data)
 
 
 def _on_invoice_failed(session: Session, data: dict) -> None:
@@ -298,3 +330,56 @@ def _on_subscription_deleted(session: Session, data: dict) -> None:
     if sub:
         sub.status = SubscriptionStatus.CANCELLED
         session.add(sub)
+
+
+def _send_invoice_notification(
+    session: Session,
+    tenant: Tenant,
+    payment: StripePayment,
+    invoice_data: dict,
+) -> None:
+    """Envía email y/o WhatsApp al cliente con el enlace a su factura."""
+    from app.services.mail_service import MailService
+    from app.services.gowa_service import GoWAService
+
+    inv_number = payment.invoice_number or payment.stripe_invoice_id or "—"
+    pdf_url = payment.invoice_pdf_url or payment.invoice_url or ""
+    amount_str = f"{payment.amount_cents / 100:.2f} {payment.currency}"
+
+    # ── Email ────────────────────────────────────────────────────────────────
+    email = tenant.billing_email
+    if email and pdf_url:
+        subject = f"Tu factura alcurro {inv_number}"
+        body = (
+            f"Hola {tenant.legal_name or tenant.name},\n\n"
+            f"Te confirmamos que hemos recibido tu pago de {amount_str}.\n\n"
+            f"Puedes descargar tu factura ({inv_number}) en el siguiente enlace:\n"
+            f"{pdf_url}\n\n"
+            f"También puedes consultarla en tu panel de cuenta:\n"
+            f"{get_settings().public_app_url.rstrip('/')}/cuenta\n\n"
+            f"Gracias por confiar en alcurro.\n"
+        )
+        try:
+            mail = MailService(session)
+            mail.send(
+                email,
+                subject,
+                body,
+                event_type="invoice",
+                tenant_id=tenant.id,
+            )
+        except Exception:
+            pass
+
+    # ── WhatsApp ─────────────────────────────────────────────────────────────
+    phone = tenant.billing_phone
+    if phone and pdf_url:
+        msg = (
+            f"✅ *Factura alcurro {inv_number}*\n\n"
+            f"Hemos recibido tu pago de *{amount_str}*.\n\n"
+            f"📄 Descarga tu factura:\n{pdf_url}"
+        )
+        try:
+            GoWAService(session).send_text_sync(phone, msg)
+        except Exception:
+            pass

@@ -16,6 +16,7 @@ import { useAuth } from "../context/AuthContext";
 import { useEmployees } from "../hooks/useEmployees";
 import { canModule, hasPerm } from "../lib/permissions";
 import { tableActionButtons, type TableAction } from "../lib/tableFormatters";
+import FilePreviewModal from "../components/FilePreviewModal";
 
 type Tab = "list" | "upload" | "catalog" | "bulk" | "notify";
 
@@ -57,6 +58,7 @@ export default function DocumentsPage() {
   const [newTag, setNewTag] = useState({ name: "", color: "#2563eb" });
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [downloading, setDownloading] = useState(false);
+  const [previewPath, setPreviewPath] = useState<{ path: string; name: string } | null>(null);
 
   const [notifySettings, setNotifySettings] =
     useState<DocumentNotificationSettings | null>(null);
@@ -445,7 +447,10 @@ export default function DocumentsPage() {
         width: 220,
         formatter: (cell) => {
           const r = cell.getRow().getData() as DocRow;
-          const actions: TableAction[] = [{ id: "download", label: "Descargar" }];
+          const actions: TableAction[] = [
+            { id: "preview", label: "Ver" },
+            { id: "download", label: "Descargar" },
+          ];
           if (canWrite && r.employee_id) actions.push({ id: "whatsapp", label: "Enviar WA", className: "btn-primary" });
           if (canWrite) actions.push({ id: "delete", label: "Borrar", className: "btn-danger" });
           return tableActionButtons(actions);
@@ -455,6 +460,7 @@ export default function DocumentsPage() {
   }, [canWrite]);
 
   const onDocAction = (action: string, row: DocRow) => {
+    if (action === "preview") setPreviewPath({ path: `/documents/${row.id}/preview`, name: row.file_name });
     if (action === "download") downloadOne(row.id, row.file_name);
     if (action === "whatsapp") void sendWhatsapp(row.id);
     if (action === "delete") void remove(row.id);
@@ -517,6 +523,11 @@ export default function DocumentsPage() {
 
   return (
     <>
+      <FilePreviewModal
+        apiPath={previewPath?.path ?? null}
+        filename={previewPath?.name}
+        onClose={() => setPreviewPath(null)}
+      />
       <PageHeader
         title="Documentos"
         subtitle="Nóminas, contratos, tipologías, etiquetas y envío por WhatsApp"

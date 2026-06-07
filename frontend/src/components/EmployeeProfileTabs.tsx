@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
-import type { DocumentDelivery, NotificationPreference } from "../api/types";
+import type {
+  ClockIn,
+  DocumentDelivery,
+  Incident,
+  LeaveRequest,
+  NotificationPreference,
+} from "../api/types";
 import DataTable, { type DataTableColumn } from "./DataTable";
 
 interface InboundDoc {
@@ -32,7 +38,7 @@ interface SignatureEnvelope {
   signers: SignatureSigner[];
 }
 
-type TabId = "data" | "documents" | "signatures" | "notifications";
+type TabId = "data" | "clock_ins" | "leaves" | "incidents" | "documents" | "signatures" | "notifications";
 
 interface Props {
   employeeId: string;
@@ -41,21 +47,19 @@ interface Props {
   onTabChange: (tab: TabId) => void;
   showDocuments: boolean;
   showSignatures: boolean;
+  showClockIns?: boolean;
+  showLeaves?: boolean;
+  showIncidents?: boolean;
   children: React.ReactNode;
 }
 
 const TABS: { id: TabId; label: string; show?: (p: Props) => boolean }[] = [
   { id: "data", label: "Datos" },
-  {
-    id: "documents",
-    label: "Documentos",
-    show: (p) => p.showDocuments,
-  },
-  {
-    id: "signatures",
-    label: "Firmas",
-    show: (p) => p.showSignatures,
-  },
+  { id: "clock_ins", label: "Fichajes", show: (p) => p.showClockIns !== false },
+  { id: "leaves", label: "Permisos", show: (p) => p.showLeaves !== false },
+  { id: "incidents", label: "Incidencias", show: (p) => p.showIncidents !== false },
+  { id: "documents", label: "Documentos", show: (p) => p.showDocuments },
+  { id: "signatures", label: "Firmas", show: (p) => p.showSignatures },
   { id: "notifications", label: "Notificaciones" },
 ];
 
@@ -78,6 +82,25 @@ const INBOUND_STATUS: Record<string, string> = {
   waived: "No aplica",
 };
 
+const STATUS_LABEL: Record<string, string> = {
+  pending: "Pendiente",
+  approved: "Aprobado",
+  rejected: "Rechazado",
+  cancelled: "Cancelado",
+  open: "Abierta",
+  resolved: "Resuelta",
+  justified: "Justificada",
+};
+
+function fmtDT(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleString("es-ES", { dateStyle: "short", timeStyle: "short" });
+}
+function fmtDate(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleDateString("es-ES");
+}
+
 export default function EmployeeProfileTabs({
   employeeId,
   employeeName,
@@ -85,11 +108,15 @@ export default function EmployeeProfileTabs({
   onTabChange,
   showDocuments,
   showSignatures,
+  showClockIns = true,
+  showLeaves = true,
+  showIncidents = true,
   children,
 }: Props) {
-  const props = { showDocuments, showSignatures } as Props;
+  const props = { showDocuments, showSignatures, showClockIns, showLeaves, showIncidents } as Props;
   const visibleTabs = TABS.filter((t) => !t.show || t.show(props));
 
+  // Documents
   const [inbound, setInbound] = useState<InboundDoc[]>([]);
   const [deliveries, setDeliveries] = useState<DocumentDelivery[]>([]);
   const [envelopes, setEnvelopes] = useState<SignatureEnvelope[]>([]);
@@ -102,6 +129,18 @@ export default function EmployeeProfileTabs({
   const [uploadCode, setUploadCode] = useState("");
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
+
+  // Clock-ins
+  const [clockIns, setClockIns] = useState<ClockIn[]>([]);
+  const [loadingClocks, setLoadingClocks] = useState(false);
+
+  // Leaves
+  const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
+  const [loadingLeaves, setLoadingLeaves] = useState(false);
+
+  // Incidents
+  const [incidents, setIncidents] = useState<Incident[]>([]);
+  const [loadingIncidents, setLoadingIncidents] = useState(false);
 
   const deliveryColumns = useMemo<DataTableColumn<Record<string, unknown>>[]>(
     () => [
@@ -173,14 +212,45 @@ export default function EmployeeProfileTabs({
     setLoadingSigs(true);
     try {
       setEnvelopes(
-        await api.get<SignatureEnvelope[]>(
-          `/employees/${employeeId}/signatures`
-        )
+        await api.get<SignatureEnvelope[]>(`/employees/${employeeId}/signatures`)
       );
     } catch {
       setEnvelopes([]);
     } finally {
       setLoadingSigs(false);
+    }
+  }, [employeeId]);
+
+  const loadClockIns = useCallback(async () => {
+    setLoadingClocks(true);
+    try {
+      setClockIns(await api.get<ClockIn[]>(`/clock-ins?employee_id=${employeeId}&limit=200`));
+    } catch {
+      setClockIns([]);
+    } finally {
+      setLoadingClocks(false);
+    }
+  }, [employeeId]);
+
+  const loadLeaves = useCallback(async () => {
+    setLoadingLeaves(true);
+    try {
+      setLeaves(await api.get<LeaveRequest[]>(`/leave-requests?employee_id=${employeeId}`));
+    } catch {
+      setLeaves([]);
+    } finally {
+      setLoadingLeaves(false);
+    }
+  }, [employeeId]);
+
+  const loadIncidents = useCallback(async () => {
+    setLoadingIncidents(true);
+    try {
+      setIncidents(await api.get<Incident[]>(`/incidents?employee_id=${employeeId}`));
+    } catch {
+      setIncidents([]);
+    } finally {
+      setLoadingIncidents(false);
     }
   }, [employeeId]);
 
@@ -191,6 +261,18 @@ export default function EmployeeProfileTabs({
   useEffect(() => {
     if (activeTab === "signatures" && showSignatures) loadSignatures();
   }, [activeTab, showSignatures, loadSignatures]);
+
+  useEffect(() => {
+    if (activeTab === "clock_ins") loadClockIns();
+  }, [activeTab, loadClockIns]);
+
+  useEffect(() => {
+    if (activeTab === "leaves") loadLeaves();
+  }, [activeTab, loadLeaves]);
+
+  useEffect(() => {
+    if (activeTab === "incidents") loadIncidents();
+  }, [activeTab, loadIncidents]);
 
   useEffect(() => {
     if (activeTab !== "notifications") return;
@@ -242,6 +324,113 @@ export default function EmployeeProfileTabs({
 
       {activeTab === "data" && children}
 
+      {/* ── Fichajes ── */}
+      {activeTab === "clock_ins" && (
+        <div className="employee-profile-panel">
+          {loadingClocks ? (
+            <p className="muted">Cargando fichajes…</p>
+          ) : (
+            <DataTable
+              data={clockIns.map((c) => ({
+                ...c,
+                entrada_label: fmtDT(c.entrada_at),
+                salida_label: c.salida_at ? fmtDT(c.salida_at) : "Abierto",
+                worked_label: (() => {
+                  if (!c.salida_at) return "—";
+                  const mins = Math.round((new Date(c.salida_at).getTime() - new Date(c.entrada_at).getTime()) / 60000);
+                  return `${Math.floor(mins / 60)}h ${mins % 60}m`;
+                })(),
+                project_label: c.project_name ?? "—",
+                source_label: c.source ?? "—",
+              }))}
+              columns={[
+                { title: "Entrada", field: "entrada_label", headerFilter: "input" },
+                { title: "Salida", field: "salida_label", headerFilter: "input" },
+                { title: "Horas", field: "worked_label", headerFilter: false },
+                { title: "Proyecto", field: "project_label", headerFilter: "input" },
+                { title: "Origen", field: "source_label", headerFilter: "input" },
+              ]}
+              exportFilename={`fichajes_${employeeName}`}
+              height="340px"
+              emptyMessage="Sin fichajes registrados."
+            />
+          )}
+          <p className="muted small" style={{ marginTop: "0.5rem" }}>
+            <Link to="/app/fichajes">Ver módulo Fichajes</Link>
+          </p>
+        </div>
+      )}
+
+      {/* ── Permisos ── */}
+      {activeTab === "leaves" && (
+        <div className="employee-profile-panel">
+          {loadingLeaves ? (
+            <p className="muted">Cargando permisos…</p>
+          ) : (
+            <DataTable
+              data={leaves.map((l) => ({
+                ...l,
+                tipo_label: l.leave_type_name ?? "—",
+                desde_label: fmtDate(l.start_date),
+                hasta_label: fmtDate(l.end_date),
+                dias_label: l.days_requested,
+                estado_label: STATUS_LABEL[l.status] ?? l.status,
+                motivo_label: l.reason ?? "—",
+                creado_label: fmtDate(l.created_at),
+              }))}
+              columns={[
+                { title: "Tipo", field: "tipo_label", headerFilter: "input" },
+                { title: "Desde", field: "desde_label", headerFilter: "input" },
+                { title: "Hasta", field: "hasta_label", headerFilter: "input" },
+                { title: "Días", field: "dias_label", headerFilter: false, width: 70 },
+                { title: "Estado", field: "estado_label", headerFilter: "input" },
+                { title: "Motivo", field: "motivo_label", headerFilter: "input" },
+                { title: "Creado", field: "creado_label", headerFilter: "input" },
+              ]}
+              exportFilename={`permisos_${employeeName}`}
+              height="340px"
+              emptyMessage="Sin solicitudes de permiso."
+            />
+          )}
+          <p className="muted small" style={{ marginTop: "0.5rem" }}>
+            <Link to="/app/permisos">Ver módulo Permisos</Link>
+          </p>
+        </div>
+      )}
+
+      {/* ── Incidencias ── */}
+      {activeTab === "incidents" && (
+        <div className="employee-profile-panel">
+          {loadingIncidents ? (
+            <p className="muted">Cargando incidencias…</p>
+          ) : (
+            <DataTable
+              data={incidents.map((i) => ({
+                ...i,
+                fecha_label: fmtDT(i.created_at),
+                tipo_label: i.incident_type ?? "—",
+                estado_label: STATUS_LABEL[i.status] ?? i.status,
+                retraso_label: i.minutes_late != null ? `${i.minutes_late} min` : "—",
+              }))}
+              columns={[
+                { title: "Fecha", field: "fecha_label", headerFilter: "input" },
+                { title: "Título", field: "title", headerFilter: "input" },
+                { title: "Tipo", field: "tipo_label", headerFilter: "input" },
+                { title: "Estado", field: "estado_label", headerFilter: "input" },
+                { title: "Retraso", field: "retraso_label", headerFilter: false, width: 90 },
+              ]}
+              exportFilename={`incidencias_${employeeName}`}
+              height="340px"
+              emptyMessage="Sin incidencias registradas."
+            />
+          )}
+          <p className="muted small" style={{ marginTop: "0.5rem" }}>
+            <Link to="/app/incidencias">Ver módulo Incidencias</Link>
+          </p>
+        </div>
+      )}
+
+      {/* ── Documentos ── */}
       {activeTab === "documents" && showDocuments && (
         <div className="employee-profile-panel">
           <p className="muted small">
@@ -369,6 +558,7 @@ export default function EmployeeProfileTabs({
         </div>
       )}
 
+      {/* ── Firmas ── */}
       {activeTab === "signatures" && showSignatures && (
         <div className="employee-profile-panel">
           <p className="muted small">
@@ -398,6 +588,7 @@ export default function EmployeeProfileTabs({
         </div>
       )}
 
+      {/* ── Notificaciones ── */}
       {activeTab === "notifications" && (
         <div className="employee-profile-panel">
           {loadingPrefs && <p className="muted">Cargando preferencias…</p>}

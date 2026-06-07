@@ -252,7 +252,6 @@ export default function TenantAccountSheet({
     <div
       className="modal-backdrop"
       role="presentation"
-      onClick={(e) => e.target === e.currentTarget && onClose()}
     >
       <div
         className="modal-panel modal-panel--sheet"

@@ -36,7 +36,9 @@ import SignupPage from "./pages/SignupPage";
 import SignupSimulatePaymentPage from "./pages/SignupSimulatePaymentPage";
 import SignupSuccessPage from "./pages/SignupSuccessPage";
 import SignDocumentPage from "./pages/SignDocumentPage";
+import ReportsPage from "./pages/ReportsPage";
 import SignaturesPage from "./pages/SignaturesPage";
+import LegalTokenPage from "./pages/LegalTokenPage";
 
 export default function App() {
   return (
@@ -52,6 +54,7 @@ export default function App() {
             </Route>
 
             <Route path="/firmar/:token" element={<SignDocumentPage />} />
+            <Route path="/legal/:token" element={<LegalTokenPage />} />
             <Route
               path="/justificar-incidencia/:token"
               element={<JustifyIncidentPage />}
@@ -87,6 +90,7 @@ export default function App() {
                 <Route path="organigrama" element={<OrgChartPage />} />
                 <Route path="proyectos" element={<ProjectsPage />} />
                 <Route path="empleados" element={<EmployeesPage />} />
+                <Route path="informes" element={<ReportsPage />} />
                 <Route path="permisos" element={<LeaveRequestsPage />} />
                 <Route path="vacaciones" element={<LeaveRequestsPage />} />
                 <Route path="turnos" element={<ShiftsPage />} />

@@ -36,6 +36,19 @@ from app.services.whatsapp_permission_service import (
 )
 
 MAX_HISTORY_MESSAGES = 5
+
+_PHRASE_MAP: list[tuple[str, str]] = [
+    ("fichar_entrada",        "ficho, fichar, quiero fichar, voy a fichar, llego, entro a trabajar, he llegado, empiezo, comienzo, entrada, ya estoy, a trabajar, a currar, vamos a currar, curro, currando"),
+    ("fichar_salida",         "me voy, termino, acabo, salida, me marcho, salgo, finalizo, me piro, fin de jornada, hasta mañana"),
+    ("inicio_parada",         "descanso, pausa, café, a comer, paro un rato, me desconecto, voy a almorzar"),
+    ("fin_parada",            "vuelvo, ya estoy, regreso, sigo, retomo, continuo, termino descanso, de vuelta"),
+    ("solicitar_vacaciones",  "quiero pedir vacaciones, solicito vacaciones, pedir días libres, vacaciones del, días de vacaciones"),
+    ("solicitar_permiso",     "voy al médico, ir al médico, tengo médico, tengo cita, cita médica, cita con el médico, ir al hospital, hospital, dentista, ir al dentista, permiso médico, día personal, asuntos propios, necesito un día, pedir permiso, ausencia, tengo que ir al médico, tengo que ir al hospital"),
+    ("consultar_saldo_vacaciones", "cuántas vacaciones me quedan, cuántos días me quedan, saldo de vacaciones, días disponibles, mis vacaciones, cuántos días de permiso tengo, saldo de permisos"),
+    ("resumen_dia",           "resumen, cómo voy, qué he hecho hoy, mi día, horas de hoy"),
+    ("confirmar_documento",   "confirmo, recibido, de acuerdo, acepto el documento, lo he visto"),
+    ("reportar_incidencia",   "tuve un problema, no pude fichar, reportar incidencia, problema con el fichaje, ayer no pude, perdí el móvil, error en el fichaje"),
+]
 MAX_MESSAGE_AGE_DAYS = 7
 MAX_CONTENT_LEN = 2000
 
@@ -129,6 +142,69 @@ def build_employee_clock_context(
         )
 
     return "\n".join(lines)
+
+
+def build_leave_types_context(session: Session, tenant_id: UUID) -> str:
+    """Lista de tipos de permiso activos para el tenant."""
+    from app.models.models import LeaveType
+    types = session.exec(
+        select(LeaveType).where(
+            LeaveType.tenant_id == tenant_id,
+            LeaveType.is_active == True,  # noqa: E712
+        ).order_by(LeaveType.sort_order)  # type: ignore[attr-defined]
+    ).all()
+    if not types:
+        return "- Sin tipos configurados."
+    lines = []
+    for lt in types:
+        if lt.has_own_balance:
+            tag = f"saldo propio por empleado (días por defecto: {lt.default_days or 0})"
+        elif lt.deducts_balance:
+            tag = "descuenta días de vacaciones del empleado"
+        else:
+            tag = "no descuenta vacaciones (ausencia sin coste de saldo)"
+        lines.append(f"  - \"{lt.name}\" → {tag}")
+    return "\n".join(lines)
+
+
+def build_employee_leave_balances_context(
+    session: Session,
+    employee_id: UUID,
+    tenant_id: UUID,
+) -> str:
+    """Saldos de permiso del empleado para contexto de la IA."""
+    from app.models.models import EmployeeLeaveBalance, LeaveRequest, LeaveStatus, LeaveType
+    from sqlalchemy import func
+
+    types = session.exec(
+        select(LeaveType).where(
+            LeaveType.tenant_id == tenant_id,
+            LeaveType.is_active == True,  # noqa: E712
+        ).order_by(LeaveType.sort_order)  # type: ignore[attr-defined]
+    ).all()
+    if not types:
+        return "- Sin tipos de permiso configurados."
+
+    lines = []
+    for lt in types:
+        if lt.has_own_balance:
+            bal = session.exec(
+                select(EmployeeLeaveBalance).where(
+                    EmployeeLeaveBalance.employee_id == employee_id,
+                    EmployeeLeaveBalance.leave_type_id == lt.id,
+                )
+            ).first()
+            total = float(bal.total_days) if bal else float(lt.default_days or 0)
+            used_val = session.exec(
+                select(func.coalesce(func.sum(LeaveRequest.days_requested), 0.0)).where(
+                    LeaveRequest.employee_id == employee_id,
+                    LeaveRequest.leave_type_id == lt.id,
+                    LeaveRequest.status.in_([LeaveStatus.PENDING, LeaveStatus.APPROVED]),  # type: ignore[attr-defined]
+                )
+            ).one()
+            remaining = total - float(used_val)
+            lines.append(f"  - {lt.name}: {remaining:.1f} días disponibles (de {total:.1f} asignados)")
+    return "\n".join(lines) if lines else "- No hay tipos con saldo propio configurados."
 
 
 def build_employee_break_context(
@@ -264,6 +340,8 @@ def build_system_prompt(
 
     clock_ctx = build_employee_clock_context(session, tenant_id, employee.id)
     break_ctx = build_employee_break_context(session, employee.id)
+    leave_types_ctx = build_leave_types_context(session, tenant_id)
+    leave_balances_ctx = build_employee_leave_balances_context(session, employee.id, tenant_id)
 
     today_str = _now_spain().strftime("%Y-%m-%d")
     current_year = _now_spain().year
@@ -291,17 +369,7 @@ def build_system_prompt(
         "══ INTENTS DISPONIBLES ══",
         "Códigos válidos: " + intent_list,
         "",
-        "══ MAPA DE INTENCIONES ══",  
-        ("fichar_entrada",  "ficho, fichar, quiero fichar, voy a fichar, llego, entro a trabajar, he llegado, empiezo, comienzo, entrada, ya estoy, a trabajar, a currar, vamos a currar, curro, currando"),
-        ("fichar_salida",   "me voy, termino, acabo, salida, me marcho, salgo, finalizo, me piro, fin de jornada, hasta mañana"),
-        ("inicio_parada",   "descanso, pausa, café, a comer, paro un rato, me desconecto, voy a almorzar"),
-        ("fin_parada",      "vuelvo, ya estoy, regreso, sigo, retomo, continuo, termino descanso, de vuelta"),
-        ("solicitar_vacaciones", "quiero pedir vacaciones, solicito vacaciones, pedir días libres, vacaciones del, días de vacaciones"),
-        ("solicitar_permiso", "voy al médico, ir al médico, tengo médico, tengo cita, cita médica, cita con el médico, ir al hospital, hospital, dentista, ir al dentista, permiso médico, día personal, asuntos propios, necesito un día, pedir permiso, ausencia, tengo que ir al médico, tengo que ir al hospital"),
-        ("consultar_saldo_vacaciones", "cuántas vacaciones me quedan, cuántos días me quedan, saldo de vacaciones, días disponibles, mis vacaciones"),
-        ("resumen_dia",     "resumen, cómo voy, qué he hecho hoy, mi día, horas de hoy"),
-        ("confirmar_documento", "confirmo, recibido, de acuerdo, acepto el documento, lo he visto"),
-        ("reportar_incidencia", "tuve un problema, no pude fichar, reportar incidencia, problema con el fichaje, ayer no pude, perdí el móvil, error en el fichaje"),
+        "══ MAPA DE INTENCIONES ══",
     ]
     for code, phrases in _PHRASE_MAP:
         if code in allowed_effective:
@@ -309,13 +377,25 @@ def build_system_prompt(
 
     lines.extend([
         "",
+        "══ TIPOS DE PERMISO DISPONIBLES ══",
+        "El empleado puede solicitar estos tipos de permiso (usa el nombre EXACTO en leave_type_name):",
+        leave_types_ctx,
+        "• Cuando el usuario mencione un tipo por nombre (ej: 'días acumulados', 'asuntos propios', 'baja'), identifícalo.",
+        "• Si no especifica el tipo y hay varios, pregunta: '¿Qué tipo de permiso necesitas?' y lista las opciones.",
+        "• Para solicitar_permiso sin tipo claro → stage=ask para preguntar el tipo.",
+        "• Para solicitar_vacaciones → usa siempre leave_type_name='Vacaciones'.",
+        "",
+        "══ SALDO DE PERMISOS DEL EMPLEADO ══",
+        leave_balances_ctx,
+        "",
         "══ EXTRACCIÓN DE ENTIDADES ══",
         "Extrae entities SOLO cuando el usuario ya proporcionó la información:",
-        f"  solicitar_vacaciones  → {{\"fecha_inicio\":\"YYYY-MM-DD\", \"fecha_fin\":\"YYYY-MM-DD\"}}  (año base: {current_year})",
-        f"  solicitar_permiso     → {{\"fecha\":\"YYYY-MM-DD\", \"motivo\":\"médico|personal|asuntos propios\"}}",
+        f"  solicitar_vacaciones  → {{\"fecha_inicio\":\"YYYY-MM-DD\", \"fecha_fin\":\"YYYY-MM-DD\", \"leave_type_name\":\"Vacaciones\"}}  (año base: {current_year})",
+        f"  solicitar_permiso     → {{\"fecha\":\"YYYY-MM-DD\", \"motivo\":\"texto libre\", \"leave_type_name\":\"nombre exacto del tipo\"}}",
         "  reportar_incidencia   → {\"title\":\"resumen breve\", \"description\":\"detalles del problema\"}",
         "  resto de intents      → {}",
         "Si no tienes las fechas/datos necesarios → stage=ask y pídelos.",
+        "Si no tienes el tipo de permiso y hay varios disponibles → stage=ask y lista las opciones.",
         "",
         "══ FLUJO DE DECISIÓN ══",
         "1. ¿Es saludo puro ('hola', 'buenas', 'hey')? → intent=desconocido, stage=ask, saluda y ofrece ayuda.",
@@ -349,6 +429,14 @@ def build_system_prompt(
         clock_ctx,
         "PARADAS:",
         break_ctx,
+    ])
+
+    lines.extend([
+        "VOCABULARIO COLOQUIAL ADICIONAL PARA PERMISOS:",
+        "• «días acumulados», «horas acumuladas» → solicitar_permiso con leave_type_name=nombre exacto del tipo",
+        "• «asuntos propios», «personal» → solicitar_permiso",
+        "• «baja», «enfermedad» → solicitar_permiso con leave_type_name='Baja'",
+        "• «vacaciones», «días libres», «días de vacaciones» → solicitar_vacaciones",
     ])
 
     if nlu_hint:

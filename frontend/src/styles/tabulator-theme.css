@@ -172,6 +172,13 @@
   background: inherit !important;
 }
 
+/* Botones de acción dentro de Tabulator: anular overrides globales de .btn-sm */
+.data-table__grid .tabulator-cell .btn-icon {
+  padding: 0.35rem;
+  min-width: 28px;
+  min-height: 28px;
+}
+
 .data-table__grid .tabulator-cell .badge {
   display: inline-block;
   vertical-align: middle;

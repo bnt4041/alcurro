@@ -160,6 +160,36 @@ class WebhookService:
             except Exception:
                 pass
 
+        # ── Legal check ──────────────────────────────────────────────────────────
+        try:
+            from app.services.legal_service import create_whatsapp_token, employee_legal_status
+            from app.config import get_settings as _get_settings
+            _items, _all_ok = employee_legal_status(self._session, self._tenant_id, employee.id)
+            if not _all_ok:
+                _token = create_whatsapp_token(
+                    self._session, employee_id=employee.id, tenant_id=self._tenant_id
+                )
+                self._session.commit()
+                _base = _get_settings().public_app_url.rstrip("/")
+                _link = f"{_base}/legal/{_token.token}"
+                _pending_titles = [i.title for i in _items if i.is_required and not i.accepted]
+                _msg = (
+                    f"Antes de continuar, necesitas aceptar los textos legales requeridos.\n\n"
+                    f"Documentos pendientes: {', '.join(_pending_titles)}.\n\n"
+                    f"Accede al siguiente enlace (válido 5 min) para firmarlos:"
+                )
+                try:
+                    await self._gowa.send_link(phone, _link, _msg)
+                except Exception:
+                    try:
+                        await self._gowa.send_text(phone, f"{_msg}\n\n{_link}")
+                    except Exception:
+                        pass
+                return {"ok": True, "action": "legal_pending"}
+        except Exception:
+            pass
+        # ─────────────────────────────────────────────────────────────────────────
+
         message = payload.resolve_message()
         if message and message.is_location:
             return await self._handle_location(employee.id, phone, message)
@@ -189,13 +219,17 @@ class WebhookService:
 
     def _format_clock_reply(self, label: str, record, project_name: str | None = None) -> str:
         ts = record.salida_at if label == "SALIDA" else record.entrada_at
+        if label == "SALIDA":
+            lat, lng, addr = record.latitude_out, record.longitude_out, record.address_out
+        else:
+            lat, lng, addr = record.latitude, record.longitude, record.address
         return format_clock_registered(
             label,
             _to_spain(ts).strftime("%H:%M:%S"),
             project_name=project_name,
-            latitude=record.latitude,
-            longitude=record.longitude,
-            address=record.address,
+            latitude=lat,
+            longitude=lng,
+            address=addr,
         )
 
     def _open_clock_with_project_flow(
@@ -373,7 +407,11 @@ class WebhookService:
                     address=geo_address,
                     whatsapp_message_id=message.id,
                 )
-            clear_pending(self._session, employee_id)
+            # _open_clock_with_project_flow may have set a project-selection pending
+            # (pending_confirmation=False). If so, keep it so _handle_text can resolve it.
+            after_pending = get_pending(self._session, employee_id)
+            if not (after_pending and not after_pending.pending_confirmation):
+                clear_pending(self._session, employee_id)
             self._session.commit()
             try:
                 await self._gowa.send_text(phone, reply + self._geo_hint())
