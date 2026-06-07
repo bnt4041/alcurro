@@ -75,11 +75,24 @@ _RE_SALIDA_VERBS = _re.compile(
     r"he\s+terminado|he\s+acabado|voy\s+a\s+salir)[,.\s]*",
     _re.IGNORECASE,
 )
+_RE_SKIP_SUMMARY = _re.compile(
+    r"^\s*(sin\s+resumen|–|—|-+|nada|no|skip|omitir|sin\s+novedad|sin\s+novedades|paso|ok|vale|ninguna?)\s*$",
+    _re.IGNORECASE,
+)
 
 def _extract_work_summary(text: str) -> str | None:
     """Extrae el texto libre tras el verbo de salida como resumen del día."""
     cleaned = _RE_SALIDA_VERBS.sub("", text).strip(" .,;:")
     return cleaned if len(cleaned) > 3 else None
+
+_WORK_SUMMARY_REQUEST = (
+    "📝 *Resumen de jornada*\n\n"
+    "Antes de registrar tu salida, comparte brevemente cómo ha ido el día:\n\n"
+    "• Lo que has realizado\n"
+    "• Notas o tareas para mañana\n"
+    "• Cualquier anomalía o incidencia\n\n"
+    "_Si prefieres no añadir nada escribe *sin resumen*._"
+)
 
 from app.services.project_service import (
     format_project_picker_message,
@@ -280,11 +293,13 @@ class WebhookService:
                     format_project_picker_message(projects, "ENTRADA")
                     + "\n\nNo he reconocido el proyecto. Responde con el número o nombre."
                 )
+            # Recover geocoded address stored when project picker was shown
+            resolved_address = address or (pending.pending_meta or {}).get("address")
             record = self._clock.open_clock(
                 employee_id=employee.id,
                 latitude=pending.latitude,
                 longitude=pending.longitude,
-                address=address,
+                address=resolved_address,
                 whatsapp_message_id=pending.whatsapp_message_id or whatsapp_message_id,
                 project_id=project.id,
                 commit=False,
@@ -300,8 +315,85 @@ class WebhookService:
             latitude=latitude,
             longitude=longitude,
             whatsapp_message_id=whatsapp_message_id,
+            pending_meta={"address": address} if address else None,
         )
         return format_project_picker_message(projects, "ENTRADA")
+
+    def _request_work_summary(
+        self,
+        employee: Employee,
+        *,
+        latitude: float | None = None,
+        longitude: float | None = None,
+        address: str | None = None,
+        whatsapp_message_id: str | None = None,
+    ) -> str:
+        """Guarda el estado 'awaiting_summary' y devuelve el mensaje de solicitud."""
+        meta: dict = {"awaiting_summary": True}
+        if address:
+            meta["address"] = address
+        set_pending(
+            self._session,
+            employee_id=employee.id,
+            record_type="salida",
+            latitude=latitude,
+            longitude=longitude,
+            whatsapp_message_id=whatsapp_message_id,
+            pending_confirmation=False,
+            pending_intent="fichar_salida",
+            pending_meta=meta,
+        )
+        return _WORK_SUMMARY_REQUEST
+
+    async def _handle_work_summary_response(
+        self,
+        employee: Employee,
+        phone: str,
+        text: str,
+        message_id: str | None,
+        pending,
+    ) -> dict:
+        """Recibe el resumen de jornada y ejecuta el cierre del fichaje."""
+        if is_cancel_or_new_intent(text):
+            clear_pending(self._session, employee.id)
+            self._session.flush()
+            self._ollama.profile_key = profile_key_for_employee(employee.role)
+            intent_data = await self._ollama.extract_intent(
+                text,
+                employee=employee,
+                tenant=self._tenant,
+                clock_settings=self._settings,
+            )
+            append_message(
+                self._session,
+                tenant_id=self._tenant_id,
+                employee_id=employee.id,
+                role="user",
+                content=text,
+            )
+            self._session.flush()
+            return await self._handle_stage(employee, phone, intent_data, text, message_id)
+
+        work_summary = None if _RE_SKIP_SUMMARY.match(text) else text.strip()
+        lat = pending.latitude
+        lng = pending.longitude
+        address = (pending.pending_meta or {}).get("address")
+        clear_pending(self._session, employee.id)
+        reply = self._close_clock(
+            employee,
+            work_summary=work_summary,
+            whatsapp_message_id=message_id,
+            latitude=lat,
+            longitude=lng,
+            address=address,
+        )
+        self._session.commit()
+        try:
+            await self._gowa.send_text(phone, reply)
+            await self._notify_incident_if_needed(phone)
+        except Exception:
+            pass
+        return {"ok": True, "action": "work_summary_saved"}
 
     def _close_clock(
         self,
@@ -392,6 +484,20 @@ class WebhookService:
                     pass
                 return {"ok": True, "action": "denied_location"}
             if is_open:
+                if self._settings.daily_summary_enabled:
+                    reply = self._request_work_summary(
+                        employee,
+                        latitude=lat,
+                        longitude=lng,
+                        address=geo_address,
+                        whatsapp_message_id=message.id,
+                    )
+                    self._session.commit()
+                    try:
+                        await self._gowa.send_text(phone, reply)
+                    except Exception:
+                        pass
+                    return {"ok": True, "action": "await_work_summary"}
                 reply = self._close_clock(
                     employee,
                     whatsapp_message_id=message.id,
@@ -433,6 +539,20 @@ class WebhookService:
             return {"ok": True, "action": "denied_location"}
 
         if is_open:
+            if self._settings.daily_summary_enabled:
+                reply = self._request_work_summary(
+                    employee,
+                    latitude=lat,
+                    longitude=lng,
+                    address=geo_address,
+                    whatsapp_message_id=message.id,
+                )
+                self._session.commit()
+                try:
+                    await self._gowa.send_text(phone, reply)
+                except Exception:
+                    pass
+                return {"ok": True, "action": "await_work_summary"}
             reply = self._close_clock(
                 employee,
                 whatsapp_message_id=message.id,
@@ -638,20 +758,26 @@ class WebhookService:
         if upload_pending:
             return await self._handle_inbound_document_pick(employee, phone, text)
 
-        # 2. Pendiente de confirmación sí/no
+        # 2. Pendiente de resumen de trabajo al fichar salida
         pending = get_pending(self._session, employee.id)
+        if pending and (pending.pending_meta or {}).get("awaiting_summary"):
+            return await self._handle_work_summary_response(
+                employee, phone, text, message_id, pending
+            )
+
+        # 3. Pendiente de confirmación sí/no
         if pending and pending.pending_confirmation:
             return await self._handle_confirmation_response(
                 employee, phone, text, message_id, pending
             )
 
-        # 3. Pendiente de selección de proyecto (sin confirmación pendiente)
+        # 4. Pendiente de selección de proyecto (sin confirmación pendiente)
         if self._settings.require_project_on_clock_in and pending:
             return await self._handle_project_selection(
                 employee, phone, text, message_id, pending
             )
 
-        # 4. Ollama como orquestador: decide stage (ask/confirm/execute)
+        # 5. Ollama como orquestador: decide stage (ask/confirm/execute)
         self._ollama.profile_key = profile_key_for_employee(employee.role)
         intent_data = await self._ollama.extract_intent(
             text,
@@ -992,12 +1118,22 @@ class WebhookService:
                 pass
             return {"ok": True, "action": "denied_project"}
         if is_salida:
-            reply = self._close_clock(employee, whatsapp_message_id=message_id)
+            if self._settings.daily_summary_enabled:
+                reply = self._request_work_summary(
+                    employee,
+                    latitude=pending.latitude,
+                    longitude=pending.longitude,
+                    whatsapp_message_id=message_id,
+                )
+            else:
+                reply = self._close_clock(employee, whatsapp_message_id=message_id)
         else:
+            _pending_address = (pending.pending_meta or {}).get("address")
             reply = self._open_clock_with_project_flow(
                 employee,
                 latitude=pending.latitude,
                 longitude=pending.longitude,
+                address=_pending_address,
                 whatsapp_message_id=pending.whatsapp_message_id or message_id,
                 picker_text=text,
             )
@@ -1305,6 +1441,10 @@ class WebhookService:
                 )
 
             case "fichar_salida":
+                if self._settings.daily_summary_enabled:
+                    return self._request_work_summary(
+                        employee, whatsapp_message_id=message_id
+                    )
                 summary = _extract_work_summary(raw_text)
                 return self._close_clock(
                     employee,
