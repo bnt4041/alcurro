@@ -628,6 +628,44 @@ class WebhookService:
 
         file_bytes = path.read_bytes()
         filename = message.file_name or path.name
+
+        # ── Adjunto para incidencia pendiente ──────────────────────────────────
+        pending = get_pending(self._session, employee.id)
+        if pending and (pending.pending_meta or {}).get("awaiting_incident_file"):
+            incident_id_str = (pending.pending_meta or {}).get("incident_id")
+            if incident_id_str:
+                from uuid import UUID as _UUID
+                from app.services.document_service import store_upload_file as _store
+                from app.services.incident_service import add_note as _add_note
+                UPLOAD_DIR = Path("/app/uploads")
+                saved_path, safe_name = _store(UPLOAD_DIR, filename, file_bytes)
+                rel = saved_path.replace("/app/uploads/", "/uploads/")
+                try:
+                    _add_note(
+                        self._session,
+                        incident_id=_UUID(incident_id_str),
+                        content=f"📎 Adjunto enviado por WhatsApp: [{safe_name}]({rel})",
+                        author_name=employee.full_name,
+                    )
+                except Exception:
+                    pass
+                # Limpiar estado pendiente
+                pending.pending_meta = {k: v for k, v in (pending.pending_meta or {}).items()
+                                        if k not in ("awaiting_incident_file", "incident_id")}
+                pending.pending_confirmation = False
+                pending.pending_intent = None
+                self._session.add(pending)
+                self._session.commit()
+                reply = (
+                    f"✅ Archivo *{safe_name}* adjuntado a tu incidencia.\n"
+                    "¿Quieres adjuntar otro archivo? Envíalo ahora o escribe _listo_ para terminar."
+                )
+                try:
+                    await self._gowa.send_text(phone, reply)
+                except Exception:
+                    pass
+                return {"ok": True, "action": "incident_file_attached"}
+
         file_pending = pending_file_documents(self._session, employee.id)
         if len(file_pending) > 1:
             set_pending_upload(
@@ -752,6 +790,34 @@ class WebhookService:
             return await self._handle_media_classification(
                 employee, phone, text, message_id, pending
             )
+
+        # 0b. Esperando adjunto para incidencia — "listo" / "no" cancela la espera
+        pending = get_pending(self._session, employee.id)
+        if pending and (pending.pending_meta or {}).get("awaiting_incident_file"):
+            normalized = text.strip().lower()
+            if normalized in ("listo", "no", "nada", "terminar", "fin", "no gracias", "ya está"):
+                pending.pending_meta = {k: v for k, v in (pending.pending_meta or {}).items()
+                                        if k not in ("awaiting_incident_file", "incident_id")}
+                pending.pending_confirmation = False
+                pending.pending_intent = None
+                self._session.add(pending)
+                self._session.commit()
+                reply = "De acuerdo, incidencia registrada sin adjuntos. 👍"
+                try:
+                    await self._gowa.send_text(phone, reply)
+                except Exception:
+                    pass
+                return {"ok": True, "action": "incident_file_skipped"}
+            # Cualquier otro texto: recordar que esperamos un archivo
+            reply = (
+                "📎 Envía el documento o foto como adjunto en este chat, "
+                "o escribe _listo_ para terminar sin adjuntar."
+            )
+            try:
+                await self._gowa.send_text(phone, reply)
+            except Exception:
+                pass
+            return {"ok": True, "action": "incident_file_awaiting_reminder"}
 
         # 1. Pendiente de subir documento
         upload_pending = get_pending_upload(self._session, employee.id)
@@ -1621,9 +1687,27 @@ class WebhookService:
         )
 
         self._session.commit()
+
+        # Dejar estado pendiente para recibir adjuntos opcionales
+        from app.services.clock_pending_service import get_pending, set_pending
+        existing = get_pending(self._session, employee.id)
+        meta = dict(existing.pending_meta or {}) if existing else {}
+        meta["awaiting_incident_file"] = True
+        meta["incident_id"] = str(incident.id)
+        set_pending(
+            self._session,
+            employee_id=employee.id,
+            record_type=existing.record_type if existing else "incident",
+            pending_confirmation=False,
+            pending_intent="awaiting_incident_file",
+            pending_meta=meta,
+        )
+        self._session.commit()
+
         return (
-            f"✅ Incidencia registrada: *{incident.title}*\n"
-            "Puedes consultarla en el panel de RRHH."
+            f"✅ Incidencia registrada: *{incident.title}*\n\n"
+            "¿Quieres adjuntar algún documento o foto? "
+            "Envíalo ahora por WhatsApp o escribe _listo_ para terminar."
         )
 
 

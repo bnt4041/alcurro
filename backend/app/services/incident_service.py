@@ -387,17 +387,37 @@ def send_whatsapp_from_incident(
     message: str,
     tenant_id: UUID,
     file_notes: list[str] | None = None,
+    file_paths: list[str] | None = None,
 ) -> dict:
-    """Envía WhatsApp al empleado de la incidencia con un mensaje personalizado."""
+    """Envía WhatsApp al empleado de la incidencia con un mensaje y adjuntos opcionales."""
+    from pathlib import Path as _Path
     employee = session.get(Employee, incident.employee_id)
     if not employee or not employee.phone:
         raise ValueError("El empleado no tiene teléfono configurado")
     from app.services.gowa_service import GoWAService
 
     gowa = GoWAService(session)
+    IMAGE_EXT = {".jpg", ".jpeg", ".png"}
     try:
         result = gowa.send_text_sync(employee.phone, message)
         note_parts = [f"📱 WhatsApp enviado: {message[:500]}{'…' if len(message) > 500 else ''}"]
+
+        # Enviar archivos adjuntos uno a uno
+        for fpath in (file_paths or []):
+            p = _Path(fpath)
+            if not p.is_file():
+                continue
+            try:
+                data = p.read_bytes()
+                ext = p.suffix.lower()
+                if ext in IMAGE_EXT:
+                    gowa.send_image_sync(employee.phone, data, p.name, caption=p.name)
+                else:
+                    gowa.send_file_sync(employee.phone, data, p.name, caption=p.name)
+                note_parts.append(f"📎 Adjunto enviado por WA: {p.name}")
+            except Exception as fe:
+                note_parts.append(f"⚠️ Adjunto no enviado ({p.name}): {fe}")
+
         if file_notes:
             note_parts.extend(file_notes)
         add_note(

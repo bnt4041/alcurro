@@ -1,4 +1,5 @@
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { useDropzone } from "react-dropzone";
 import { Link } from "react-router-dom";
 import { api, buildQuery } from "../api/client";
 import type { ClockIn, Incident, IncidentNote, LeaveRequest } from "../api/types";
@@ -56,6 +57,38 @@ interface LeaveActionForm {
   end_date: string;
   days_requested: string;
   reason: string;
+}
+
+// ── Componente FileDropzone ───────────────────────────────────────────────────
+function FileDropzone({ files, onChange }: { files: File[]; onChange: (f: File[]) => void }) {
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop: (accepted) => onChange([...files, ...accepted]),
+    multiple: true,
+    accept: { "image/*": [], "application/pdf": [], "application/msword": [],
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [] },
+  });
+  const remove = (i: number) => onChange(files.filter((_, idx) => idx !== i));
+  return (
+    <div className="file-dropzone-wrapper">
+      <div {...getRootProps()} className={`file-dropzone${isDragActive ? " is-dragging" : ""}`}>
+        <input {...getInputProps()} />
+        <span className="file-dropzone-icon">📁</span>
+        <span>{isDragActive ? "Suelta los archivos aquí…" : "Arrastra archivos o haz clic para seleccionar"}</span>
+        <span className="file-dropzone-hint">Imágenes, PDF, Word</span>
+      </div>
+      {files.length > 0 && (
+        <ul className="file-dropzone-list">
+          {files.map((f, i) => (
+            <li key={i} className="file-dropzone-item">
+              <span className="file-dropzone-name">{f.name}</span>
+              <span className="file-dropzone-size">({(f.size / 1024).toFixed(0)} KB)</span>
+              <button type="button" className="file-dropzone-remove" onClick={() => remove(i)} title="Quitar">✕</button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
 }
 
 // ── Componente SearchableSelect inline ────────────────────────────────────────
@@ -126,7 +159,6 @@ export default function IncidentsPage() {
   const [sendEmail, setSendEmail] = useState("");
   const [sendFiles, setSendFiles] = useState<File[]>([]);
   const [sendSending, setSendSending] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // acciones
   const [actionType, setActionType] = useState<ActionType>(null);
@@ -714,15 +746,10 @@ export default function IncidentsPage() {
               onChange={(ev) => setSendMessage(ev.target.value)} placeholder="Escribe el mensaje…" />
           </label>
           <div className="form-grid-full">
-            <p className="muted small" style={{ marginBottom: "0.25rem" }}>Adjuntos (opcional)</p>
-            <input ref={fileInputRef} type="file" multiple accept="image/*,application/pdf,.doc,.docx" style={{ display: "none" }}
-              onChange={(ev) => setSendFiles(Array.from(ev.target.files ?? []))} />
-            <button type="button" className="btn btn-sm" onClick={() => fileInputRef.current?.click()}>Seleccionar archivos</button>
-            {sendFiles.length > 0 && (
-              <ul className="muted small" style={{ marginTop: "0.25rem", paddingLeft: "1rem" }}>
-                {sendFiles.map((f, i) => <li key={i}>{f.name}</li>)}
-              </ul>
-            )}
+            <label style={{ display: "block", marginBottom: "0.4rem", fontSize: "0.85rem", color: "var(--muted)" }}>
+              Adjuntos (opcional)
+            </label>
+            <FileDropzone files={sendFiles} onChange={setSendFiles} />
           </div>
           <div className="form-actions form-grid-full">
             <button type="button" className="btn" onClick={() => setSendOpen(false)}>Cancelar</button>

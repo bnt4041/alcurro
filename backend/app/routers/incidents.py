@@ -274,6 +274,7 @@ async def send_incident_message(
 
     # Guardar adjuntos y construir nota de archivos
     file_notes: list[str] = []
+    file_paths: list[str] = []
     for upload in files:
         if not upload.filename:
             continue
@@ -283,6 +284,7 @@ async def send_incident_message(
         stored_path, safe_name = store_upload_file(_UPLOAD_DIR, upload.filename, data)
         rel = stored_path.replace("/app/uploads/", "/uploads/")
         file_notes.append(f"📎 [{safe_name}]({rel})")
+        file_paths.append(stored_path)
 
     try:
         if channel == "whatsapp":
@@ -292,6 +294,7 @@ async def send_incident_message(
                 message=message,
                 tenant_id=ctx.tenant.id,
                 file_notes=file_notes,
+                file_paths=file_paths,
             )
         else:
             if not recipient_email:

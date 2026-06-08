@@ -43,7 +43,7 @@ export default function HomePage() {
                 to="/registro"
                 className="landing-hero__cta landing-rainbow-crest landing-rainbow-shadow"
               >
-                Empieza gratis
+                Solicitar acceso
                 <Icon name="arrow_forward" />
               </Link>
               <a href="#funciones" className="landing-hero__secondary-cta">
@@ -52,7 +52,7 @@ export default function HomePage() {
               </a>
             </div>
             <p className="landing-hero__note">
-              Sin tarjeta de crédito · Configuración en 10 minutos · Cancela cuando quieras
+              Configuración en 10 minutos · Sin instalaciones · Soporte incluido
             </p>
           </div>
 
@@ -191,14 +191,15 @@ export default function HomePage() {
 
             <article className="landing-glass landing-bento__card landing-bento__card--wide landing-bento__ia">
               <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.5rem" }}>
-                <span className="landing-bento__badge-ia">IA LOCAL</span>
+                <span className="landing-bento__badge-ia">IA PRIVADA</span>
                 <h3 className="landing-headline" style={{ fontSize: "1.25rem", margin: 0 }}>
                   Entiende lenguaje natural
                 </h3>
               </div>
               <p style={{ color: "var(--lp-muted)", fontSize: "0.875rem", marginBottom: "1.5rem" }}>
-                Procesa en tu servidor. Cero datos a terceros. Llama, vacaciones,
-                permisos — lo interpreta todo.
+                Nadie aprende nada nuevo. Escribe como siempre y alcurro lo interpreta:
+                fichajes, vacaciones, permisos, incidencias. Sin comandos, sin apps,
+                con IA que no comparte tus datos con nadie.
               </p>
               <div className="landing-bento__chat">
                 <div className="landing-wa-bubble-user" style={{ alignSelf: "flex-end" }}>
@@ -270,6 +271,60 @@ export default function HomePage() {
                 <Icon name="info" /> Cambio detectado el jueves — turno nocturno.
               </p>
             </article>
+
+            <article className="landing-glass landing-bento__card landing-bento__card--wide">
+              <h3 className="landing-headline" style={{ fontSize: "1.25rem" }}>
+                Firma electrónica
+              </h3>
+              <p style={{ color: "var(--lp-muted)" }}>
+                Contratos, acuerdos y documentos firmados desde el móvil en segundos.
+                Certificado con plena validez legal. Sin papel, sin desplazamientos.
+              </p>
+              <div className="landing-bento__doc-preview">
+                <div className="landing-bento__doc-row">
+                  <span className="material-symbols-outlined" style={{ color: "var(--lp-navy)", fontSize: "1.25rem" }}>description</span>
+                  <span style={{ flex: 1, fontSize: "0.8125rem" }}>Contrato jornada parcial · Ana Pérez</span>
+                  <span className="landing-pill landing-pill--ok" style={{ fontSize: "0.625rem" }}>FIRMADO</span>
+                </div>
+                <div className="landing-bento__doc-row">
+                  <span className="material-symbols-outlined" style={{ color: "var(--lp-navy)", fontSize: "1.25rem" }}>description</span>
+                  <span style={{ flex: 1, fontSize: "0.8125rem" }}>Anexo horario verano · Carlos Ruiz</span>
+                  <span className="landing-pill landing-pill--pending" style={{ fontSize: "0.625rem" }}>PENDIENTE</span>
+                </div>
+                <div className="landing-bento__doc-row">
+                  <span className="material-symbols-outlined" style={{ color: "var(--lp-navy)", fontSize: "1.25rem" }}>description</span>
+                  <span style={{ flex: 1, fontSize: "0.8125rem" }}>Nómina febrero · Laura García</span>
+                  <span className="landing-pill landing-pill--ok" style={{ fontSize: "0.625rem" }}>FIRMADO</span>
+                </div>
+              </div>
+            </article>
+
+            <article className="landing-glass landing-bento__card landing-bento__card--wide">
+              <h3 className="landing-headline" style={{ fontSize: "1.25rem" }}>
+                Gestor documental y nóminas
+              </h3>
+              <p style={{ color: "var(--lp-muted)" }}>
+                Centraliza contratos, bajas, certificados y nóminas. Envía la nómina
+                mensual con un clic: el empleado la recibe por WhatsApp, la firma
+                y confirma la recepción automáticamente.
+              </p>
+              <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", marginTop: "0.75rem" }}>
+                {[
+                  { icon: "receipt_long", label: "Nóminas" },
+                  { icon: "folder_shared", label: "Contratos" },
+                  { icon: "sick", label: "Bajas IT" },
+                  { icon: "workspace_premium", label: "Certificados" },
+                ].map(({ icon, label }) => (
+                  <div key={label} style={{ display: "flex", alignItems: "center", gap: "0.35rem", background: "var(--lp-outline)", borderRadius: "8px", padding: "0.35rem 0.65rem", fontSize: "0.75rem", fontWeight: 600, color: "var(--lp-navy)" }}>
+                    <span className="material-symbols-outlined" style={{ fontSize: "1rem" }}>{icon}</span>
+                    {label}
+                  </div>
+                ))}
+              </div>
+              <p style={{ marginTop: "1rem", padding: "0.5rem 0.75rem", fontSize: "0.75rem", background: "rgba(37,211,102,0.08)", borderRadius: "8px", color: "var(--lp-navy)", borderLeft: "3px solid var(--lp-accent)" }}>
+                <strong>+</strong> Acceso del empleado a su historial completo de documentos, siempre disponible.
+              </p>
+            </article>
           </div>
         </div>
       </section>
@@ -286,10 +341,11 @@ export default function HomePage() {
               <div className="landing-why__icon">
                 <Icon name="lock" />
               </div>
-              <h3>Tus datos, en tu servidor</h3>
+              <h3>IA privada, datos que no salen</h3>
               <p>
-                La IA corre en tu infraestructura con Ollama. Ni tus conversaciones
-                ni los datos de tus empleados salen de tu entorno. GDPR tranquilo.
+                Conversaciones, documentos y datos de empleados permanecen dentro
+                de tu empresa. La IA procesa todo internamente, sin enviar nada
+                a terceros. Cumplimiento RGPD sin esfuerzo.
               </p>
             </div>
             <div className="landing-why__card">
@@ -385,7 +441,7 @@ export default function HomePage() {
                 to="/registro"
                 className="landing-hero__cta landing-rainbow-crest landing-rainbow-shadow"
               >
-                Empieza gratis
+                Solicitar acceso
               </Link>
               <Link to="/contacto" className="landing-final-cta__secondary">
                 Hablar con el equipo

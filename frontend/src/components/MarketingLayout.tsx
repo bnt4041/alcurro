@@ -64,10 +64,27 @@ export default function MarketingLayout() {
           .join(" ")}
       >
         <div className="landing-nav__inner">
+          {/* Logo */}
           <Link to="/" className="landing-nav__logo" aria-label="alcurro — inicio">
             <BrandLogo variant="light" compact />
           </Link>
 
+          {/* Links desktop — centrados */}
+          <nav className="landing-nav__links" aria-label="Secciones">
+            {isHome ? <a href="#funciones">Funciones</a> : <Link to="/#funciones">Funciones</Link>}
+            {isHome ? <a href="#tarifas">Tarifas</a> : <Link to="/#tarifas">Tarifas</Link>}
+            <Link to="/contacto">Contacto</Link>
+          </nav>
+
+          {/* Acciones desktop */}
+          <div className="landing-nav__actions">
+            <Link to="/acceso" className="landing-nav__login">Acceder</Link>
+            <Link to="/registro" className="landing-nav__cta">
+              Solicitar acceso
+            </Link>
+          </div>
+
+          {/* Hamburguesa móvil */}
           <button
             type="button"
             className="landing-nav__menu-btn"
@@ -81,14 +98,7 @@ export default function MarketingLayout() {
             </span>
           </button>
 
-          <nav className="landing-nav__links" aria-label="Secciones">
-            {isHome && <a href="#funciones">Funciones</a>}
-            {isHome && <a href="#tarifas">Tarifas</a>}
-            {!isHome && <Link to="/#funciones">Funciones</Link>}
-            {!isHome && <Link to="/#tarifas">Tarifas</Link>}
-            <Link to="/contacto">Contacto</Link>
-          </nav>
-
+          {/* Menú móvil */}
           <nav
             id="landing-mobile-nav"
             className={`landing-nav__mobile${mobileNavOpen ? " is-open" : ""}`}
@@ -100,22 +110,12 @@ export default function MarketingLayout() {
             <Link to="/acceso" onClick={() => setMobileNavOpen(false)}>Acceder</Link>
             <Link
               to="/registro"
-              className="landing-nav__cta landing-rainbow-crest"
+              className="landing-nav__cta landing-nav__mobile-cta"
               onClick={() => setMobileNavOpen(false)}
             >
-              Empezar gratis
+              Solicitar acceso
             </Link>
           </nav>
-
-          <div className="landing-nav__actions">
-            <Link to="/acceso" className="landing-nav__login">Acceder</Link>
-            <Link
-              to="/registro"
-              className="landing-nav__cta landing-rainbow-crest landing-rainbow-shadow"
-            >
-              Empezar gratis
-            </Link>
-          </div>
         </div>
       </header>
 
@@ -138,7 +138,7 @@ export default function MarketingLayout() {
               <p className="landing-footer__col-title">Producto</p>
               <a href="/#funciones">Funciones</a>
               <a href="/#tarifas">Tarifas</a>
-              <Link to="/registro">Alta gratuita</Link>
+              <Link to="/registro">Solicitar acceso</Link>
             </div>
             <div className="landing-footer__col">
               <p className="landing-footer__col-title">Cuenta</p>

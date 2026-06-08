@@ -91,6 +91,52 @@ class GoWAService:
                 return response.json()
             return {"ok": True}
 
+    def _media_send_base_url(self) -> str:
+        if not self._send_url:
+            return ""
+        import re
+        return re.sub(r"/send/message$", "", self._send_url)
+
+    def send_file_sync(
+        self, phone: str, file_bytes: bytes, filename: str, caption: str = ""
+    ) -> dict:
+        """Envía un archivo (no imagen) por WhatsApp vía goWA /send/file."""
+        base = self._media_send_base_url()
+        if not base:
+            raise RuntimeError("WhatsApp no configurado en la plataforma")
+        url = f"{base}/send/file"
+        import mimetypes
+        content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+        with httpx.Client(timeout=60.0) as client:
+            response = client.post(
+                url,
+                data={"phone": format_phone_for_gowa(phone, self._country_iso), "caption": caption},
+                files={"file": (filename, file_bytes, content_type)},
+                headers={k: v for k, v in self._headers().items() if k != "Content-Type"},
+            )
+            response.raise_for_status()
+            return response.json() if response.content else {"ok": True}
+
+    def send_image_sync(
+        self, phone: str, image_bytes: bytes, filename: str, caption: str = ""
+    ) -> dict:
+        """Envía una imagen por WhatsApp vía goWA /send/image."""
+        base = self._media_send_base_url()
+        if not base:
+            raise RuntimeError("WhatsApp no configurado en la plataforma")
+        url = f"{base}/send/image"
+        import mimetypes
+        content_type = mimetypes.guess_type(filename)[0] or "image/jpeg"
+        with httpx.Client(timeout=60.0) as client:
+            response = client.post(
+                url,
+                data={"phone": format_phone_for_gowa(phone, self._country_iso), "caption": caption},
+                files={"image": (filename, image_bytes, content_type)},
+                headers={k: v for k, v in self._headers().items() if k != "Content-Type"},
+            )
+            response.raise_for_status()
+            return response.json() if response.content else {"ok": True}
+
     async def download_media(self, media_path: str) -> bytes | None:
         """Descarga un archivo multimedia desde goWA vía HTTP.
         
