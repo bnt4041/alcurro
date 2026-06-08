@@ -1,13 +1,15 @@
-from datetime import date
+from datetime import date, datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from app.core.deps import get_current_user
 from app.core.org_context import OrgContext, get_org_context
 from app.core.permissions import Permission, require_permission, require_write
 from app.database import get_session
+from app.models.incident import Incident
 from app.models.models import BreakType, Employee, WorkBreak
 from app.models.tenant import Company
 from app.schemas.crud import (
@@ -19,6 +21,12 @@ from app.schemas.crud import (
 )
 from app.services.break_service import BreakService
 from app.services.scope_service import read_scope_employee_ids, resolve_write_employee_id
+
+
+class BreakUpdate(BaseModel):
+    recorded_at: datetime | None = None
+    record_type: BreakType | None = None
+    notes: str | None = None
 
 router = APIRouter(prefix="/breaks", tags=["breaks"])
 
@@ -166,6 +174,37 @@ def create_break(
         source="panel",
     )
     session.add(row)
+    session.commit()
+    session.refresh(row)
+    return row
+
+
+@router.patch("/{break_id}", response_model=BreakRead)
+def update_break(
+    break_id: UUID,
+    data: BreakUpdate,
+    ctx: OrgContext = Depends(get_org_context),
+    session: Session = Depends(get_session),
+    user: Employee = Depends(get_current_user),
+    _: object = Depends(require_write("breaks", "write")),
+) -> WorkBreak:
+    row = session.get(WorkBreak, break_id)
+    if not row or row.employee_id not in _scope_ids(ctx, session, user):
+        raise HTTPException(status_code=404, detail="Parada no encontrada")
+    for key, value in data.model_dump(exclude_unset=True).items():
+        setattr(row, key, value)
+    session.add(row)
+    # Auto-cerrar incidencia vinculada si existe
+    linked = session.exec(
+        select(Incident).where(Incident.break_id == break_id)
+    ).first()
+    if linked and linked.status != "resolved":
+        linked.status = "resolved"
+        linked.managed = True
+        linked.resolved_at = datetime.utcnow()
+        linked.resolved_by_id = user.id
+        linked.updated_at = datetime.utcnow()
+        session.add(linked)
     session.commit()
     session.refresh(row)
     return row

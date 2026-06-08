@@ -3,12 +3,14 @@ from uuid import UUID
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile
+from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from app.config import get_settings
 from app.core.permissions import Permission, require_permission
 from app.core.tenant_context import TenantContext, get_tenant_context
 from app.database import get_session
+from app.models.billing import BillingCycle, PricingPlan, Subscription
 from app.models.tenant import Company, Tenant
 from app.schemas.billing import TenantAccountBillingRead
 from app.schemas.tenant import (
@@ -256,3 +258,93 @@ def create_tenant(
     session.commit()
     session.refresh(tenant)
     return tenant
+
+
+class PlanChangeRequest(BaseModel):
+    plan_id: UUID
+    billing_cycle: str  # "monthly" | "annual"
+
+
+class PlanChangePending(BaseModel):
+    ok: bool
+    message: str
+    pending_plan_name: str | None = None
+    pending_billing_cycle: str | None = None
+    effective_date: str | None = None
+
+
+@router.post("/current/change-plan", response_model=PlanChangePending)
+def request_plan_change(
+    data: PlanChangeRequest,
+    ctx: TenantContext = Depends(get_tenant_context),
+    session: Session = Depends(get_session),
+    _: object = Depends(require_permission(Permission.WRITE, "tenant")),
+) -> PlanChangePending:
+    """Solicita un cambio de tarifa para el próximo periodo de facturación.
+
+    Restricción: no se puede hacer downgrade si la suscripción activa es anual.
+    """
+    new_plan = session.get(PricingPlan, data.plan_id)
+    if not new_plan or not new_plan.is_active:
+        raise HTTPException(status_code=404, detail="Tarifa no encontrada o inactiva")
+
+    if data.billing_cycle not in (BillingCycle.MONTHLY, BillingCycle.ANNUAL):
+        raise HTTPException(status_code=400, detail="Ciclo de facturación no válido")
+
+    # Get current subscription for this tenant
+    sub = session.exec(
+        select(Subscription).where(Subscription.tenant_id == ctx.tenant.id)
+    ).first()
+
+    if sub:
+        current_plan = session.get(PricingPlan, sub.pricing_plan_id) if sub.pricing_plan_id else None
+        # Block downgrade if currently on annual billing
+        if sub.billing_cycle == BillingCycle.ANNUAL and current_plan:
+            if data.billing_cycle == BillingCycle.MONTHLY:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        "No puedes cambiar a facturación mensual mientras tienes una "
+                        "suscripción anual activa. El cambio estará disponible al vencer "
+                        "el período anual actual."
+                    ),
+                )
+            # Annual → annual: block if new plan is cheaper (downgrade)
+            new_monthly_equiv = (
+                new_plan.annual_price_per_month_cents
+                if data.billing_cycle == BillingCycle.ANNUAL
+                else new_plan.monthly_price_cents
+            )
+            current_monthly_equiv = (
+                current_plan.annual_price_per_month_cents
+                if sub.billing_cycle == BillingCycle.ANNUAL
+                else current_plan.monthly_price_cents
+            )
+            if new_monthly_equiv < current_monthly_equiv:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        "No es posible hacer downgrade de tarifa con una suscripción "
+                        "anual activa. Podrás cambiar a una tarifa inferior al vencer "
+                        "el período anual."
+                    ),
+                )
+
+        # Store pending change in pending_meta (reuse existing JSON or store in notes)
+        # We record it as a note on the subscription for now
+        sub.pending_plan_id = data.plan_id
+        sub.pending_billing_cycle = data.billing_cycle
+        session.add(sub)
+        session.commit()
+        return PlanChangePending(
+            ok=True,
+            message=(
+                f"Cambio de tarifa a «{new_plan.name}» ({data.billing_cycle}) "
+                f"programado para el final del período actual."
+            ),
+            pending_plan_name=new_plan.name,
+            pending_billing_cycle=data.billing_cycle,
+            effective_date=sub.current_period_end.isoformat() if sub.current_period_end else None,
+        )
+
+    raise HTTPException(status_code=404, detail="No tienes ninguna suscripción activa")

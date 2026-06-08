@@ -392,7 +392,7 @@ def build_system_prompt(
         "Extrae entities SOLO cuando el usuario ya proporcionó la información:",
         f"  solicitar_vacaciones  → {{\"fecha_inicio\":\"YYYY-MM-DD\", \"fecha_fin\":\"YYYY-MM-DD\", \"leave_type_name\":\"Vacaciones\"}}  (año base: {current_year})",
         f"  solicitar_permiso     → {{\"fecha\":\"YYYY-MM-DD\", \"motivo\":\"texto libre\", \"leave_type_name\":\"nombre exacto del tipo\"}}",
-        "  reportar_incidencia   → {\"title\":\"resumen breve\", \"description\":\"detalles del problema\"}",
+        f"  reportar_incidencia   → {{\"title\":\"resumen breve\", \"description\":\"detalles del problema\", \"fecha_incidencia\":\"YYYY-MM-DD de CUÁNDO ocurrió el problema, null si es hoy ({today_str})\"}}",
         "  resto de intents      → {}",
         "Si no tienes las fechas/datos necesarios → stage=ask y pídelos.",
         "Si no tienes el tipo de permiso y hay varios disponibles → stage=ask y lista las opciones.",

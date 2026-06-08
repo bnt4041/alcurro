@@ -1,11 +1,15 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { api } from "../api/client";
+import Modal from "../components/Modal";
 import InvoiceHistoryTable from "../components/InvoiceHistoryTable";
 import PageHeader from "../components/PageHeader";
 import SubscriptionSummaryCard from "../components/SubscriptionSummaryCard";
 import { useAuth } from "../context/AuthContext";
 import { canModule, hasPerm } from "../lib/permissions";
 import type { InvoiceRow, SubscriptionSummary } from "../lib/subscription";
+import { publicApi, type PublicPricingPlan } from "../api/public";
+import { formatMoney } from "../lib/money";
+import { useToast } from "../context/ToastContext";
 
 interface TenantInfo {
   id: string;
@@ -36,15 +40,21 @@ interface BillingSummaryResponse {
 
 export default function AccountPage() {
   const { user } = useAuth();
+  const { notify } = useToast();
   const [tenant, setTenant] = useState<TenantInfo | null>(null);
-  const [billingSummary, setBillingSummary] = useState<BillingSummaryResponse | null>(
-    null
-  );
+  const [billingSummary, setBillingSummary] = useState<BillingSummaryResponse | null>(null);
   const [billingLoading, setBillingLoading] = useState(true);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [msg, setMsg] = useState("");
   const [newCompany, setNewCompany] = useState({ name: "", tax_id: "" });
   const [logoUploading, setLogoUploading] = useState(false);
+
+  // Plan change
+  const [plans, setPlans] = useState<PublicPricingPlan[]>([]);
+  const [planModalOpen, setPlanModalOpen] = useState(false);
+  const [selectedPlan, setSelectedPlan] = useState<PublicPricingPlan | null>(null);
+  const [selectedCycle, setSelectedCycle] = useState<"monthly" | "annual">("monthly");
+  const [planChanging, setPlanChanging] = useState(false);
 
   const canTenant = user && canModule(user.permissions, "read", "tenant");
   const canWriteTenant = user && canModule(user.permissions, "write", "tenant");
@@ -53,15 +63,46 @@ export default function AccountPage() {
   const load = useCallback(async () => {
     setBillingLoading(true);
     try {
-      setTenant(await api.get<TenantInfo>("/tenants/current"));
-      setCompanies(await api.get<Company[]>("/tenants/current/companies"));
-      setBillingSummary(
-        await api.get<BillingSummaryResponse>("/tenants/current/billing-summary")
-      );
+      const [tenantData, companiesData, summaryData] = await Promise.all([
+        api.get<TenantInfo>("/tenants/current"),
+        api.get<Company[]>("/tenants/current/companies"),
+        api.get<BillingSummaryResponse>("/tenants/current/billing-summary"),
+      ]);
+      setTenant(tenantData);
+      setCompanies(companiesData);
+      setBillingSummary(summaryData);
     } finally {
       setBillingLoading(false);
     }
   }, []);
+
+  useEffect(() => {
+    publicApi.getPlans().then(setPlans).catch(() => setPlans([]));
+  }, []);
+
+  const openPlanChange = (plan: PublicPricingPlan) => {
+    setSelectedPlan(plan);
+    setSelectedCycle("monthly");
+    setPlanModalOpen(true);
+  };
+
+  const confirmPlanChange = async () => {
+    if (!selectedPlan) return;
+    setPlanChanging(true);
+    try {
+      const result = await api.post<{ ok: boolean; message: string }>(
+        "/tenants/current/change-plan",
+        { plan_id: selectedPlan.id, billing_cycle: selectedCycle }
+      );
+      notify(result.message, "success");
+      setPlanModalOpen(false);
+      load();
+    } catch (err) {
+      notify(String(err).replace(/^Error:\s*/i, ""), "error");
+    } finally {
+      setPlanChanging(false);
+    }
+  };
 
   useEffect(() => {
     load();
@@ -175,7 +216,100 @@ export default function AccountPage() {
           subscription={billingSummary?.subscription ?? null}
           loading={billingLoading}
         />
+        {billingSummary?.subscription?.pending_plan_id && (
+          <div className="alert alert-info" style={{ marginTop: "0.75rem" }}>
+            Cambio de tarifa programado para el final del período actual.
+          </div>
+        )}
       </section>
+
+      {canBilling && plans.length > 0 && (
+        <section className="card settings-section">
+          <h3>Cambiar tarifa</h3>
+          <p className="muted small">
+            El cambio se aplica al inicio del siguiente período de facturación.
+            {billingSummary?.subscription?.billing_cycle === "annual" && (
+              <> No se permite downgrade con una suscripción anual activa.</>
+            )}
+          </p>
+          <div className="plan-change-grid">
+            {plans.map((plan) => {
+              const isCurrent = billingSummary?.subscription?.plan_code === plan.code
+                || billingSummary?.subscription?.plan_name === plan.name;
+              return (
+                <div key={plan.id} className={`plan-change-card${isCurrent ? " plan-change-card--current" : ""}`}>
+                  {isCurrent && <span className="plan-change-card__badge">Plan actual</span>}
+                  <h4>{plan.name}</h4>
+                  {plan.description && <p className="muted small">{plan.description}</p>}
+                  <p className="plan-change-card__price">
+                    {formatMoney(plan.monthly_price_cents, plan.currency)}
+                    <span className="muted"> /mes</span>
+                  </p>
+                  <p className="muted small">
+                    Anual: {formatMoney(plan.annual_price_per_month_cents, plan.currency)}/mes
+                  </p>
+                  <p className="muted small">Hasta {plan.max_active_users} usuarios</p>
+                  {!isCurrent && (
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-primary"
+                      onClick={() => openPlanChange(plan)}
+                    >
+                      Cambiar a {plan.name}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      <Modal
+        title={`Cambiar a ${selectedPlan?.name ?? ""}`}
+        open={planModalOpen}
+        onClose={() => setPlanModalOpen(false)}
+      >
+        {selectedPlan && (
+          <div>
+            <p>
+              Estás a punto de solicitar el cambio de tarifa a{" "}
+              <strong>{selectedPlan.name}</strong>. El cambio se aplicará al
+              inicio del siguiente período de facturación.
+            </p>
+            <div className="form-grid" style={{ marginTop: "1rem" }}>
+              <label>
+                Ciclo de facturación
+                <select
+                  value={selectedCycle}
+                  onChange={(e) => setSelectedCycle(e.target.value as "monthly" | "annual")}
+                >
+                  <option value="monthly">
+                    Mensual — {formatMoney(selectedPlan.monthly_price_cents, selectedPlan.currency)}/mes
+                  </option>
+                  <option value="annual">
+                    Anual — {formatMoney(selectedPlan.annual_price_per_month_cents, selectedPlan.currency)}/mes
+                    ({formatMoney(selectedPlan.annual_price_per_month_cents * 12, selectedPlan.currency)}/año)
+                  </option>
+                </select>
+              </label>
+            </div>
+            <div className="form-actions" style={{ marginTop: "1.5rem" }}>
+              <button type="button" className="btn" onClick={() => setPlanModalOpen(false)}>
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={planChanging}
+                onClick={confirmPlanChange}
+              >
+                {planChanging ? "Procesando…" : "Confirmar cambio"}
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       {canBilling && tenant && (
         <form

@@ -1,13 +1,15 @@
-from datetime import date
+from datetime import date, datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from app.core.deps import get_current_user
 from app.core.org_context import OrgContext, get_org_context
 from app.core.permissions import Permission, require_permission, require_write
 from app.database import get_session
+from app.models.incident import Incident
 from app.models.models import ClockIn, Employee
 from app.models.project import Project
 from app.routers.crud_helpers import get_or_404
@@ -17,6 +19,14 @@ from app.services.clock_report_service import EmployeeDayReport, build_employee_
 from app.services.clock_settings_service import get_or_create_settings
 from app.services.project_service import get_project_for_company
 from app.services.scope_service import read_scope_employee_ids, resolve_write_employee_id
+
+
+class ClockInUpdate(BaseModel):
+    entrada_at: datetime | None = None
+    salida_at: datetime | None = None
+    notes: str | None = None
+    work_summary: str | None = None
+    project_id: UUID | None = None
 
 router = APIRouter(prefix="/clock-ins", tags=["clock-ins"])
 
@@ -171,6 +181,100 @@ def create_clock_in(
         employee=emp,
         clock=row,
     )
+    session.commit()
+    session.refresh(row)
+    return _enrich_reads(session, [row])[0]
+
+
+@router.patch("/{clock_in_id}", response_model=ClockInRead)
+def update_clock_in(
+    clock_in_id: UUID,
+    data: ClockInUpdate,
+    ctx: OrgContext = Depends(get_org_context),
+    session: Session = Depends(get_session),
+    user: Employee = Depends(get_current_user),
+    _: object = Depends(require_write("clock_ins", "write")),
+) -> ClockInRead:
+    """Modifica un fichaje existente y crea/cierra automáticamente una incidencia."""
+    from app.services.incident_service import add_note, create_incident
+
+    row = get_or_404(session, ClockIn, clock_in_id)
+    if row.employee_id not in _scope_ids(ctx, session, user):
+        raise HTTPException(status_code=404, detail="Fichaje no encontrado")
+
+    original_snapshot = {
+        "entrada_at": row.entrada_at.isoformat(),
+        "salida_at": row.salida_at.isoformat() if row.salida_at else None,
+        "notes": row.notes,
+        "project_id": str(row.project_id) if row.project_id else None,
+    }
+
+    # Aplicar cambios
+    changes: list[str] = []
+    if data.entrada_at is not None and data.entrada_at != row.entrada_at:
+        changes.append(f"entrada: {row.entrada_at.strftime('%d/%m %H:%M')} → {data.entrada_at.strftime('%d/%m %H:%M')}")
+        row.entrada_at = data.entrada_at
+    if data.salida_at is not None and data.salida_at != row.salida_at:
+        changes.append(f"salida: {(row.salida_at.strftime('%d/%m %H:%M') if row.salida_at else '—')} → {data.salida_at.strftime('%d/%m %H:%M')}")
+        row.salida_at = data.salida_at
+    if data.notes is not None:
+        row.notes = data.notes
+    if data.work_summary is not None:
+        row.work_summary = data.work_summary
+    if data.project_id is not None:
+        row.project_id = data.project_id
+
+    session.add(row)
+    session.flush()
+
+    modified_snapshot = {
+        "entrada_at": row.entrada_at.isoformat(),
+        "salida_at": row.salida_at.isoformat() if row.salida_at else None,
+        "notes": row.notes,
+        "project_id": str(row.project_id) if row.project_id else None,
+    }
+
+    change_summary = "; ".join(changes) if changes else "modificado"
+    title = f"Modificación de fichaje: {change_summary}"
+
+    # ¿Ya hay una incidencia vinculada a este fichaje?
+    existing = session.exec(
+        select(Incident).where(Incident.clock_in_id == clock_in_id)
+    ).first()
+
+    if existing:
+        existing.modified_data = modified_snapshot
+        existing.status = "resolved"
+        existing.managed = True
+        existing.resolved_at = datetime.utcnow()
+        existing.resolved_by_id = user.id
+        existing.updated_at = datetime.utcnow()
+        session.add(existing)
+        add_note(session, incident_id=existing.id,
+                 content=f"✏️ Fichaje modificado desde panel: {change_summary}",
+                 author_id=user.id, author_name=user.full_name)
+    else:
+        emp = session.get(Employee, row.employee_id)
+        incident = create_incident(
+            session,
+            tenant_id=ctx.tenant.id,
+            employee_id=row.employee_id,
+            category="fichaje",
+            incident_type="manual",
+            title=title[:300],
+            source="panel",
+            incident_date=row.entrada_at.date(),
+            clock_in_id=clock_in_id,
+            original_data=original_snapshot,
+            created_by_id=user.id,
+        )
+        incident.modified_data = modified_snapshot
+        incident.status = "resolved"
+        incident.managed = True
+        incident.resolved_at = datetime.utcnow()
+        incident.resolved_by_id = user.id
+        session.add(incident)
+
     session.commit()
     session.refresh(row)
     return _enrich_reads(session, [row])[0]

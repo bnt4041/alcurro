@@ -18,7 +18,7 @@ def _to_spain(dt: datetime) -> datetime:
 from sqlmodel import Session, select
 
 from app.config import get_settings
-from app.models.incident import Incident, IncidentAutoRule
+from app.models.incident import Incident, IncidentAutoRule, IncidentNote
 from app.models.models import ClockIn, Employee, LeaveRequest, LeaveStatus
 from app.models.tenant import Tenant
 from app.schemas.incident import (
@@ -129,15 +129,28 @@ def create_incident(
     title: str,
     description: str | None = None,
     source: str = "manual",
+    incident_date=None,
     clock_in_id: UUID | None = None,
     leave_request_id: UUID | None = None,
     minutes_late: int | None = None,
     original_data: dict | None = None,
     require_justification: bool = False,
     notify_whatsapp: bool = False,
+    created_by_id: UUID | None = None,
 ) -> Incident:
     token = secrets.token_urlsafe(32) if require_justification else None
-    status = "pending_justification" if require_justification else "open"
+    # Incidencias creadas por el usuario (WhatsApp) → auto-cerradas (resolved)
+    # Incidencias automáticas (cron/sistema) o manuales (panel web) → open/pending_justification
+    if source == "whatsapp":
+        status = "resolved"
+        now = datetime.utcnow()
+    elif require_justification:
+        status = "pending_justification"
+        now = None
+    else:
+        status = "open"
+        now = None
+
     row = Incident(
         tenant_id=tenant_id,
         employee_id=employee_id,
@@ -147,11 +160,15 @@ def create_incident(
         source=source,
         title=title,
         description=description,
+        incident_date=incident_date,
         clock_in_id=clock_in_id,
         leave_request_id=leave_request_id,
         minutes_late=minutes_late,
         original_data=original_data or {},
         public_token=token,
+        created_by_id=created_by_id,
+        resolved_at=now,
+        resolved_by_id=created_by_id if now else None,
     )
     session.add(row)
     session.flush()
@@ -251,6 +268,7 @@ def apply_clock_correction(
         clock.project_id = data.project_id
     session.add(clock)
     incident.status = "resolved"
+    incident.managed = True
     incident.resolved_at = datetime.utcnow()
     incident.resolved_by_id = resolver_id
     incident.updated_at = datetime.utcnow()
@@ -291,6 +309,7 @@ def apply_leave_correction(
     incident.modified_data = modified
     session.add(leave)
     incident.status = "resolved"
+    incident.managed = True
     incident.resolved_at = datetime.utcnow()
     incident.resolved_by_id = resolver_id
     incident.updated_at = datetime.utcnow()
@@ -321,3 +340,117 @@ def get_incident_by_token(session: Session, token: str) -> Incident | None:
     return session.exec(
         select(Incident).where(Incident.public_token == token)
     ).first()
+
+
+# ── Notas ──────────────────────────────────────────────────────────────────────
+
+def add_note(
+    session: Session,
+    *,
+    incident_id: UUID,
+    content: str,
+    author_id: UUID | None = None,
+    author_name: str | None = None,
+) -> IncidentNote:
+    note = IncidentNote(
+        incident_id=incident_id,
+        author_id=author_id,
+        author_name=author_name,
+        content=content.strip(),
+    )
+    session.add(note)
+    session.flush()
+    # Actualizar updated_at de la incidencia
+    incident = session.get(Incident, incident_id)
+    if incident:
+        incident.updated_at = datetime.utcnow()
+        session.add(incident)
+    return note
+
+
+def list_notes(session: Session, incident_id: UUID) -> list[IncidentNote]:
+    return list(
+        session.exec(
+            select(IncidentNote)
+            .where(IncidentNote.incident_id == incident_id)
+            .order_by(IncidentNote.created_at)  # type: ignore[attr-defined]
+        ).all()
+    )
+
+
+# ── Envío de mensajes desde incidencia ─────────────────────────────────────────
+
+def send_whatsapp_from_incident(
+    session: Session,
+    *,
+    incident: Incident,
+    message: str,
+    tenant_id: UUID,
+    file_notes: list[str] | None = None,
+) -> dict:
+    """Envía WhatsApp al empleado de la incidencia con un mensaje personalizado."""
+    employee = session.get(Employee, incident.employee_id)
+    if not employee or not employee.phone:
+        raise ValueError("El empleado no tiene teléfono configurado")
+    from app.services.gowa_service import GoWAService
+
+    gowa = GoWAService(session)
+    try:
+        result = gowa.send_text_sync(employee.phone, message)
+        note_parts = [f"📱 WhatsApp enviado: {message[:500]}{'…' if len(message) > 500 else ''}"]
+        if file_notes:
+            note_parts.extend(file_notes)
+        add_note(
+            session,
+            incident_id=incident.id,
+            content="\n".join(note_parts),
+            author_name="Sistema",
+        )
+        return {"ok": True, "detail": str(result)}
+    except Exception as exc:
+        raise RuntimeError(f"Error al enviar WhatsApp: {exc}") from exc
+
+
+def send_email_from_incident(
+    session: Session,
+    *,
+    incident: Incident,
+    message: str,
+    recipient_email: str,
+    tenant_id: UUID,
+    file_notes: list[str] | None = None,
+) -> dict:
+    """Envía email relacionado con la incidencia."""
+    from app.services.mail_service import MailService
+
+    mail = MailService(session)
+    subject = f"Incidencia: {incident.title}"
+    body = (
+        f"Incidencia #{incident.id}\n"
+        f"Empleado: (ID {incident.employee_id})\n"
+        f"Título: {incident.title}\n"
+        f"Estado: {incident.status}\n"
+        f"\n---\n\n"
+        f"{message}\n"
+        f"\n---\n"
+        f"Gestiona la incidencia en el panel de RRHH."
+    )
+    ok, err = mail.send(
+        to_address=recipient_email,
+        subject=subject,
+        body=body,
+        event_type="incident_message",
+        tenant_id=tenant_id,
+    )
+    if not ok:
+        raise RuntimeError(err or "Error al enviar email")
+    note_parts = [f"📧 Email enviado a {recipient_email}: {message[:500]}{'…' if len(message) > 500 else ''}"]
+    if file_notes:
+        note_parts.extend(file_notes)
+    add_note(
+        session,
+        incident_id=incident.id,
+        content="\n".join(note_parts),
+        author_name="Sistema",
+    )
+    return {"ok": True, "detail": f"Email enviado a {recipient_email}"}

@@ -157,19 +157,32 @@ export interface Incident {
   description: string | null;
   clock_in_id: string | null;
   leave_request_id: string | null;
+  incident_date?: string | null;
+  break_id?: string | null;
   minutes_late: number | null;
   original_data: Record<string, unknown>;
   modified_data: Record<string, unknown> | null;
   employee_justification: string | null;
   internal_notes: string | null;
   public_token: string | null;
+  managed?: boolean;
   justify_url: string | null;
   whatsapp_notified_at: string | null;
   justified_at: string | null;
   resolved_at: string | null;
   resolved_by_id: string | null;
+  created_by_id: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface IncidentNote {
+  id: string;
+  incident_id: string;
+  author_id: string | null;
+  author_name: string | null;
+  content: string;
+  created_at: string;
 }
 
 export interface ReportTimelineItem {

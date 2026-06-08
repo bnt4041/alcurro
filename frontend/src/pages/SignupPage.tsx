@@ -345,7 +345,13 @@ export default function SignupPage() {
                 setForm({ ...form, accept_terms: e.target.checked })
               }
             />
-            Acepto los términos y condiciones del servicio
+            <span>
+              He leído y acepto el{" "}
+              <Link to="/aviso-legal" target="_blank" rel="noopener">aviso legal</Link>,
+              la{" "}
+              <Link to="/privacidad" target="_blank" rel="noopener">política de privacidad</Link>{" "}
+              y las condiciones del servicio.
+            </span>
           </label>
 
           <div className="signup-actions">

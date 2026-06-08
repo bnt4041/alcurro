@@ -25,6 +25,7 @@ from app.routers import (
     platform_whatsapp,
     platform_mail,
     platform_ai,
+    platform_policy,
     public,
     reports,
     settings,
@@ -49,6 +50,7 @@ api_router.include_router(platform_stripe.router)
 api_router.include_router(platform_whatsapp.router)
 api_router.include_router(platform_mail.router)
 api_router.include_router(platform_ai.router)
+api_router.include_router(platform_policy.router)
 api_router.include_router(legal.public_router)
 
 # Vista previa pública de documentos (imágenes) — sin autenticación

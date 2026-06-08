@@ -23,6 +23,8 @@ export interface SubscriptionSummary {
   company_name?: string | null;
   current_period_start?: string | null;
   current_period_end?: string | null;
+  pending_plan_id?: string | null;
+  pending_billing_cycle?: string | null;
 }
 
 export interface InvoiceRow {

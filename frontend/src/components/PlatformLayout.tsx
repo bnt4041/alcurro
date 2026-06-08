@@ -12,6 +12,7 @@ const nav = [
   { to: "/admin/whatsapp", label: "WhatsApp", end: false },
   { to: "/admin/mail", label: "Correo", end: false },
   { to: "/admin/ia", label: "IA", end: false },
+  { to: "/admin/politicas", label: "Políticas de uso", end: false },
   { to: "/admin/purgar", label: "Purgar datos", end: false },
 ];
 

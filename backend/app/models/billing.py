@@ -122,6 +122,8 @@ class Subscription(SQLModel, table=True):
     current_period_end: date | None = Field(default=None)
     stripe_subscription_id: str | None = Field(default=None, max_length=120, index=True)
     stripe_checkout_session_id: str | None = Field(default=None, max_length=120)
+    pending_plan_id: UUID | None = Field(default=None, foreign_key="pricing_plans.id")
+    pending_billing_cycle: str | None = Field(default=None, max_length=20)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 

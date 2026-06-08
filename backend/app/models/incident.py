@@ -1,10 +1,10 @@
 """Incidencias de fichaje y vacaciones/permisos."""
 
-from datetime import date, datetime
+from datetime import date as _date, datetime
 from uuid import UUID, uuid4
 
 from sqlalchemy import Column, JSON
-from sqlmodel import Field, SQLModel
+from sqlmodel import Field, Relationship, SQLModel
 
 
 class IncidentAutoRule(SQLModel, table=True):
@@ -55,9 +55,30 @@ class Incident(SQLModel, table=True):
     employee_justification: str | None = Field(default=None, max_length=3000)
     internal_notes: str | None = Field(default=None, max_length=2000)
     public_token: str | None = Field(default=None, max_length=64, index=True)
+    incident_date: _date | None = Field(default=None)
+    managed: bool = Field(default=False)
+    break_id: UUID | None = Field(default=None, foreign_key="work_breaks.id", index=True)
     whatsapp_notified_at: datetime | None = Field(default=None)
     justified_at: datetime | None = Field(default=None)
     resolved_at: datetime | None = Field(default=None)
     resolved_by_id: UUID | None = Field(default=None, foreign_key="employees.id")
+    created_by_id: UUID | None = Field(default=None, foreign_key="employees.id", description="Empleado que creó la incidencia (WhatsApp)")
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+    notes: list["IncidentNote"] = Relationship(back_populates="incident", sa_relationship_kwargs={"order_by": "IncidentNote.created_at"})
+
+
+class IncidentNote(SQLModel, table=True):
+    """Notas cronológicas vinculadas a una incidencia."""
+
+    __tablename__ = "incident_notes"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    incident_id: UUID = Field(foreign_key="incidents.id", index=True)
+    author_id: UUID | None = Field(default=None, foreign_key="employees.id")
+    author_name: str | None = Field(default=None, max_length=200)
+    content: str = Field(max_length=5000)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+    incident: Incident = Relationship(back_populates="notes")

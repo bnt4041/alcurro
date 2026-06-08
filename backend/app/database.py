@@ -45,7 +45,8 @@ from app.models.clock_settings import (  # noqa: F401
     InboundPendingUpload,
 )
 from app.models.project import ClockPendingFichaje, Project  # noqa: F401
-from app.models.incident import Incident, IncidentAutoRule  # noqa: F401
+from app.models.incident import Incident, IncidentAutoRule, IncidentNote  # noqa: F401
+from app.models.platform_policy import PlatformPolicy  # noqa: F401
 
 settings = get_settings()
 engine = create_engine(settings.database_url, echo=False)

@@ -869,9 +869,9 @@ class WebhookService:
             if intent_code in ("reportar_incidencia", "solicitar_permiso"):
                 _meta = dict(intent_data.entities) if intent_data.entities else {}
             if intent_code == "reportar_incidencia":
-                # Si la IA no dio title, extraerlo de su mensaje de confirmación
                 if not _meta.get("title") and not _meta.get("titulo"):
                     _meta["_ai_summary"] = ollama_message
+                    _meta["_original_text"] = raw_text
             set_pending(
                 self._session,
                 employee_id=employee.id,
@@ -1065,6 +1065,25 @@ class WebhookService:
                 confidence=1.0,
                 message="",
                 entities=pending.pending_meta or {},
+            )
+
+        # Para incidencias confirmadas: restaurar entities del mensaje original
+        # (el mensaje de confirmación no contiene la descripción de la incidencia)
+        if (
+            intent_data.stage == "execute"
+            and intent_data.intent == "reportar_incidencia"
+            and pending.pending_meta
+        ):
+            merged = dict(intent_data.entities or {})
+            for _k in ("title", "titulo", "description", "descripcion", "motivo", "_ai_summary", "_original_text"):
+                if pending.pending_meta.get(_k) and not merged.get(_k):
+                    merged[_k] = pending.pending_meta[_k]
+            intent_data = OllamaIntentResponse(
+                stage=intent_data.stage,
+                intent=intent_data.intent,
+                confidence=intent_data.confidence,
+                message=intent_data.message,
+                entities=merged,
             )
 
         # Si el orquestador no va a ejecutar, limpiar el pending para evitar loops
@@ -1273,6 +1292,7 @@ class WebhookService:
                 title=title,
                 description=f"Archivo adjunto: {doc_name or upload.filename if upload else 'N/A'}",
                 source="whatsapp",
+                created_by_id=employee.id,
             )
 
             # Vincular archivo como document_delivery
@@ -1540,23 +1560,29 @@ class WebhookService:
             or intent.message
             or None
         )
-        # Fallback: extraer resumen del mensaje de confirmación de la IA
-        # ej: "¿Quieres que registre una incidencia por no haber podido fichar ayer?"
-        #      → "No haber podido fichar ayer"
+        # Fallback 1: mensaje original del empleado (guardado en pending_meta al confirmar)
+        if not title:
+            orig = (intent.entities.get("_original_text") or "").strip()
+            _skip = {"si", "sí", "yes", "vale", "ok", "okey", "confirmo", "dale",
+                     "claro", "si, por favor", "sí, por favor", "si por favor", "sí por favor"}
+            if orig and orig.lower() not in _skip:
+                title = orig[:300]
+        # Fallback 2: extraer del mensaje de confirmación de la IA
         if not title:
             ai_summary = intent.entities.get("_ai_summary", "")
             if ai_summary:
                 m = _re.search(
-                    r'(?:incidencia\s+(?:por|de)\s+|registre\s+(?:una\s+)?incidencia\s+(?:por|de)\s+)(.+)',
+                    r'(?:incidencia\s+(?:por|de|para|sobre)\s+|registre\s+(?:una\s+)?incidencia\s+(?:por|de|para)\s+)(.+)',
                     ai_summary, _re.IGNORECASE
                 )
                 if m:
                     title = m.group(1).rstrip("?.").strip().capitalize()
+        # Fallback 3: raw_text solo si no parece un mensaje de confirmación
         if not title:
-            title = raw_text[:300] if raw_text and raw_text.lower() not in (
-                "si", "sí", "vale", "ok", "okey", "confirmo", "dale", "claro",
-                "si, por favor", "sí, por favor", "si por favor", "sí por favor",
-            ) else None
+            _skip_raw = {"si", "sí", "vale", "ok", "okey", "confirmo", "dale", "claro",
+                         "si, por favor", "sí, por favor", "si por favor", "sí por favor"}
+            if raw_text and raw_text.lower() not in _skip_raw:
+                title = raw_text[:300]
         if not title:
             title = "Incidencia reportada por WhatsApp"
 
@@ -1567,6 +1593,20 @@ class WebhookService:
             or None
         )
 
+        # Extraer fecha de la incidencia (puede ser ayer, anteayer, fecha concreta...)
+        from datetime import date as _date
+        incident_date: _date | None = None
+        fecha_raw = intent.entities.get("fecha_incidencia")
+        if fecha_raw and str(fecha_raw).strip().lower() not in ("null", "none", ""):
+            try:
+                incident_date = _date.fromisoformat(str(fecha_raw).strip())
+            except (ValueError, TypeError):
+                pass
+        if incident_date is None:
+            incident_date = _parse_date_flex(str(fecha_raw).strip()) if fecha_raw else None
+        if incident_date is None:
+            incident_date = _date.today()
+
         incident = create_incident(
             self._session,
             tenant_id=self._tenant_id,
@@ -1576,6 +1616,8 @@ class WebhookService:
             title=str(title)[:300],
             description=str(description)[:2000] if description else None,
             source="whatsapp",
+            incident_date=incident_date,
+            created_by_id=employee.id,
         )
 
         self._session.commit()

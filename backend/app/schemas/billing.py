@@ -148,6 +148,8 @@ class SubscriptionSummaryRead(BaseModel):
     company_name: str | None = None
     current_period_start: date | None = None
     current_period_end: date | None = None
+    pending_plan_id: UUID | None = None
+    pending_billing_cycle: str | None = None
 
     model_config = {"from_attributes": True}
 

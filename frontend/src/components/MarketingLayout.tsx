@@ -4,6 +4,39 @@ import BrandLogo from "./BrandLogo";
 import { useHideOnScroll } from "../hooks/useHideOnScroll";
 import "../styles/landing.css";
 
+function CookieBanner() {
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    if (!localStorage.getItem("cookie_consent")) setVisible(true);
+  }, []);
+  const accept = () => {
+    localStorage.setItem("cookie_consent", "accepted");
+    setVisible(false);
+  };
+  const decline = () => {
+    localStorage.setItem("cookie_consent", "declined");
+    setVisible(false);
+  };
+  if (!visible) return null;
+  return (
+    <div className="cookie-banner" role="dialog" aria-label="Aviso de cookies">
+      <div className="cookie-banner__text">
+        <strong>Usamos cookies esenciales</strong> para que la plataforma funcione.
+        Sin datos de seguimiento ni publicidad.{" "}
+        <Link to="/cookies" className="cookie-banner__link">Saber más</Link>
+      </div>
+      <div className="cookie-banner__actions">
+        <button type="button" className="cookie-banner__btn cookie-banner__btn--decline" onClick={decline}>
+          Solo esenciales
+        </button>
+        <button type="button" className="cookie-banner__btn cookie-banner__btn--accept" onClick={accept}>
+          Aceptar
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function MarketingLayout() {
   const { pathname } = useLocation();
   const isHome = pathname === "/";
@@ -34,6 +67,7 @@ export default function MarketingLayout() {
           <Link to="/" className="landing-nav__logo" aria-label="alcurro — inicio">
             <BrandLogo variant="light" compact />
           </Link>
+
           <button
             type="button"
             className="landing-nav__menu-btn"
@@ -41,52 +75,45 @@ export default function MarketingLayout() {
             aria-controls="landing-mobile-nav"
             onClick={() => setMobileNavOpen((v) => !v)}
           >
-            <span className="landing-nav__menu-icon" aria-hidden />
+            <span className={`landing-nav__menu-icon${mobileNavOpen ? " is-open" : ""}`} aria-hidden />
             <span className="visually-hidden">
               {mobileNavOpen ? "Cerrar menú" : "Abrir menú"}
             </span>
           </button>
+
           <nav className="landing-nav__links" aria-label="Secciones">
-            <a href="/#funciones" className={isHome ? "is-active" : ""}>
-              Funciones
-            </a>
-            <a href="/#tarifas">Tarifas</a>
+            {isHome && <a href="#funciones">Funciones</a>}
+            {isHome && <a href="#tarifas">Tarifas</a>}
+            {!isHome && <Link to="/#funciones">Funciones</Link>}
+            {!isHome && <Link to="/#tarifas">Tarifas</Link>}
+            <Link to="/contacto">Contacto</Link>
           </nav>
+
           <nav
             id="landing-mobile-nav"
             className={`landing-nav__mobile${mobileNavOpen ? " is-open" : ""}`}
             aria-label="Menú móvil"
           >
-            <a
-              href="/#funciones"
-              className={isHome ? "is-active" : ""}
-              onClick={() => setMobileNavOpen(false)}
-            >
-              Funciones
-            </a>
-            <a href="/#tarifas" onClick={() => setMobileNavOpen(false)}>
-              Tarifas
-            </a>
-            <Link to="/acceso" onClick={() => setMobileNavOpen(false)}>
-              Acceder
-            </Link>
+            <a href="/#funciones" onClick={() => setMobileNavOpen(false)}>Funciones</a>
+            <a href="/#tarifas" onClick={() => setMobileNavOpen(false)}>Tarifas</a>
+            <Link to="/contacto" onClick={() => setMobileNavOpen(false)}>Contacto</Link>
+            <Link to="/acceso" onClick={() => setMobileNavOpen(false)}>Acceder</Link>
             <Link
               to="/registro"
               className="landing-nav__cta landing-rainbow-crest"
               onClick={() => setMobileNavOpen(false)}
             >
-              Empezar
+              Empezar gratis
             </Link>
           </nav>
+
           <div className="landing-nav__actions">
-            <Link to="/acceso" className="landing-nav__login">
-              Acceder
-            </Link>
+            <Link to="/acceso" className="landing-nav__login">Acceder</Link>
             <Link
               to="/registro"
               className="landing-nav__cta landing-rainbow-crest landing-rainbow-shadow"
             >
-              Empezar
+              Empezar gratis
             </Link>
           </div>
         </div>
@@ -98,21 +125,37 @@ export default function MarketingLayout() {
 
       <footer className="landing-footer">
         <div className="landing-container landing-footer__inner">
-          <div>
+          <div className="landing-footer__brand">
             <div className="landing-footer__logo">
               <BrandLogo variant="light" showTagline />
             </div>
             <p className="landing-footer__copy">
-              © {new Date().getFullYear()} alcurro. RRHH sin fricción por WhatsApp.
+              © {new Date().getFullYear()} alcurro · RRHH sin fricción por WhatsApp
             </p>
           </div>
-          <div className="landing-footer__links">
-            <a href="/#tarifas">Tarifas</a>
-            <Link to="/registro">Alta</Link>
-            <Link to="/acceso">Acceder</Link>
+          <div className="landing-footer__cols">
+            <div className="landing-footer__col">
+              <p className="landing-footer__col-title">Producto</p>
+              <a href="/#funciones">Funciones</a>
+              <a href="/#tarifas">Tarifas</a>
+              <Link to="/registro">Alta gratuita</Link>
+            </div>
+            <div className="landing-footer__col">
+              <p className="landing-footer__col-title">Cuenta</p>
+              <Link to="/acceso">Acceder</Link>
+              <Link to="/contacto">Contacto y soporte</Link>
+            </div>
+            <div className="landing-footer__col">
+              <p className="landing-footer__col-title">Legal</p>
+              <Link to="/aviso-legal">Aviso legal</Link>
+              <Link to="/privacidad">Privacidad</Link>
+              <Link to="/cookies">Cookies</Link>
+            </div>
           </div>
         </div>
       </footer>
+
+      <CookieBanner />
     </div>
   );
 }

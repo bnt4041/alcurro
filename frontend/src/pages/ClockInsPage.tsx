@@ -11,6 +11,7 @@ import DataTable, { type DataTableColumn } from "../components/DataTable";
 import Modal from "../components/Modal";
 import PageHeader from "../components/PageHeader";
 import { useAuth } from "../context/AuthContext";
+import { useToast } from "../context/ToastContext";
 import { useEmployees } from "../hooks/useEmployees";
 import { canModule } from "../lib/permissions";
 
@@ -41,10 +42,15 @@ function durationMins(entrada: string, salida: string | null): number | null {
 
 export default function ClockInsPage() {
   const { user } = useAuth();
+  const { notify } = useToast();
   const { employees, byId } = useEmployees();
   const [rows, setRows] = useState<ClockIn[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editRow, setEditRow] = useState<ClockIn | null>(null);
+  const [editForm, setEditForm] = useState({ entrada_at: "", salida_at: "", notes: "", work_summary: "", project_id: "" });
+  const [editSaving, setEditSaving] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
   const [report, setReport] = useState<EmployeeDayReport | null>(null);
   const [reportLoading, setReportLoading] = useState(false);
@@ -66,6 +72,7 @@ export default function ClockInsPage() {
   const canCreate = user && canModule(user.permissions, "create", "clock_ins");
   const canRead = user && canModule(user.permissions, "read", "clock_ins");
   const canConfig = user && canModule(user.permissions, "write", "clock_ins");
+  const canEdit = canConfig;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -201,9 +208,51 @@ export default function ClockInsPage() {
         formatter: (c) => String(c.getValue() ?? "—"),
         minWidth: 120,
       },
+      ...(canEdit ? [{
+        title: "",
+        field: "id" as const,
+        headerFilter: false as const,
+        download: false,
+        width: 85,
+        formatter: () => `<button type="button" class="btn btn-sm" data-action="edit">✏️ Editar</button>`,
+      }] : []),
     ],
-    []
+    [canEdit]
   );
+
+  const openEdit = (row: ClockInRow) => {
+    setEditRow(row);
+    setEditForm({
+      entrada_at: new Date(row.entrada_at).toISOString().slice(0, 16),
+      salida_at: row.salida_at ? new Date(row.salida_at).toISOString().slice(0, 16) : "",
+      notes: row.notes ?? "",
+      work_summary: row.work_summary ?? "",
+      project_id: row.project_id ?? "",
+    });
+    setEditOpen(true);
+  };
+
+  const saveEdit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!editRow) return;
+    setEditSaving(true);
+    try {
+      await api.patch(`/clock-ins/${editRow.id}`, {
+        entrada_at: new Date(editForm.entrada_at).toISOString(),
+        salida_at: editForm.salida_at ? new Date(editForm.salida_at).toISOString() : null,
+        notes: editForm.notes || null,
+        work_summary: editForm.work_summary || null,
+        project_id: editForm.project_id || null,
+      });
+      setEditOpen(false);
+      notify("Fichaje actualizado. Se ha registrado una incidencia cerrada y gestionada.", "success");
+      load();
+    } catch (err) {
+      notify(String(err).replace(/^Error:\s*/i, ""), "error");
+    } finally {
+      setEditSaving(false);
+    }
+  };
 
   const save = async (e: FormEvent) => {
     e.preventDefault();
@@ -271,6 +320,7 @@ export default function ClockInsPage() {
         exportFilename="fichajes"
         height="560px"
         onImportComplete={load}
+        onCellAction={(action, row) => { if (action === "edit") openEdit(row); }}
       />
 
       <Modal title="Informe de fichajes y paradas" open={reportOpen} onClose={() => setReportOpen(false)} wide>
@@ -318,6 +368,53 @@ export default function ClockInsPage() {
             {report.timeline.length === 0 && <p className="muted">Sin fichajes ese día.</p>}
           </div>
         )}
+      </Modal>
+
+      {/* ── Modal editar fichaje ── */}
+      <Modal title="Editar fichaje" open={editOpen && !!canEdit} onClose={() => setEditOpen(false)}>
+        <div className="alert alert-warning" style={{ marginBottom: "1rem" }}>
+          <strong>Aviso:</strong> Esta acción modificará el fichaje y creará automáticamente una incidencia cerrada y gestionada con el historial del cambio.
+        </div>
+        <form onSubmit={saveEdit} className="form-grid">
+          <label>
+            Hora de entrada
+            <input type="datetime-local" required value={editForm.entrada_at}
+              onChange={(ev) => setEditForm({ ...editForm, entrada_at: ev.target.value })} />
+          </label>
+          <label>
+            Hora de salida (opcional)
+            <input type="datetime-local" value={editForm.salida_at}
+              onChange={(ev) => setEditForm({ ...editForm, salida_at: ev.target.value })} />
+          </label>
+          {projects.length > 0 && (
+            <label>
+              Proyecto
+              <select value={editForm.project_id}
+                onChange={(ev) => setEditForm({ ...editForm, project_id: ev.target.value })}>
+                <option value="">Sin proyecto</option>
+                {projects.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name} ({p.code})</option>
+                ))}
+              </select>
+            </label>
+          )}
+          <label>
+            Resumen del día
+            <input value={editForm.work_summary}
+              onChange={(ev) => setEditForm({ ...editForm, work_summary: ev.target.value })} />
+          </label>
+          <label>
+            Notas internas
+            <input value={editForm.notes}
+              onChange={(ev) => setEditForm({ ...editForm, notes: ev.target.value })} />
+          </label>
+          <div className="form-actions form-grid-full">
+            <button type="button" className="btn" onClick={() => setEditOpen(false)}>Cancelar</button>
+            <button type="submit" className="btn btn-primary" disabled={editSaving}>
+              {editSaving ? "Guardando…" : "Guardar cambios"}
+            </button>
+          </div>
+        </form>
       </Modal>
 
       <Modal title="Fichaje manual" open={open && !!canCreate} onClose={() => setOpen(false)}>

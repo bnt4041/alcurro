@@ -12,6 +12,10 @@ import ClockSettingsPage from "./pages/ClockSettingsPage";
 import Dashboard from "./pages/Dashboard";
 import DocumentsPage from "./pages/DocumentsPage";
 import LegalPage from "./pages/LegalPage";
+import AvisoLegalPage from "./pages/AvisoLegalPage";
+import PrivacidadPage from "./pages/PrivacidadPage";
+import CookiesPage from "./pages/CookiesPage";
+import ContactoPage from "./pages/ContactoPage";
 import EmployeesPage from "./pages/EmployeesPage";
 import GroupsPage from "./pages/GroupsPage";
 import HomePage from "./pages/HomePage";
@@ -30,6 +34,7 @@ import PlatformWhatsAppPage from "./pages/PlatformWhatsAppPage";
 import PlatformMailPage from "./pages/PlatformMailPage";
 import PlatformAIPage from "./pages/PlatformAIPage";
 import PlatformPurgePage from "./pages/PlatformPurgePage";
+import PlatformPolicyPage from "./pages/PlatformPolicyPage";
 import OrgChartPage from "./pages/OrgChartPage";
 import ShiftsPage from "./pages/ShiftsPage";
 import SignupPage from "./pages/SignupPage";
@@ -51,6 +56,10 @@ export default function App() {
               <Route path="registro" element={<SignupPage />} />
               <Route path="registro/pago-simulado" element={<SignupSimulatePaymentPage />} />
               <Route path="registro/ok" element={<SignupSuccessPage />} />
+              <Route path="aviso-legal" element={<AvisoLegalPage />} />
+              <Route path="privacidad" element={<PrivacidadPage />} />
+              <Route path="cookies" element={<CookiesPage />} />
+              <Route path="contacto" element={<ContactoPage />} />
             </Route>
 
             <Route path="/firmar/:token" element={<SignDocumentPage />} />
@@ -75,6 +84,7 @@ export default function App() {
                 <Route path="whatsapp" element={<PlatformWhatsAppPage />} />
                 <Route path="mail" element={<PlatformMailPage />} />
                 <Route path="ia" element={<PlatformAIPage />} />
+                <Route path="politicas" element={<PlatformPolicyPage />} />
                 <Route path="purgar" element={<PlatformPurgePage />} />
               </Route>
             </Route>
