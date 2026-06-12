@@ -1,6 +1,9 @@
 import asyncio
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from pathlib import Path
+import json
+import re
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,6 +14,25 @@ from sqlalchemy.exc import IntegrityError
 from app.database import create_db_and_tables, engine
 from app.routers.api import api_router
 from app.routers.webhook import router as webhook_router
+
+# Patrón para detectar fechas ISO sin timezone: "2026-06-12T14:00:00" (sin Z ni offset)
+_RE_NAIVE_ISO = re.compile(r'"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?)"')
+
+
+class UTCJSONResponse(JSONResponse):
+    """JSONResponse que añade sufijo Z a datetimes sin timezone (se asumen UTC)."""
+
+    def render(self, content) -> bytes:
+        raw = json.dumps(
+            content,
+            ensure_ascii=False,
+            allow_nan=False,
+            indent=None,
+            separators=(",", ":"),
+        )
+        # Añadir Z a datetimes sin timezone
+        raw = _RE_NAIVE_ISO.sub(r'"\1Z"', raw)
+        return raw.encode("utf-8")
 
 UPLOAD_DIR = Path("/app/uploads")
 
@@ -232,6 +254,7 @@ app = FastAPI(
     description="Gestión de RRHH: panel admin, WhatsApp, vacaciones y turnos",
     version="0.2.0",
     lifespan=lifespan,
+    default_response_class=UTCJSONResponse,
 )
 
 app.add_middleware(

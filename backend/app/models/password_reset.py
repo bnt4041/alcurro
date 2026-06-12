@@ -1,7 +1,7 @@
 """Tokens de recuperación de contraseña."""
 
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from uuid import UUID, uuid4
 
 from sqlmodel import Field, SQLModel
@@ -21,8 +21,7 @@ class PasswordResetToken(SQLModel, table=True):
     )
     employee_id: UUID = Field(foreign_key="employees.id", index=True)
     expires_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc)
-        + timedelta(minutes=15)
+        default_factory=lambda: datetime.utcnow() + timedelta(minutes=15)
     )
     used: bool = Field(default=False)
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=datetime.utcnow)

@@ -155,3 +155,64 @@ def subscription_summary_for_tenant(
 ) -> Subscription | None:
     sub, _company = get_primary_subscription(session, tenant_id)
     return sub
+
+
+def check_employee_limit(
+    session: Session, tenant_id: UUID, adding: int = 1
+) -> dict:
+    """
+    Verifica el límite de empleados activos según la tarifa.
+    Retorna {"ok": True} o {"ok": False, "message": str, "current": int, "max": int}.
+    No lanza excepciones — el caller decide si bloquear o crear inactivo.
+    """
+    from app.models.models import Employee
+    from app.models.tenant import Company
+    from app.models.billing import PricingPlan
+
+    sub = session.exec(
+        select(Subscription).where(Subscription.tenant_id == tenant_id)
+    ).first()
+    if not sub or sub.status not in (
+        SubscriptionStatus.ACTIVE,
+        SubscriptionStatus.TRIALING,
+    ):
+        return {"ok": True}  # sin suscripción activa, no limitamos
+
+    plan = None
+    max_users = 3  # default conservador
+    if sub.pricing_plan_id:
+        plan = session.get(PricingPlan, sub.pricing_plan_id)
+    if plan and plan.max_active_users:
+        max_users = plan.max_active_users
+
+    company_ids = [
+        c.id
+        for c in session.exec(
+            select(Company).where(Company.tenant_id == tenant_id)
+        ).all()
+    ]
+    if not company_ids:
+        return {"ok": True}
+
+    current = session.exec(
+        select(Employee).where(
+            Employee.company_id.in_(company_ids),  # type: ignore[attr-defined]
+            Employee.is_active == True,  # noqa: E712
+        )
+    ).all()
+    current_count = len(current)
+
+    if current_count + adding > max_users:
+        return {
+            "ok": False,
+            "message": (
+                f"Has alcanzado el límite de {max_users} usuarios activos de tu "
+                f"tarifa «{sub.plan_name}». "
+                f"Tienes {current_count} usuario(s). "
+                f"El empleado se creará inactivo. "
+                f"Para activarlo, cambia de tarifa en /app/cuenta."
+            ),
+            "current": current_count,
+            "max": max_users,
+        }
+    return {"ok": True}

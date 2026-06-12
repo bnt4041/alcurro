@@ -79,7 +79,9 @@ export default function TenantLoginPage() {
           {loading ? "Entrando…" : "Iniciar sesión"}
         </button>
         <p className="muted small login-footer-link">
-          <Link to="/login">← Administración plataforma</Link>
+          <Link to="/acceso">← Acceso general</Link>
+          {" · "}
+          <Link to="/recuperar">¿Olvidaste tu contraseña?</Link>
         </p>
       </form>
     </div>

@@ -57,6 +57,17 @@ def bulk_import_employees(
     created = 0
     errors: list[str] = []
 
+    # Verificar límite de usuarios antes de procesar
+    non_empty_rows = sum(
+        1 for r in rows
+        if (r.full_name or "").strip() or (r.id_document or "").strip() or (r.phone or "").strip()
+    )
+    over_limit = False
+    if non_empty_rows > 0:
+        from app.services.billing_service import check_employee_limit
+        limit = check_employee_limit(session, tenant_id, adding=non_empty_rows)
+        over_limit = not limit.get("ok", True)
+
     for idx, raw in enumerate(rows, start=2):
         name = (raw.full_name or "").strip()
         doc = (raw.id_document or "").strip()
@@ -112,7 +123,7 @@ def bulk_import_employees(
             employee_code=code,
             role=role,
             vacation_days_balance=vac,
-            is_active=_parse_bool(raw.is_active),
+            is_active=_parse_bool(raw.is_active) and not over_limit,
         )
         session.add(row)
         session.flush()

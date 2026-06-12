@@ -82,6 +82,8 @@ export default function LoginPage() {
           <Link to="/">Volver al inicio</Link>
           {" · "}
           <Link to="/registro">Alta de cliente</Link>
+          <br />
+          <Link to="/recuperar">¿Olvidaste tu contraseña?</Link>
         </p>
       </form>
     </div>

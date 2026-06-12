@@ -176,6 +176,8 @@ class TenantAccountBillingRead(BaseModel):
 
     subscription: SubscriptionSummaryRead | None
     invoices: list[InvoiceRead]
+    active_users: int = 0
+    max_users: int | None = None
 
 
 class TenantListItemRead(BaseModel):

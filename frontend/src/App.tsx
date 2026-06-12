@@ -21,6 +21,8 @@ import GroupsPage from "./pages/GroupsPage";
 import HomePage from "./pages/HomePage";
 import LeaveRequestsPage from "./pages/LeaveRequestsPage";
 import LoginPage from "./pages/LoginPage";
+import ForgotPasswordPage from "./pages/ForgotPasswordPage";
+import ResetPasswordPage from "./pages/ResetPasswordPage";
 import OrganizationPage from "./pages/OrganizationPage";
 import ProjectsPage from "./pages/ProjectsPage";
 import IncidentsPage from "./pages/IncidentsPage";
@@ -76,6 +78,8 @@ export default function App() {
             <Route path="/login" element={<Navigate to="/acceso" replace />} />
             <Route path="/acceso-cliente" element={<Navigate to="/acceso" replace />} />
             <Route path="/admin/login" element={<Navigate to="/acceso" replace />} />
+            <Route path="/recuperar" element={<ForgotPasswordPage />} />
+            <Route path="/recuperar/:token" element={<ResetPasswordPage />} />
 
             <Route path="/admin" element={<PlatformProtectedRoute />}>
               <Route element={<PlatformLayout />}>

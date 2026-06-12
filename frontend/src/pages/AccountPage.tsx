@@ -38,6 +38,8 @@ interface Company {
 interface BillingSummaryResponse {
   subscription: SubscriptionSummary | null;
   invoices: InvoiceRow[];
+  active_users: number;
+  max_users: number | null;
 }
 
 export default function AccountPage() {
@@ -223,6 +225,14 @@ export default function AccountPage() {
           subscription={billingSummary?.subscription ?? null}
           loading={billingLoading}
         />
+        {billingSummary && billingSummary.max_users != null && (
+          <div className={`alert ${billingSummary.active_users >= billingSummary.max_users ? "alert-warning" : "alert-info"}`} style={{ marginTop: "0.75rem" }}>
+            Usuarios activos: <strong>{billingSummary.active_users} / {billingSummary.max_users}</strong>
+            {billingSummary.active_users >= billingSummary.max_users && (
+              <> — Has alcanzado el límite. Cambia de tarifa en la sección inferior para añadir más empleados.</>
+            )}
+          </div>
+        )}
         {billingSummary?.subscription?.pending_plan_id && (
           <div className="alert alert-info" style={{ marginTop: "0.75rem" }}>
             Cambio de tarifa programado para el final del período actual.

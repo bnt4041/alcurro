@@ -20,6 +20,7 @@ import { tableActionButtons } from "../lib/tableFormatters";
 import EmployeeProfileTabs from "../components/EmployeeProfileTabs";
 import WorkScheduleEditor from "../components/WorkScheduleEditor";
 import { useAuth } from "../context/AuthContext";
+import { useToast } from "../context/ToastContext";
 import {
   canModule,
   ROLE_LABELS,
@@ -120,6 +121,7 @@ const empty = (defaults?: {
 
 export default function EmployeesPage() {
   const { user } = useAuth();
+  const { notify } = useToast();
   const [rows, setRows] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
@@ -470,6 +472,12 @@ export default function EmployeesPage() {
       } else {
         const created = await api.post<Employee>("/employees", body);
         empId = created.id;
+        if (!created.is_active) {
+          notify(
+            "Empleado creado inactivo por límite de tarifa. Cambia de plan en /app/cuenta para activarlo.",
+            "info"
+          );
+        }
       }
       if (canGroups && empId) {
         await api.put(`/groups/employees/${empId}/groups`, {
@@ -612,6 +620,12 @@ export default function EmployeesPage() {
                       })),
                     }
                   );
+                  if (res.created > 0) {
+                    notify(
+                      `${res.created} empleado(s) importado(s). Si superas el límite de tu tarifa se habrán creado inactivos.`,
+                      "info"
+                    );
+                  }
                   return { created: res.created, errors: res.errors };
                 },
               }

@@ -382,6 +382,11 @@ def create_employee(
             status_code=403,
             detail="No puedes dar de alta nuevos empleados",
         )
+
+    from app.services.billing_service import check_employee_limit
+    limit = check_employee_limit(session, ctx.tenant.id, adding=1)
+    over_limit = not limit.get("ok", True)
+
     dept_id = data.department_id or (ctx.department.id if ctx.department else None)
     if not dept_id:
         raise HTTPException(
@@ -449,6 +454,8 @@ def create_employee(
     payload["department_id"] = dept_id
     row = Employee.model_validate(payload)
     _set_password(row, data.password)
+    if over_limit:
+        row.is_active = False
     if not row.password_hash and row.role.value in (
         "tenant_admin",
         "admin",

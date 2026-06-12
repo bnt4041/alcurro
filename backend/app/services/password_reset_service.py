@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 from uuid import UUID
 
 from sqlmodel import Session, select
@@ -71,38 +71,36 @@ def send_reset_email(
     if not employee.email:
         return False
 
+    from app.database import engine
     from app.services.mail_service import MailService, smtp_configured
-
-    mail = MailService(session=None)  # type: ignore[arg-type]
-    if not smtp_configured(mail._settings):  # type: ignore[attr-defined]
-        return False
 
     settings = get_settings()
     base = settings.public_app_url.rstrip("/")
     reset_url = f"{base}/recuperar/{token}"
-
     tenant_name = tenant.name if tenant else "tu cuenta"
-    body = (
-        f"Hola {employee.full_name},\n\n"
-        f"Has solicitado restablecer tu contraseña en {tenant_name} (Alcurro).\n\n"
-        f"Usa este enlace para crear una nueva contraseña (válido 15 minutos):\n"
-        f"{reset_url}\n\n"
-        f"Si no has pedido este cambio, ignora el mensaje.\n\n"
-        f"— Alcurro"
-    )
 
-    # mail.send needs a session - we'll use a quick session
-    from app.database import engine
-    with Session(engine) as s:
-        mail_svc = MailService(s)
-        ok, _ = mail_svc.send(
-            to_address=employee.email,
-            subject=f"Recuperación de contraseña — {tenant_name}",
-            body=body,
-            event_type="password_reset",
-            tenant_id=tenant.id if tenant else None,
-        )
-        return ok
+    try:
+        with Session(engine) as s:
+            mail_svc = MailService(s)
+            if not smtp_configured(mail_svc._settings):  # type: ignore[attr-defined]
+                return False
+            ok, _ = mail_svc.send(
+                to_address=employee.email,
+                subject=f"Recuperación de contraseña — {tenant_name}",
+                body=(
+                    f"Hola {employee.full_name},\n\n"
+                    f"Has solicitado restablecer tu contraseña en {tenant_name} (Alcurro).\n\n"
+                    f"Usa este enlace para crear una nueva contraseña (válido 15 minutos):\n"
+                    f"{reset_url}\n\n"
+                    f"Si no has pedido este cambio, ignora el mensaje.\n\n"
+                    f"— Alcurro"
+                ),
+                event_type="password_reset",
+                tenant_id=tenant.id if tenant else None,
+            )
+            return ok
+    except Exception:
+        return False
 
 
 def send_reset_whatsapp(
@@ -217,7 +215,7 @@ def validate_and_reset_password(
     if not token:
         return {"ok": False, "message": "Token inválido o ya usado."}
 
-    if token.expires_at < datetime.now(timezone.utc):
+    if token.expires_at < datetime.utcnow():
         token.used = True
         session.add(token)
         session.commit()
