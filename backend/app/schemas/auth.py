@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.models.models import Role
 
@@ -45,3 +45,25 @@ class UserMe(BaseModel):
     work_center_name: str | None = None
     department_id: UUID | None = None
     department_name: str | None = None
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: str | None = None
+    phone: str | None = None
+    tenant_slug: str | None = None
+
+
+class ForgotPasswordResponse(BaseModel):
+    ok: bool
+    message: str
+    channels: list[str] = []
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str = Field(min_length=1)
+    new_password: str = Field(min_length=4, max_length=128)
+
+
+class ResetPasswordResponse(BaseModel):
+    ok: bool
+    message: str

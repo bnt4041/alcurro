@@ -20,6 +20,16 @@ from app.services.stripe_simulation import (
     stripe_simulation_enabled,
     use_real_stripe,
 )
+from app.services.password_reset_service import (
+    request_password_reset,
+    validate_and_reset_password,
+)
+from app.schemas.auth import (
+    ForgotPasswordRequest,
+    ForgotPasswordResponse,
+    ResetPasswordRequest,
+    ResetPasswordResponse,
+)
 
 router = APIRouter(prefix="/public", tags=["public"])
 
@@ -107,3 +117,32 @@ def public_signup(
         return register_tenant(session, data)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/forgot-password", response_model=ForgotPasswordResponse)
+def forgot_password(
+    data: ForgotPasswordRequest,
+    session: Session = Depends(get_session),
+) -> ForgotPasswordResponse:
+    result = request_password_reset(
+        session,
+        email=data.email.strip().lower() if data.email else None,
+        phone=data.phone.strip() if data.phone else None,
+        tenant_slug=data.tenant_slug.strip().lower() if data.tenant_slug else None,
+    )
+    session.commit()
+    return ForgotPasswordResponse(**result)
+
+
+@router.post("/reset-password", response_model=ResetPasswordResponse)
+def reset_password(
+    data: ResetPasswordRequest,
+    session: Session = Depends(get_session),
+) -> ResetPasswordResponse:
+    result = validate_and_reset_password(
+        session,
+        token_str=data.token.strip(),
+        new_password=data.new_password,
+    )
+    session.commit()
+    return ResetPasswordResponse(**result)
