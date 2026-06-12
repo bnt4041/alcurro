@@ -206,11 +206,10 @@ def check_employee_limit(
         return {
             "ok": False,
             "message": (
-                f"Has alcanzado el límite de {max_users} usuarios activos de tu "
-                f"tarifa «{sub.plan_name}». "
-                f"Tienes {current_count} usuario(s). "
-                f"El empleado se creará inactivo. "
-                f"Para activarlo, cambia de tarifa en /app/cuenta."
+                f"Límite de {max_users} usuarios activos alcanzado "
+                f"(tarifa «{sub.plan_name}»). "
+                f"Tienes {current_count} usuario(s) activo(s). "
+                f"Cambia de tarifa en /app/cuenta para añadir o activar más."
             ),
             "current": current_count,
             "max": max_users,

@@ -487,7 +487,9 @@ export default function EmployeesPage() {
       setOpen(false);
       load();
     } catch (err) {
-      setError(String(err).replace(/^Error:\s*/i, ""));
+      const msg = String(err).replace(/^Error:\s*/i, "");
+      setError(msg);
+      notify(msg, "info");
     } finally {
       setSaving(false);
     }

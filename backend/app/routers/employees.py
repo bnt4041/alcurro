@@ -574,6 +574,17 @@ def update_employee(
             raise HTTPException(
                 status_code=409, detail="DNI/NIE ya registrado en la empresa"
             )
+    # Si se está activando a un empleado que estaba inactivo, verificar límite
+    activating = updates.get("is_active") and not row.is_active
+    if activating:
+        from app.services.billing_service import check_employee_limit
+        limit = check_employee_limit(session, ctx.tenant.id, adding=1)
+        if not limit.get("ok", True):
+            raise HTTPException(
+                status_code=402,
+                detail=limit.get("message", "Límite de usuarios alcanzado."),
+            )
+
     for key, value in updates.items():
         setattr(row, key, value)
     _set_password(row, data.password)
