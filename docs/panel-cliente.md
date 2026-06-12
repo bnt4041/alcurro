@@ -46,6 +46,7 @@ Cada grupo define permisos por módulo. Al crear un empleado con rol `employee`,
 ## Cuenta (`/app/cuenta`)
 
 - Datos de facturación (razón social, CIF, dirección…).
+- **Empresa principal de facturación**: se elige qué empresa de la cuenta aparece como titular en las facturas.
 - Branding (logo, colores).
 - Crear/reiniciar contenedor goWA dedicado del tenant (requiere socket Docker en el backend).
 

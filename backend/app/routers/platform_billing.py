@@ -24,6 +24,7 @@ from app.services.billing_service import (
     copy_tenant_billing_to_company,
     ensure_default_subscription,
     get_tenant_billing_overview,
+    resolve_billing_company,
 )
 from app.services.pricing_service import (
     get_active_discount,
@@ -46,6 +47,10 @@ def _subscription_read(session: Session, sub: Subscription) -> SubscriptionRead:
 def _overview_response(session: Session, tenant_id: UUID) -> TenantBillingOverview:
     data = get_tenant_billing_overview(session, tenant_id)
     tenant: Tenant = data["tenant"]
+    billing_company: Company | None = data.get("billing_company")
+    sub: Subscription | None = data.get("subscription")
+    methods: list[BillingMethod] = data.get("billing_methods", [])
+
     companies_out: list[CompanyBillingRead] = []
     for row in data["companies"]:
         c: Company = row["company"]
@@ -55,6 +60,7 @@ def _overview_response(session: Session, tenant_id: UUID) -> TenantBillingOvervi
                 name=c.name,
                 tax_id=c.tax_id,
                 is_active=c.is_active,
+                is_billing_company=row.get("is_billing_company", False),
                 legal_name=c.legal_name,
                 billing_email=c.billing_email,
                 billing_phone=c.billing_phone,
@@ -63,17 +69,13 @@ def _overview_response(session: Session, tenant_id: UUID) -> TenantBillingOvervi
                 billing_postal_code=c.billing_postal_code,
                 billing_province=c.billing_province,
                 billing_country=c.billing_country or "ES",
-                subscription=_subscription_read(session, row["subscription"]),
-                billing_methods=[
-                    BillingMethodRead.model_validate(m)
-                    for m in row["billing_methods"]
-                ],
             )
         )
     session.commit()
     return TenantBillingOverview(
         tenant_id=tenant.id,
         tenant_name=tenant.name,
+        billing_company_id=tenant.billing_company_id,
         legal_name=tenant.legal_name,
         tax_id=tenant.tax_id,
         billing_email=tenant.billing_email,
@@ -83,9 +85,8 @@ def _overview_response(session: Session, tenant_id: UUID) -> TenantBillingOvervi
         billing_postal_code=tenant.billing_postal_code,
         billing_province=tenant.billing_province,
         billing_country=tenant.billing_country or "ES",
-        account_billing_methods=[
-            BillingMethodRead.model_validate(m) for m in data["account_methods"]
-        ],
+        subscription=_subscription_read(session, sub) if sub else None,
+        billing_methods=[BillingMethodRead.model_validate(m) for m in methods],
         companies=companies_out,
     )
 
@@ -98,6 +99,25 @@ def get_tenant_billing(
 ) -> TenantBillingOverview:
     if not session.get(Tenant, tenant_id):
         raise HTTPException(status_code=404, detail="Cuenta no encontrada")
+    return _overview_response(session, tenant_id)
+
+
+@router.put("/{tenant_id}/billing-company/{company_id}", response_model=TenantBillingOverview)
+def set_billing_company(
+    tenant_id: UUID,
+    company_id: UUID,
+    session: Session = Depends(get_session),
+    _: PlatformUser = Depends(get_platform_user),
+) -> TenantBillingOverview:
+    tenant = session.get(Tenant, tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Cuenta no encontrada")
+    company = session.get(Company, company_id)
+    if not company or company.tenant_id != tenant_id:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada en esta cuenta")
+    tenant.billing_company_id = company_id
+    session.add(tenant)
+    session.commit()
     return _overview_response(session, tenant_id)
 
 
@@ -125,7 +145,10 @@ def add_tenant_company(
     session.add(company)
     session.flush()
     seed_company_organization(session, company)
-    sub = ensure_default_subscription(session, tenant, company)
+    # Si es la primera empresa, la marcamos como empresa de facturación
+    if tenant.billing_company_id is None:
+        tenant.billing_company_id = company.id
+        session.add(tenant)
     session.commit()
     session.refresh(company)
 
@@ -134,6 +157,7 @@ def add_tenant_company(
         name=company.name,
         tax_id=company.tax_id,
         is_active=company.is_active,
+        is_billing_company=(tenant.billing_company_id == company.id),
         legal_name=company.legal_name,
         billing_email=company.billing_email,
         billing_phone=company.billing_phone,
@@ -142,8 +166,6 @@ def add_tenant_company(
         billing_postal_code=company.billing_postal_code,
         billing_province=company.billing_province,
         billing_country=company.billing_country or "ES",
-        subscription=_subscription_read(session, sub),
-        billing_methods=[],
     )
 
 
@@ -163,14 +185,13 @@ def update_tenant_company_billing(
     session.add(company)
     session.commit()
     session.refresh(company)
-    overview = get_tenant_billing_overview(session, tenant_id)
-    row = next(r for r in overview["companies"] if r["company"].id == company_id)
-    session.commit()
+    tenant = session.get(Tenant, tenant_id)
     return CompanyBillingRead(
         id=company.id,
         name=company.name,
         tax_id=company.tax_id,
         is_active=company.is_active,
+        is_billing_company=(tenant.billing_company_id == company.id if tenant else False),
         legal_name=company.legal_name,
         billing_email=company.billing_email,
         billing_phone=company.billing_phone,
@@ -179,25 +200,22 @@ def update_tenant_company_billing(
         billing_postal_code=company.billing_postal_code,
         billing_province=company.billing_province,
         billing_country=company.billing_country or "ES",
-        subscription=_subscription_read(session, row["subscription"]),
-        billing_methods=[
-            BillingMethodRead.model_validate(m) for m in row["billing_methods"]
-        ],
     )
 
 
 @router.patch(
-    "/{tenant_id}/subscriptions/{subscription_id}", response_model=SubscriptionRead
+    "/{tenant_id}/subscription", response_model=SubscriptionRead
 )
 def update_subscription(
     tenant_id: UUID,
-    subscription_id: UUID,
     data: SubscriptionUpdate,
     session: Session = Depends(get_session),
     _: PlatformUser = Depends(get_platform_user),
-) -> Subscription:
-    sub = session.get(Subscription, subscription_id)
-    if not sub or sub.tenant_id != tenant_id:
+) -> SubscriptionRead:
+    sub = session.exec(
+        select(Subscription).where(Subscription.tenant_id == tenant_id)
+    ).first()
+    if not sub:
         raise HTTPException(status_code=404, detail="Suscripción no encontrada")
 
     payload = data.model_dump(exclude_unset=True)
@@ -248,22 +266,26 @@ def create_billing_method(
 ) -> BillingMethod:
     if not session.get(Tenant, tenant_id):
         raise HTTPException(status_code=404, detail="Cuenta no encontrada")
-    if data.company_id:
-        company = session.get(Company, data.company_id)
-        if not company or company.tenant_id != tenant_id:
-            raise HTTPException(status_code=404, detail="Empresa no encontrada")
 
     if data.is_default:
-        stmt = select(BillingMethod).where(BillingMethod.tenant_id == tenant_id)
-        if data.company_id:
-            stmt = stmt.where(BillingMethod.company_id == data.company_id)
-        else:
-            stmt = stmt.where(BillingMethod.company_id.is_(None))  # type: ignore[union-attr]
-        for m in session.exec(stmt).all():
+        for m in session.exec(
+            select(BillingMethod).where(BillingMethod.tenant_id == tenant_id)
+        ).all():
             m.is_default = False
             session.add(m)
 
-    row = BillingMethod(tenant_id=tenant_id, **data.model_dump())
+    row = BillingMethod(
+        tenant_id=tenant_id,
+        label=data.label,
+        method_type=data.method_type,
+        is_default=data.is_default,
+        holder_name=data.holder_name,
+        iban_masked=data.iban_masked,
+        card_brand=data.card_brand,
+        card_last4=data.card_last4,
+        notes=data.notes,
+        company_id=None,  # deprecated: siempre a nivel cuenta
+    )
     session.add(row)
     session.commit()
     session.refresh(row)

@@ -60,10 +60,16 @@ class Tenant(SQLModel, table=True):
 
     stripe_customer_id: str | None = Field(default=None, max_length=120, index=True)
 
+    # Empresa principal de facturación (los datos de esta empresa se usan en facturas)
+    billing_company_id: UUID | None = Field(default=None, foreign_key="companies.id")
+
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
-    companies: list["Company"] = Relationship(back_populates="tenant")
+    companies: list["Company"] = Relationship(
+        back_populates="tenant",
+        sa_relationship_kwargs={"foreign_keys": "Company.tenant_id"},
+    )
 
 
 class Company(SQLModel, table=True):
@@ -75,7 +81,8 @@ class Company(SQLModel, table=True):
     tax_id: str | None = Field(default=None, max_length=50)
     is_active: bool = Field(default=True)
 
-    # Facturación propia de la empresa (cada empresa del tenant puede facturarse aparte)
+    # Datos de facturación (tomados del tenant si no se especifican; el tenant
+    # factura a través de una empresa principal → Tenant.billing_company_id)
     legal_name: str | None = Field(default=None, max_length=200)
     billing_email: str | None = Field(default=None, max_length=255)
     billing_phone: str | None = Field(default=None, max_length=30)
@@ -87,4 +94,7 @@ class Company(SQLModel, table=True):
 
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
-    tenant: Tenant | None = Relationship(back_populates="companies")
+    tenant: Tenant | None = Relationship(
+        back_populates="companies",
+        sa_relationship_kwargs={"foreign_keys": "Company.tenant_id"},
+    )

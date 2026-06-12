@@ -53,6 +53,7 @@
 ┌─────────────────────────────────────────────────────┐
 │  TENANT  (cuenta de facturación + branding)         │
 │  nombre, logo, colores primarios, config WhatsApp   │
+│  billing_company_id → empresa titular de facturas    │
 └──────────┬──────────────────────────────────────────┘
            │ 1..N
            ▼

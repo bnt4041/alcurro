@@ -85,6 +85,8 @@ class Discount(SQLModel, table=True):
 
 
 class BillingMethod(SQLModel, table=True):
+    """Método de pago de la cuenta (tenant). company_id es legacy, ignorar."""
+
     __tablename__ = "billing_methods"
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
@@ -102,13 +104,13 @@ class BillingMethod(SQLModel, table=True):
 
 
 class Subscription(SQLModel, table=True):
-    """Suscripción de una empresa a una tarifa (con descuento opcional)."""
+    """Suscripción de la cuenta (tenant) a una tarifa (con descuento opcional)."""
 
     __tablename__ = "subscriptions"
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     tenant_id: UUID = Field(foreign_key="tenants.id", index=True)
-    company_id: UUID = Field(foreign_key="companies.id", index=True)
+    company_id: UUID | None = Field(default=None, foreign_key="companies.id", index=True)
     pricing_plan_id: UUID | None = Field(default=None, foreign_key="pricing_plans.id")
     discount_id: UUID | None = Field(default=None, foreign_key="discounts.id")
     plan_code: str = Field(default="basica", max_length=50)

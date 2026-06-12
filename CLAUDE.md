@@ -53,7 +53,7 @@ Servicios locales:
 - **Todos los endpoints protegidos van dentro de `protected = APIRouter()`** en `api.py`. Los públicos se añaden directamente a `api_router`.
 - **Servicio → Router, nunca al revés** — la lógica de negocio va en `app/services/`, los routers solo validan entrada y devuelven respuesta.
 - **`session.flush()` para obtener ID antes de commit** — usar cuando se necesita el ID generado para crear relaciones en la misma transacción.
-- **Migraciones de esquema**: usar scripts en `scripts/` o `ALTER TABLE` directo. No confiar en Alembic (no está activo).
+- **Facturación a nivel tenant** — la suscripción es UNA por cuenta (no por empresa). `Tenant.billing_company_id` indica qué empresa es la titular de las facturas. `Subscription.company_id` es opcional (legacy). Los métodos de pago (`BillingMethod`) son de la cuenta, no de la empresa.
 - **Gestión de errores**: el handler de `IntegrityError` en `main.py` devuelve 409 con mensajes en español — aprovechar constraints de BD en vez de validar a mano.
 
 ### Frontend

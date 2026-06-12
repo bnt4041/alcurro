@@ -20,6 +20,7 @@ Desde el listado puedes:
 
 - Crear tenant (slug, nombre, datos iniciales).
 - Abrir ficha de cuenta: empresas, usuarios del tenant, facturación, simular pago, reiniciar goWA dedicado.
+- En la pestaña **Facturación**: gestionar la suscripción única de la cuenta, métodos de pago, y elegir qué empresa es la titular de las facturas.
 
 API principal: `GET/POST /api/platform/tenants`, detalle por id.
 

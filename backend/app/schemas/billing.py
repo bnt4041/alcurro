@@ -49,7 +49,7 @@ class BillingMethodUpdate(BaseModel):
 class SubscriptionRead(BaseModel):
     id: UUID
     tenant_id: UUID
-    company_id: UUID
+    company_id: UUID | None = None
     pricing_plan_id: UUID | None
     discount_id: UUID | None
     plan_code: str
@@ -87,6 +87,7 @@ class CompanyBillingRead(BaseModel):
     name: str
     tax_id: str | None
     is_active: bool
+    is_billing_company: bool = False
     legal_name: str | None
     billing_email: str | None
     billing_phone: str | None
@@ -95,8 +96,6 @@ class CompanyBillingRead(BaseModel):
     billing_postal_code: str | None
     billing_province: str | None
     billing_country: str
-    subscription: SubscriptionRead | None
-    billing_methods: list[BillingMethodRead]
 
 
 class CompanyBillingUpdate(BaseModel):
@@ -124,6 +123,7 @@ class CompanyBillingCreate(BaseModel):
 class TenantBillingOverview(BaseModel):
     tenant_id: UUID
     tenant_name: str
+    billing_company_id: UUID | None = None
     legal_name: str | None
     tax_id: str | None
     billing_email: str | None
@@ -133,8 +133,9 @@ class TenantBillingOverview(BaseModel):
     billing_postal_code: str | None
     billing_province: str | None
     billing_country: str
-    account_billing_methods: list[BillingMethodRead]
-    companies: list[CompanyBillingRead]
+    subscription: SubscriptionRead | None = None
+    billing_methods: list[BillingMethodRead] = []
+    companies: list[CompanyBillingRead] = []
 
 
 class SubscriptionSummaryRead(BaseModel):

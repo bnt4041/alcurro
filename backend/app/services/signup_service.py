@@ -56,7 +56,9 @@ def register_tenant(session: Session, data: PublicSignupRequest) -> PublicSignup
     ensure_group_templates(session)
     company, _, _ = seed_tenant_organization(session, tenant, data.company_name)
     copy_tenant_billing_to_company(tenant, company)
+    tenant.billing_company_id = company.id  # empresa principal = facturación
     session.add(company)
+    session.add(tenant)
     clone_groups_for_tenant(session, tenant.id)
     ensure_system_groups(session, tenant.id)
     seed_default_legal_documents(session, tenant.id)

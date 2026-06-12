@@ -16,17 +16,18 @@ from app.services.pricing_service import get_default_plan, sync_subscription_pri
 
 
 def ensure_default_subscription(
-    session: Session, tenant: Tenant, company: Company
+    session: Session, tenant: Tenant, company: Company | None = None
 ) -> Subscription:
+    """Obtiene o crea la suscripción de la cuenta (una por tenant)."""
     row = session.exec(
-        select(Subscription).where(Subscription.company_id == company.id)
+        select(Subscription).where(Subscription.tenant_id == tenant.id)
     ).first()
     if row:
         return row
     plan = get_default_plan(session)
     sub = Subscription(
         tenant_id=tenant.id,
-        company_id=company.id,
+        company_id=company.id if company else None,
         status=SubscriptionStatus.TRIALING,
     )
     if plan:
@@ -43,6 +44,7 @@ def ensure_default_subscription(
 
 
 def copy_tenant_billing_to_company(tenant: Tenant, company: Company) -> None:
+    """Copia datos de facturación del tenant a la empresa (solo si están vacíos)."""
     if not company.legal_name:
         company.legal_name = tenant.legal_name or tenant.name
     if not company.billing_email:
@@ -61,49 +63,62 @@ def copy_tenant_billing_to_company(tenant: Tenant, company: Company) -> None:
         company.billing_country = tenant.billing_country or "ES"
 
 
+def resolve_billing_company(session: Session, tenant: Tenant) -> Company | None:
+    """Devuelve la empresa de facturación de la cuenta.
+    Prioridad: tenant.billing_company_id → primera empresa activa."""
+    if tenant.billing_company_id:
+        company = session.get(Company, tenant.billing_company_id)
+        if company and company.tenant_id == tenant.id:
+            return company
+    return session.exec(
+        select(Company)
+        .where(Company.tenant_id == tenant.id, Company.is_active == True)
+        .order_by(Company.name)
+    ).first()
+
+
 def get_tenant_billing_overview(session: Session, tenant_id: UUID) -> dict:
+    """Vista unificada de facturación: una suscripción, una empresa principal."""
     tenant = session.get(Tenant, tenant_id)
     if not tenant:
         return {}
 
+    # Empresas de la cuenta
     companies = list(
         session.exec(
             select(Company).where(Company.tenant_id == tenant_id).order_by(Company.name)
         ).all()
     )
+
+    # Empresa principal de facturación
+    billing_company = resolve_billing_company(session, tenant)
+
+    # Única suscripción del tenant
+    sub = session.exec(
+        select(Subscription).where(Subscription.tenant_id == tenant_id)
+    ).first()
+    if not sub:
+        sub = ensure_default_subscription(session, tenant, billing_company)
+
+    # Métodos de pago del tenant (ignoramos company_id legacy)
     methods = list(
         session.exec(
             select(BillingMethod).where(BillingMethod.tenant_id == tenant_id)
         ).all()
     )
-    subscriptions = list(
-        session.exec(
-            select(Subscription).where(Subscription.tenant_id == tenant_id)
-        ).all()
-    )
-
-    subs_by_company = {s.company_id: s for s in subscriptions}
-    methods_by_company: dict[UUID | None, list[BillingMethod]] = {}
-    for m in methods:
-        methods_by_company.setdefault(m.company_id, []).append(m)
 
     company_rows = []
     for c in companies:
-        sub = subs_by_company.get(c.id)
-        if not sub:
-            sub = ensure_default_subscription(session, tenant, c)
-        company_rows.append(
-            {
-                "company": c,
-                "subscription": sub,
-                "billing_methods": methods_by_company.get(c.id, [])
-                + methods_by_company.get(None, []),
-            }
-        )
+        company_rows.append({
+            "company": c,
+            "is_billing_company": billing_company is not None and c.id == billing_company.id,
+        })
 
     return {
         "tenant": tenant,
-        "account_methods": methods_by_company.get(None, []),
+        "billing_company": billing_company,
+        "subscription": sub,
+        "billing_methods": methods,
         "companies": company_rows,
     }
 
@@ -111,13 +126,15 @@ def get_tenant_billing_overview(session: Session, tenant_id: UUID) -> dict:
 def get_primary_subscription(
     session: Session, tenant_id: UUID
 ) -> tuple[Subscription | None, Company | None]:
-    """Suscripción de referencia (primera empresa activa de la cuenta)."""
-    overview = get_tenant_billing_overview(session, tenant_id)
-    companies = overview.get("companies") or []
-    if not companies:
+    """Suscripción de la cuenta + empresa de facturación principal."""
+    tenant = session.get(Tenant, tenant_id)
+    if not tenant:
         return None, None
-    row = companies[0]
-    return row.get("subscription"), row.get("company")
+    sub = session.exec(
+        select(Subscription).where(Subscription.tenant_id == tenant_id)
+    ).first()
+    company = resolve_billing_company(session, tenant)
+    return sub, company
 
 
 def list_tenant_invoices(

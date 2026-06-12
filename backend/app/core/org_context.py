@@ -45,7 +45,7 @@ def get_company_for_user(
     return company
 
 
-_ALL_COMPANY_ROLES = {"tenant_admin", "manager", "admin"}
+_ALL_COMPANY_ROLES = {"tenant_admin", "admin"}
 
 
 @dataclass
@@ -58,9 +58,11 @@ class OrgContext:
     company_scoped: bool = True  # False when no X-Company-Id was sent
 
     def scope_company_id(self) -> "UUID | None":
-        """None = tenant-wide scope (all companies). Used by list endpoints."""
-        if self.company_scoped:
-            return self.company.id
+        """None = tenant-wide scope (all companies). Used by list endpoints.
+
+        Admin/tenant_admin always get the full tenant scope regardless of the
+        X-Company-Id header, so they see employees across all companies.
+        """
         if str(self.user.role) in _ALL_COMPANY_ROLES:
             return None
         return self.company.id

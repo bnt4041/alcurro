@@ -227,6 +227,8 @@ class TenantRead(BaseModel):
 
     gowa_error: str | None
 
+    billing_company_id: UUID | None = None
+
     created_at: datetime
 
     admin_employee_code: str | None = None

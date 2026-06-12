@@ -16,6 +16,7 @@ interface TenantInfo {
   slug: string;
   name: string;
   logo_url: string | null;
+  billing_company_id: string | null;
   legal_name: string | null;
   tax_id: string | null;
   billing_email: string | null;
@@ -446,28 +447,50 @@ export default function AccountPage() {
       <section className="card settings-section">
         <h3>Empresas de la cuenta</h3>
         <p className="muted small">
-          Cada empresa tiene su propia estructura organizativa (centros de trabajo y departamentos) y sus propios empleados.
+          Cada empresa tiene su propia estructura organizativa (centros de trabajo y departamentos) y sus propios empleados.{tenant?.billing_company_id && <> La marcada como <strong>Facturación</strong> es la que aparecerá como titular en las facturas.</>}
         </p>
         <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", marginBottom: "1rem" }}>
           {companies.map((c) => (
             <div key={c.id} className="company-row" style={{ display: "flex", alignItems: "center", gap: "1rem", padding: "0.5rem 0.75rem", border: "1px solid var(--c-border)", borderRadius: 6 }}>
               <div style={{ flex: 1 }}>
                 <strong>{c.name}</strong>
+                {tenant?.billing_company_id === c.id && (
+                  <span className="badge badge--info" style={{ marginLeft: "0.5rem" }}>Facturación</span>
+                )}
                 {c.tax_id && <span className="muted small" style={{ marginLeft: "0.5rem" }}>CIF/NIF: {c.tax_id}</span>}
                 {!c.is_active && <span className="badge badge--danger" style={{ marginLeft: "0.5rem" }}>Inactiva</span>}
               </div>
-              {canWriteTenant && (
-                <button
-                  type="button"
-                  className="btn btn-sm"
-                  onClick={() => {
-                    setEditingCompany(c);
-                    setEditCompanyForm({ name: c.name, tax_id: c.tax_id ?? "" });
-                  }}
-                >
-                  Editar
-                </button>
-              )}
+              <div style={{ display: "flex", gap: "0.5rem" }}>
+                {canWriteTenant && tenant?.billing_company_id !== c.id && c.is_active && (
+                  <button
+                    type="button"
+                    className="btn btn-xs"
+                    onClick={async () => {
+                      try {
+                        await api.put("/tenants/current/billing-company", { company_id: c.id });
+                        notify(`«${c.name}» establecida como empresa de facturación`, "success");
+                        load();
+                      } catch (err) {
+                        notify(String(err).replace(/^Error:\s*/i, ""), "error");
+                      }
+                    }}
+                  >
+                    Facturar aquí
+                  </button>
+                )}
+                {canWriteTenant && (
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    onClick={() => {
+                      setEditingCompany(c);
+                      setEditCompanyForm({ name: c.name, tax_id: c.tax_id ?? "" });
+                    }}
+                  >
+                    Editar
+                  </button>
+                )}
+              </div>
             </div>
           ))}
         </div>

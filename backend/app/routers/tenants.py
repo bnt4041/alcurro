@@ -371,3 +371,26 @@ def request_plan_change(
         )
 
     raise HTTPException(status_code=404, detail="No tienes ninguna suscripción activa")
+
+
+class BillingCompanyRequest(BaseModel):
+    company_id: UUID
+
+
+@router.put("/current/billing-company", response_model=TenantRead)
+def set_billing_company(
+    data: BillingCompanyRequest,
+    ctx: TenantContext = Depends(get_tenant_context),
+    session: Session = Depends(get_session),
+    _: object = Depends(require_permission(Permission.WRITE, "tenant")),
+) -> Tenant:
+    """Establece la empresa principal de facturación de la cuenta."""
+    tenant = ctx.tenant
+    company = session.get(Company, data.company_id)
+    if not company or company.tenant_id != tenant.id:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada en esta cuenta")
+    tenant.billing_company_id = data.company_id
+    session.add(tenant)
+    session.commit()
+    session.refresh(tenant)
+    return tenant
