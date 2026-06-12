@@ -35,6 +35,8 @@ import PlatformMailPage from "./pages/PlatformMailPage";
 import PlatformAIPage from "./pages/PlatformAIPage";
 import PlatformPurgePage from "./pages/PlatformPurgePage";
 import PlatformPolicyPage from "./pages/PlatformPolicyPage";
+import PlatformSettingsPage from "./pages/PlatformSettingsPage";
+import PlatformInvoicesPage from "./pages/PlatformInvoicesPage";
 import OrgChartPage from "./pages/OrgChartPage";
 import ShiftsPage from "./pages/ShiftsPage";
 import SignupPage from "./pages/SignupPage";
@@ -44,6 +46,7 @@ import SignDocumentPage from "./pages/SignDocumentPage";
 import ReportsPage from "./pages/ReportsPage";
 import SignaturesPage from "./pages/SignaturesPage";
 import LegalTokenPage from "./pages/LegalTokenPage";
+import DeveloperPage from "./pages/DeveloperPage";
 
 export default function App() {
   return (
@@ -81,6 +84,8 @@ export default function App() {
                 <Route path="tarifas" element={<PlatformPricingPage />} />
                 <Route path="descuentos" element={<PlatformDiscountsPage />} />
                 <Route path="cobros" element={<PlatformStripePage />} />
+                <Route path="facturas" element={<PlatformInvoicesPage />} />
+                <Route path="configuracion" element={<PlatformSettingsPage />} />
                 <Route path="whatsapp" element={<PlatformWhatsAppPage />} />
                 <Route path="mail" element={<PlatformMailPage />} />
                 <Route path="ia" element={<PlatformAIPage />} />
@@ -109,6 +114,7 @@ export default function App() {
                 <Route path="legal" element={<LegalPage />} />
                 <Route path="grupos" element={<GroupsPage />} />
                 <Route path="cuenta" element={<AccountPage />} />
+                <Route path="developer" element={<DeveloperPage />} />
                 <Route path="whatsapp" element={<Navigate to="/app" replace />} />
                 <Route path="configuracion" element={<Navigate to="/app/cuenta" replace />} />
               </Route>

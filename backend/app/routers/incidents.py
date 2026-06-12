@@ -41,6 +41,7 @@ from app.services.incident_service import (
     send_whatsapp_from_incident,
     update_rules,
 )
+from app.services.ref_resolver import resolve_employee_ref
 from app.services.scope_service import read_scope_employee_ids
 
 _UPLOAD_DIR = Path("/app/uploads")
@@ -54,7 +55,7 @@ def _scope_ids(ctx: OrgContext, session: Session, user: Employee) -> list[UUID]:
         user,
         ctx.tenant.id,
         "clock_ins",
-        company_id=ctx.company.id,
+        company_id=ctx.scope_company_id(),
         work_center_id=ctx.work_center.id if ctx.work_center else None,
         department_id=ctx.department.id if ctx.department else None,
     )
@@ -133,13 +134,16 @@ def create_incident_route(
     user: Employee = Depends(get_current_user),
     _: object = Depends(require_write("clock_ins", "write")),
 ) -> IncidentRead:
+    resolved_id = resolve_employee_ref(
+        session, ctx.company.id, data.employee_id, data.employee_ref
+    )
     ids = _scope_ids(ctx, session, user)
-    if data.employee_id not in ids:
+    if resolved_id not in ids:
         raise HTTPException(status_code=400, detail="Empleado no válido")
     try:
         original = original_data_for_links(
             session,
-            employee_id=data.employee_id,
+            employee_id=resolved_id,
             clock_in_id=data.clock_in_id,
             leave_request_id=data.leave_request_id,
         )
@@ -148,7 +152,7 @@ def create_incident_route(
     row = create_incident(
         session,
         tenant_id=ctx.tenant.id,
-        employee_id=data.employee_id,
+        employee_id=resolved_id,
         category=data.category,
         incident_type=data.incident_type,
         title=data.title.strip(),

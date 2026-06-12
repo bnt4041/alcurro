@@ -325,6 +325,60 @@ export default function HomePage() {
                 <strong>+</strong> Acceso del empleado a su historial completo de documentos, siempre disponible.
               </p>
             </article>
+
+            {/* API card — full width */}
+            <article className="landing-glass landing-bento__card landing-bento__api">
+              <div className="landing-bento__api-left">
+                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.75rem" }}>
+                  <span className="landing-bento__badge-api">API REST</span>
+                  <span className="landing-bento__badge-api landing-bento__badge-api--wh">WEBHOOKS</span>
+                </div>
+                <h3 className="landing-headline" style={{ fontSize: "1.25rem", marginBottom: "0.5rem" }}>
+                  Conecta alcurro con tu stack
+                </h3>
+                <p style={{ color: "var(--lp-muted)", fontSize: "0.875rem", marginBottom: "1.25rem" }}>
+                  ¿Tienes un ERP, un software de nóminas o un sistema propio?
+                  La API de alcurro habla JSON. Sin conectores de pago, sin middleware,
+                  sin depender de nadie.
+                </p>
+                <ul className="landing-bento__api-list">
+                  <li><Icon name="check_circle" /><span>Ficha desde tu app con el código del empleado — sin UUIDs</span></li>
+                  <li><Icon name="check_circle" /><span>Recibe eventos en tiempo real vía webhook firmado (HMAC-SHA256)</span></li>
+                  <li><Icon name="check_circle" /><span>Entrega documentos y nóminas directamente desde tu ERP</span></li>
+                  <li><Icon name="check_circle" /><span>Crea y gestiona solicitudes de vacaciones desde cualquier sistema externo</span></li>
+                </ul>
+              </div>
+              <div className="landing-bento__api-right">
+                <div className="landing-bento__api-window">
+                  <div className="landing-bento__api-bar">
+                    <span /><span /><span />
+                    <span className="landing-bento__api-bar-label">POST /api/clock-ins</span>
+                  </div>
+                  <pre className="landing-bento__api-code"><code>{`{
+  <span class="lp-k">"employee_ref"</span>: <span class="lp-s">"EMP042"</span>,
+  <span class="lp-k">"entrada_at"</span>:  <span class="lp-s">"2025-06-09T08:55:00"</span>,
+  <span class="lp-k">"source"</span>:      <span class="lp-s">"api"</span>
+}`}</code></pre>
+                  <div className="landing-bento__api-response">
+                    <span className="landing-bento__api-status">201 Created</span>
+                    <pre className="landing-bento__api-code landing-bento__api-code--resp"><code>{`{
+  <span class="lp-k">"id"</span>:          <span class="lp-s">"c7e3a1b2-..."</span>,
+  <span class="lp-k">"employee_id"</span>: <span class="lp-s">"3fa85f64-..."</span>,
+  <span class="lp-k">"entrada_at"</span>:  <span class="lp-s">"2025-06-09T08:55:00"</span>
+}`}</code></pre>
+                  </div>
+                </div>
+                <div className="landing-bento__api-webhook">
+                  <div className="landing-bento__api-wh-head">
+                    <Icon name="webhook" />
+                    <span>clockin.created — en tiempo real</span>
+                  </div>
+                  <div className="landing-bento__api-wh-body">
+                    <span className="lp-k">X-Alcurro-Signature:</span> <span style={{ opacity: 0.6 }}>sha256=8f3c…</span>
+                  </div>
+                </div>
+              </div>
+            </article>
           </div>
         </div>
       </section>

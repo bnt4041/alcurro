@@ -18,6 +18,7 @@ from app.services.clock_incident_hook import process_clock_in_incidents
 from app.services.clock_report_service import EmployeeDayReport, build_employee_day_report
 from app.services.clock_settings_service import get_or_create_settings
 from app.services.project_service import get_project_for_company
+from app.services.ref_resolver import resolve_employee_ref
 from app.services.scope_service import read_scope_employee_ids, resolve_write_employee_id
 
 
@@ -37,7 +38,7 @@ def _scope_ids(ctx: OrgContext, session: Session, user: Employee) -> list[UUID]:
         user,
         ctx.tenant.id,
         "clock_ins",
-        company_id=ctx.company.id,
+        company_id=ctx.scope_company_id(),
         work_center_id=ctx.work_center.id if ctx.work_center else None,
         department_id=ctx.department.id if ctx.department else None,
     )
@@ -136,8 +137,11 @@ def create_clock_in(
     user: Employee = Depends(get_current_user),
     _: object = Depends(require_write("clock_ins", "create")),
 ) -> ClockInRead:
+    resolved_id = resolve_employee_ref(
+        session, ctx.company.id, data.employee_id, data.employee_ref
+    )
     target = resolve_write_employee_id(
-        session, user, ctx, "clock_ins", data.employee_id, "create"
+        session, user, ctx, "clock_ins", resolved_id, "create"
     )
     emp = session.get(Employee, target)
     if not emp:

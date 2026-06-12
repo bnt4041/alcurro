@@ -1,13 +1,14 @@
 from datetime import datetime
 from uuid import UUID
 
+import stripe as stripe_lib
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 
 from app.config import get_settings
 from app.core.platform_deps import get_platform_user
 from app.database import get_session
-from app.models.billing import PricingPlan, StripePayment
+from app.models.billing import PricingPlan, StripePayment, StripePaymentStatus
 from app.models.rbac import PlatformUser
 from app.models.tenant import Tenant
 from app.schemas.stripe_admin import (
@@ -123,3 +124,46 @@ def sync_pricing_plan_to_stripe(
         stripe_price_monthly_id=plan.stripe_price_monthly_id,
         stripe_price_annual_id=plan.stripe_price_annual_id,
     )
+
+
+class RefundRequest(HTTPException):
+    pass
+
+
+from pydantic import BaseModel  # noqa: E402
+
+
+class RefundBody(BaseModel):
+    reason: str | None = None
+
+
+@router.post("/payments/{payment_id}/refund")
+def refund_payment(
+    payment_id: UUID,
+    body: RefundBody = RefundBody(),
+    session: Session = Depends(get_session),
+    _: PlatformUser = Depends(get_platform_user),
+) -> dict:
+    payment = session.get(StripePayment, payment_id)
+    if not payment:
+        raise HTTPException(status_code=404, detail="Pago no encontrado")
+    if payment.status == StripePaymentStatus.REFUNDED:
+        raise HTTPException(status_code=400, detail="El pago ya está reembolsado")
+    if payment.status != StripePaymentStatus.SUCCEEDED:
+        raise HTTPException(status_code=400, detail="Solo se pueden reembolsar pagos completados")
+
+    if stripe_configured() and not stripe_simulation_enabled():
+        if not payment.stripe_payment_intent_id:
+            raise HTTPException(status_code=400, detail="No hay Payment Intent de Stripe asociado")
+        stripe_lib.api_key = get_settings().stripe_secret_key
+        refund = stripe_lib.Refund.create(
+            payment_intent=payment.stripe_payment_intent_id,
+            reason=body.reason or "requested_by_customer",
+        )
+        if refund.status not in ("succeeded", "pending"):
+            raise HTTPException(status_code=400, detail=f"Stripe rechazó el reembolso: {refund.status}")
+
+    payment.status = StripePaymentStatus.REFUNDED
+    session.add(payment)
+    session.commit()
+    return {"ok": True, "message": "Reembolso procesado correctamente"}

@@ -37,7 +37,7 @@ def _scope_ids(ctx: OrgContext, session: Session, user: Employee) -> list[UUID]:
         user,
         ctx.tenant.id,
         "breaks",
-        company_id=ctx.company.id,
+        company_id=ctx.scope_company_id(),
         work_center_id=ctx.work_center.id if ctx.work_center else None,
         department_id=ctx.department.id if ctx.department else None,
     )

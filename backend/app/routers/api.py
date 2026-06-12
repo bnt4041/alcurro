@@ -6,6 +6,8 @@ from app.routers import (
     breaks,
     clock_ins,
     clock_settings,
+    dashboard,
+    developer,
     incidents,
     incidents_public,
     documents,
@@ -21,6 +23,8 @@ from app.routers import (
     platform,
     platform_billing,
     platform_catalog,
+    platform_invoices,
+    platform_settings,
     platform_stripe,
     platform_whatsapp,
     platform_mail,
@@ -46,6 +50,8 @@ api_router.include_router(stripe_webhook.router)
 api_router.include_router(platform.router)
 api_router.include_router(platform_billing.router)
 api_router.include_router(platform_catalog.router)
+api_router.include_router(platform_invoices.router)
+api_router.include_router(platform_settings.router)
 api_router.include_router(platform_stripe.router)
 api_router.include_router(platform_whatsapp.router)
 api_router.include_router(platform_mail.router)
@@ -77,6 +83,8 @@ api_router.add_api_route(
 )
 
 protected = APIRouter(dependencies=[Depends(get_current_user)])
+protected.include_router(dashboard.router)
+protected.include_router(developer.router)
 protected.include_router(tenants.router)
 protected.include_router(notifications.router)  # antes de employees para evitar conflicto con /{employee_id}
 protected.include_router(employees.router)

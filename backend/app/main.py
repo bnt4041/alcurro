@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -7,7 +8,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.exc import IntegrityError
 
-from app.database import create_db_and_tables
+from app.database import create_db_and_tables, engine
 from app.routers.api import api_router
 from app.routers.webhook import router as webhook_router
 
@@ -189,12 +190,41 @@ def _run_startup_migrations() -> None:
         print(f"migrate_leave_balance_v1: {exc}")
 
 
+async def _reminder_scheduler() -> None:
+    """Ejecuta recordatorios de fichaje cada 5 minutos para todos los tenants activos."""
+    from sqlmodel import Session, select
+    from app.models.tenant import Tenant
+    from app.services.clock_reminder_service import run_clock_reminders
+
+    await asyncio.sleep(60)  # espera inicial para que el servidor arranque
+    while True:
+        try:
+            with Session(engine) as session:
+                tenants = session.exec(
+                    select(Tenant).where(Tenant.is_active == True)  # noqa: E712
+                ).all()
+                for tenant in tenants:
+                    try:
+                        await run_clock_reminders(session, tenant.id)
+                    except Exception as exc:
+                        print(f"[reminders] tenant {tenant.id}: {exc}")
+        except Exception as exc:
+            print(f"[reminders] loop error: {exc}")
+        await asyncio.sleep(300)  # cada 5 minutos
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     create_db_and_tables()
     _run_startup_migrations()
+    task = asyncio.create_task(_reminder_scheduler())
     yield
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
 
 
 app = FastAPI(

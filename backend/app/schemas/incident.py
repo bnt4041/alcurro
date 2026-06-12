@@ -57,7 +57,8 @@ class IncidentRead(BaseModel):
 
 
 class IncidentCreate(BaseModel):
-    employee_id: UUID
+    employee_id: UUID | None = None
+    employee_ref: str | None = None  # alternative: employee_code, phone or email
     category: str = Field(pattern="^(fichaje|vacaciones|permiso)$")
     incident_type: str = "manual"
     title: str = Field(min_length=1, max_length=300)

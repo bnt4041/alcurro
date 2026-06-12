@@ -108,6 +108,7 @@ export interface ClockSettings {
   tenant_id: string;
   require_geolocation: boolean;
   clock_reminder_minutes: number | null;
+  clock_exit_reminder_minutes: number | null;
   incident_reminder_enabled: boolean;
   incident_reminder_minutes: number | null;
   inbound_documents_enabled: boolean;
@@ -206,6 +207,7 @@ export interface EmployeeDayReport {
 
 export interface ClockReminderRunResult {
   sent: number;
+  sent_exit: number;
   skipped: number;
   errors: string[];
 }

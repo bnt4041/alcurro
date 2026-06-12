@@ -280,13 +280,13 @@ export default function EmployeesPage() {
   }, [canGroups]);
 
   useEffect(() => {
-    if (canWrite) {
+    if (canWrite || canUpdate) {
       api
         .get<OrgTreeCompany[]>("/org/tree")
         .then(setOrgTree)
         .catch(() => setOrgTree([]));
     }
-  }, [canWrite]);
+  }, [canWrite, canUpdate]);
 
   useEffect(() => {
     if (canUpdate && user?.company_id) {
@@ -300,13 +300,13 @@ export default function EmployeesPage() {
   }, [canUpdate, user?.company_id]);
 
   useEffect(() => {
-    if (open && canWrite && !orgTree.length) {
+    if (open && (canWrite || canUpdate) && !orgTree.length) {
       api
         .get<OrgTreeCompany[]>("/org/tree")
         .then(setOrgTree)
         .catch(() => setOrgTree([]));
     }
-  }, [open, canWrite, orgTree.length]);
+  }, [open, canWrite, canUpdate, orgTree.length]);
 
   useEffect(() => {
     if (!open || !canWrite || !form.company_id) {

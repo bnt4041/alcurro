@@ -25,6 +25,7 @@ class ClockSettingsRead(BaseModel):
     tenant_id: UUID
     require_geolocation: bool
     clock_reminder_minutes: int | None
+    clock_exit_reminder_minutes: int | None
     incident_reminder_enabled: bool
     incident_reminder_minutes: int | None
     inbound_documents_enabled: bool
@@ -44,6 +45,7 @@ class ClockSettingsRead(BaseModel):
 class ClockSettingsUpdate(BaseModel):
     require_geolocation: bool | None = None
     clock_reminder_minutes: int | None = Field(default=None, ge=0, le=1440)
+    clock_exit_reminder_minutes: int | None = Field(default=None, ge=0, le=1440)
     incident_reminder_enabled: bool | None = None
     incident_reminder_minutes: int | None = Field(default=None, ge=0, le=1440)
     inbound_documents_enabled: bool | None = None
@@ -68,6 +70,7 @@ class EmployeeInboundDocumentRead(BaseModel):
 
 
 class ClockReminderRunResult(BaseModel):
-    sent: int
-    skipped: int
+    sent: int = 0
+    sent_exit: int = 0
+    skipped: int = 0
     errors: list[str] = Field(default_factory=list)

@@ -31,6 +31,7 @@ interface Company {
   id: string;
   name: string;
   tax_id: string | null;
+  is_active: boolean;
 }
 
 interface BillingSummaryResponse {
@@ -48,6 +49,11 @@ export default function AccountPage() {
   const [msg, setMsg] = useState("");
   const [newCompany, setNewCompany] = useState({ name: "", tax_id: "" });
   const [logoUploading, setLogoUploading] = useState(false);
+
+  // Edición de empresa
+  const [editingCompany, setEditingCompany] = useState<Company | null>(null);
+  const [editCompanyForm, setEditCompanyForm] = useState({ name: "", tax_id: "" });
+  const [editCompanySaving, setEditCompanySaving] = useState(false);
 
   // Plan change
   const [plans, setPlans] = useState<PublicPricingPlan[]>([]);
@@ -439,38 +445,109 @@ export default function AccountPage() {
 
       <section className="card settings-section">
         <h3>Empresas de la cuenta</h3>
-        <ul>
+        <p className="muted small">
+          Cada empresa tiene su propia estructura organizativa (centros de trabajo y departamentos) y sus propios empleados.
+        </p>
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", marginBottom: "1rem" }}>
           {companies.map((c) => (
-            <li key={c.id}>
-              {c.name} {c.tax_id && `(${c.tax_id})`}
-            </li>
+            <div key={c.id} className="company-row" style={{ display: "flex", alignItems: "center", gap: "1rem", padding: "0.5rem 0.75rem", border: "1px solid var(--c-border)", borderRadius: 6 }}>
+              <div style={{ flex: 1 }}>
+                <strong>{c.name}</strong>
+                {c.tax_id && <span className="muted small" style={{ marginLeft: "0.5rem" }}>CIF/NIF: {c.tax_id}</span>}
+                {!c.is_active && <span className="badge badge--danger" style={{ marginLeft: "0.5rem" }}>Inactiva</span>}
+              </div>
+              {canWriteTenant && (
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={() => {
+                    setEditingCompany(c);
+                    setEditCompanyForm({ name: c.name, tax_id: c.tax_id ?? "" });
+                  }}
+                >
+                  Editar
+                </button>
+              )}
+            </div>
           ))}
-        </ul>
-        <form onSubmit={addCompany} className="form-grid">
+        </div>
+
+        {canWriteTenant && (
+          <form onSubmit={addCompany} className="form-grid">
+            <label>
+              Nueva empresa
+              <input
+                required
+                value={newCompany.name}
+                onChange={(e) => setNewCompany({ ...newCompany, name: e.target.value })}
+              />
+            </label>
+            <label>
+              CIF/NIF
+              <input
+                value={newCompany.tax_id}
+                onChange={(e) => setNewCompany({ ...newCompany, tax_id: e.target.value })}
+              />
+            </label>
+            <button type="submit" className="btn">
+              Añadir empresa
+            </button>
+          </form>
+        )}
+      </section>
+
+      <Modal
+        title={`Editar empresa — ${editingCompany?.name ?? ""}`}
+        open={!!editingCompany}
+        onClose={() => setEditingCompany(null)}
+      >
+        <div className="form-grid">
           <label>
-            Nueva empresa
+            Nombre <span className="required">*</span>
             <input
               required
-              value={newCompany.name}
-              onChange={(e) =>
-                setNewCompany({ ...newCompany, name: e.target.value })
-              }
+              value={editCompanyForm.name}
+              onChange={(e) => setEditCompanyForm({ ...editCompanyForm, name: e.target.value })}
             />
           </label>
           <label>
             CIF/NIF
             <input
-              value={newCompany.tax_id}
-              onChange={(e) =>
-                setNewCompany({ ...newCompany, tax_id: e.target.value })
-              }
+              value={editCompanyForm.tax_id}
+              onChange={(e) => setEditCompanyForm({ ...editCompanyForm, tax_id: e.target.value })}
             />
           </label>
-          <button type="submit" className="btn">
-            Añadir empresa
+        </div>
+        <div className="form-actions" style={{ marginTop: "1.5rem" }}>
+          <button type="button" className="btn" onClick={() => setEditingCompany(null)}>
+            Cancelar
           </button>
-        </form>
-      </section>
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={editCompanySaving}
+            onClick={async () => {
+              if (!editingCompany) return;
+              setEditCompanySaving(true);
+              try {
+                await api.patch(`/tenants/current/companies/${editingCompany.id}`, {
+                  name: editCompanyForm.name || undefined,
+                  tax_id: editCompanyForm.tax_id || null,
+                });
+                notify("Empresa actualizada", "success");
+                setEditingCompany(null);
+                load();
+              } catch (err) {
+                notify(String(err).replace(/^Error:\s*/i, ""), "error");
+              } finally {
+                setEditCompanySaving(false);
+              }
+            }}
+          >
+            {editCompanySaving ? "Guardando…" : "Guardar"}
+          </button>
+        </div>
+      </Modal>
     </>
   );
 }

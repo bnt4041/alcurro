@@ -62,6 +62,7 @@ export default function ClockSettingsPage() {
       const updated = await api.put<ClockSettings>("/clock-settings", {
         require_geolocation: form.require_geolocation,
         clock_reminder_minutes: form.clock_reminder_minutes || null,
+        clock_exit_reminder_minutes: form.clock_exit_reminder_minutes || null,
         incident_reminder_enabled: form.incident_reminder_enabled,
         incident_reminder_minutes: form.incident_reminder_minutes,
         inbound_documents_enabled: form.inbound_documents_enabled,
@@ -82,15 +83,32 @@ export default function ClockSettingsPage() {
   };
 
   const runReminders = async () => {
+    if (!form || !canWrite) return;
     setRunningReminders(true);
     setReminderResult(null);
     try {
+      // Guardar la configuración actual antes de lanzar el test
+      const updated = await api.put<ClockSettings>("/clock-settings", {
+        require_geolocation: form.require_geolocation,
+        clock_reminder_minutes: form.clock_reminder_minutes || null,
+        clock_exit_reminder_minutes: form.clock_exit_reminder_minutes || null,
+        incident_reminder_enabled: form.incident_reminder_enabled,
+        incident_reminder_minutes: form.incident_reminder_minutes,
+        inbound_documents_enabled: form.inbound_documents_enabled,
+        inbound_document_codes: form.inbound_document_codes,
+        inbound_signature_delivery_ids: form.inbound_signature_delivery_ids,
+        send_welcome_with_documents: form.send_welcome_with_documents,
+        welcome_message_extra: form.welcome_message_extra || null,
+        daily_summary_enabled: form.daily_summary_enabled,
+        require_project_on_clock_in: form.require_project_on_clock_in,
+      });
+      setForm(updated);
       const res = await api.post<ClockReminderRunResult>(
         "/clock-settings/run-reminders",
         {}
       );
       setReminderResult(res);
-      setMsg(`Recordatorios enviados: ${res.sent} (${res.skipped} omitidos)`);
+      setMsg(`Recordatorios enviados: ${res.sent + (res.sent_exit ?? 0)} (${res.skipped} omitidos)`);
     } catch (err) {
       setMsg(String(err));
     } finally {
@@ -185,10 +203,13 @@ export default function ClockSettingsPage() {
           </section>
 
           <section className="card clock-settings-card">
-            <h3>Recordatorio de fichaje</h3>
+            <h3>Recordatorios de fichaje</h3>
+            <p className="muted small">
+              Se envían automáticamente cada 5 minutos. Solo en días y franjas laborales del empleado.
+            </p>
             <div className="form-grid clock-settings-fields">
               <label>
-                Minutos tras inicio de jornada
+                Recordatorio de <strong>entrada</strong> — minutos tras inicio de jornada
                 <input
                   type="number"
                   min={0}
@@ -205,8 +226,28 @@ export default function ClockSettingsPage() {
                   }}
                 />
                 <span className="muted small">
-                  Vacío = desactivado. Solo en días y franjas laborales, sin ENTRADA
-                  registrada.
+                  Vacío = desactivado. Avisa si no hay ENTRADA registrada pasados X minutos.
+                </span>
+              </label>
+              <label>
+                Recordatorio de <strong>salida</strong> — minutos tras fin de jornada
+                <input
+                  type="number"
+                  min={0}
+                  max={1440}
+                  disabled={!canWrite}
+                  placeholder="Desactivado"
+                  value={form.clock_exit_reminder_minutes ?? ""}
+                  onChange={(ev) => {
+                    const v = ev.target.value;
+                    setForm({
+                      ...form,
+                      clock_exit_reminder_minutes: v === "" ? null : parseInt(v, 10),
+                    });
+                  }}
+                />
+                <span className="muted small">
+                  Vacío = desactivado. Avisa si hay ENTRADA abierta sin SALIDA pasados X minutos del fin de jornada.
                 </span>
               </label>
             </div>
@@ -215,15 +256,16 @@ export default function ClockSettingsPage() {
                 <button
                   type="button"
                   className="btn btn-sm"
-                  disabled={runningReminders || !form.clock_reminder_minutes}
+                  disabled={runningReminders || (!form.clock_reminder_minutes && !form.clock_exit_reminder_minutes)}
                   onClick={runReminders}
                 >
                   {runningReminders ? "Enviando…" : "Probar recordatorios ahora"}
                 </button>
                 {reminderResult && (
                   <span className="muted small">
-                    Enviados: {reminderResult.sent} · Omitidos:{" "}
-                    {reminderResult.skipped}
+                    Entrada: {reminderResult.sent} enviados
+                    {" · "}Salida: {reminderResult.sent_exit ?? 0} enviados
+                    {" · "}Omitidos: {reminderResult.skipped}
                     {reminderResult.errors.length > 0 &&
                       ` · Errores: ${reminderResult.errors.length}`}
                   </span>

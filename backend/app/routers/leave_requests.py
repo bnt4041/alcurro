@@ -11,6 +11,7 @@ from app.database import get_session
 from app.models.models import Employee, LeaveRequest, LeaveStatus, LeaveType
 from app.routers.crud_helpers import get_or_404
 from app.schemas.crud import LeaveRequestCreate, LeaveRequestRead, LeaveRequestUpdate
+from app.services.ref_resolver import resolve_employee_ref, resolve_leave_type_ref
 from app.services.scope_service import (
     assert_employee_target,
     read_scope_employee_ids,
@@ -36,7 +37,7 @@ def _scope_ids(ctx: OrgContext, session: Session, user: Employee) -> list[UUID]:
         user,
         ctx.tenant.id,
         "leave",
-        company_id=ctx.company.id,
+        company_id=ctx.scope_company_id(),
         work_center_id=ctx.work_center.id if ctx.work_center else None,
         department_id=ctx.department.id if ctx.department else None,
     )
@@ -106,10 +107,22 @@ def create_leave_request(
     user: Employee = Depends(get_current_user),
     _: object = Depends(require_write("leave", "create")),
 ) -> LeaveRequestRead:
-    emp_id = resolve_write_employee_id(
-        session, user, ctx, "leave", data.employee_id, "create"
+    resolved_id = resolve_employee_ref(
+        session, ctx.company.id, data.employee_id, data.employee_ref
     )
-    row = LeaveRequest.model_validate({**data.model_dump(), "employee_id": emp_id})
+    emp_id = resolve_write_employee_id(
+        session, user, ctx, "leave", resolved_id, "create"
+    )
+    resolved_leave_type_id = resolve_leave_type_ref(
+        session, ctx.tenant.id, data.leave_type_id, data.leave_type_name
+    )
+    row = LeaveRequest.model_validate(
+        {
+            **data.model_dump(exclude={"employee_ref", "leave_type_name"}),
+            "employee_id": emp_id,
+            "leave_type_id": resolved_leave_type_id,
+        }
+    )
     session.add(row)
     session.commit()
     session.refresh(row)

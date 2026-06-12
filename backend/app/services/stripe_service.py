@@ -260,6 +260,7 @@ def _on_checkout_completed(session: Session, data: dict) -> None:
             invoice_url=inv_data.get("hosted_invoice_url"),
         )
         _send_invoice_notification(session, tenant, payment, inv_data)
+        _auto_generate_invoice(session, payment)
 
 
 def _on_invoice_paid(session: Session, data: dict) -> None:
@@ -290,6 +291,9 @@ def _on_invoice_paid(session: Session, data: dict) -> None:
     )
     if tenant:
         _send_invoice_notification(session, tenant, payment, data)
+    # Auto-generar factura interna
+    if payment.amount_cents > 0:
+        _auto_generate_invoice(session, payment)
 
 
 def _on_invoice_failed(session: Session, data: dict) -> None:
@@ -316,6 +320,15 @@ def _on_invoice_failed(session: Session, data: dict) -> None:
         description="Pago fallido",
         stripe_invoice_id=data.get("id"),
     )
+
+
+def _auto_generate_invoice(session: Session, payment: StripePayment) -> None:
+    """Genera factura interna si el pago tiene tenant y tiene importe."""
+    try:
+        from app.services.invoice_service import generate_invoice_for_payment
+        generate_invoice_for_payment(session, payment)
+    except Exception:
+        pass
 
 
 def _on_subscription_deleted(session: Session, data: dict) -> None:

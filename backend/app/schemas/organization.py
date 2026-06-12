@@ -9,6 +9,7 @@ class WorkCenterCreate(BaseModel):
     code: str | None = Field(default=None, max_length=50)
     address: str | None = None
     city: str | None = None
+    company_id: UUID | None = None  # override context when caller manages multi-company
 
 
 class WorkCenterRead(BaseModel):

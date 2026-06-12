@@ -133,7 +133,8 @@ class EmployeeRead(BaseModel):
 
 
 class ClockInCreate(BaseModel):
-    employee_id: UUID
+    employee_id: UUID | None = None
+    employee_ref: str | None = None  # alternative: employee_code, phone or email
     entrada_at: datetime
     salida_at: datetime | None = None
     latitude: float | None = None
@@ -255,12 +256,14 @@ class EmployeeLeaveBalanceUpdate(BaseModel):
 
 
 class LeaveRequestCreate(BaseModel):
-    employee_id: UUID
+    employee_id: UUID | None = None
+    employee_ref: str | None = None  # alternative: employee_code, phone or email
     start_date: date
     end_date: date
     days_requested: float = Field(ge=0.5)
     status: LeaveStatus = LeaveStatus.PENDING
     leave_type_id: UUID | None = None
+    leave_type_name: str | None = None  # alternative to leave_type_id
     reason: str | None = None
     supervisor_id: UUID | None = None
 

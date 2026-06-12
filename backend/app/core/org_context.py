@@ -45,6 +45,9 @@ def get_company_for_user(
     return company
 
 
+_ALL_COMPANY_ROLES = {"tenant_admin", "manager", "admin"}
+
+
 @dataclass
 class OrgContext:
     tenant: Tenant
@@ -52,6 +55,15 @@ class OrgContext:
     work_center: WorkCenter | None
     department: Department | None
     user: Employee
+    company_scoped: bool = True  # False when no X-Company-Id was sent
+
+    def scope_company_id(self) -> "UUID | None":
+        """None = tenant-wide scope (all companies). Used by list endpoints."""
+        if self.company_scoped:
+            return self.company.id
+        if str(self.user.role) in _ALL_COMPANY_ROLES:
+            return None
+        return self.company.id
 
 
 def _resolve_work_center(
@@ -95,6 +107,7 @@ def get_org_context(
     wcid = UUID(x_work_center_id) if x_work_center_id else None
     did = UUID(x_department_id) if x_department_id else None
 
+    company_scoped = cid is not None
     company = get_company_for_user(session, user, cid)
     tenant = session.get(Tenant, company.tenant_id)
     if not tenant or not tenant.is_active:
@@ -112,5 +125,6 @@ def get_org_context(
         work_center=work_center,
         department=department,
         user=user,
+        company_scoped=company_scoped,
     )
 

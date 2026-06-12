@@ -21,6 +21,10 @@ class ClockSettings(SQLModel, table=True):
         default=None,
         description="Recordatorio si no ha fichado entrada tras X min del inicio de jornada",
     )
+    clock_exit_reminder_minutes: int | None = Field(
+        default=None,
+        description="Recordatorio si no ha fichado salida tras X min del fin de jornada",
+    )
     incident_reminder_enabled: bool = Field(
         default=False,
         description="Reservado: recordatorio de incidencias",

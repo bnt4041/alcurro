@@ -82,16 +82,25 @@ def create_work_center(
     session: Session = Depends(get_session),
     _: object = Depends(require_permission(Permission.WRITE, "work_centers")),
 ) -> WorkCenter:
-    code = (data.code or "").strip() or next_work_center_code(session, ctx.company.id)
+    # Allow caller to specify a company (multi-company UX), but validate it belongs to the tenant
+    if data.company_id and data.company_id != ctx.company.id:
+        target = session.get(Company, data.company_id)
+        if not target or target.tenant_id != ctx.tenant.id:
+            raise HTTPException(status_code=404, detail="Empresa no encontrada")
+        company_id = data.company_id
+    else:
+        company_id = ctx.company.id
+
+    code = (data.code or "").strip() or next_work_center_code(session, company_id)
     if session.exec(
         select(WorkCenter).where(
-            WorkCenter.company_id == ctx.company.id,
+            WorkCenter.company_id == company_id,
             WorkCenter.code == code,
         )
     ).first():
         raise HTTPException(status_code=409, detail="Código de centro duplicado")
-    payload = data.model_dump(exclude={"code"})
-    row = WorkCenter(company_id=ctx.company.id, code=code, **payload)
+    payload = data.model_dump(exclude={"code", "company_id"})
+    row = WorkCenter(company_id=company_id, code=code, **payload)
     session.add(row)
     session.commit()
     session.refresh(row)

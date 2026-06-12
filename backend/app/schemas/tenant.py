@@ -295,6 +295,12 @@ class CompanyCreate(BaseModel):
     tax_id: str | None = None
 
 
+class CompanyUpdate(BaseModel):
+    name: str | None = None
+    tax_id: str | None = None
+    is_active: bool | None = None
+
+
 
 
 

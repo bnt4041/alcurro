@@ -146,6 +146,7 @@ def settings_to_read(session: Session, row: ClockSettings) -> ClockSettingsRead:
         tenant_id=row.tenant_id,
         require_geolocation=row.require_geolocation,
         clock_reminder_minutes=row.clock_reminder_minutes,
+        clock_exit_reminder_minutes=row.clock_exit_reminder_minutes,
         incident_reminder_enabled=row.incident_reminder_enabled,
         incident_reminder_minutes=row.incident_reminder_minutes,
         inbound_documents_enabled=row.inbound_documents_enabled,
@@ -199,6 +200,8 @@ def update_settings(
 
     if "clock_reminder_minutes" in payload and payload["clock_reminder_minutes"] == 0:
         payload["clock_reminder_minutes"] = None
+    if "clock_exit_reminder_minutes" in payload and payload["clock_exit_reminder_minutes"] == 0:
+        payload["clock_exit_reminder_minutes"] = None
 
     for key, value in payload.items():
         setattr(row, key, value)

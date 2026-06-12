@@ -16,6 +16,7 @@ from app.schemas.billing import TenantAccountBillingRead
 from app.schemas.tenant import (
     CompanyCreate,
     CompanyRead,
+    CompanyUpdate,
     TenantBillingUpdate,
     TenantBrandingRead,
     TenantCreate,
@@ -180,7 +181,29 @@ def create_company(
     session: Session = Depends(get_session),
     _: object = Depends(require_permission(Permission.WRITE, "companies")),
 ) -> Company:
+    from app.services.org_service import seed_company_organization
     row = Company(tenant_id=ctx.tenant.id, name=data.name, tax_id=data.tax_id)
+    session.add(row)
+    session.flush()
+    seed_company_organization(session, row)
+    session.commit()
+    session.refresh(row)
+    return row
+
+
+@router.patch("/current/companies/{company_id}", response_model=CompanyRead)
+def update_company(
+    company_id: UUID,
+    data: CompanyUpdate,
+    ctx: TenantContext = Depends(get_tenant_context),
+    session: Session = Depends(get_session),
+    _: object = Depends(require_permission(Permission.WRITE, "companies")),
+) -> Company:
+    row = session.get(Company, company_id)
+    if not row or row.tenant_id != ctx.tenant.id:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+    for key, value in data.model_dump(exclude_unset=True).items():
+        setattr(row, key, value)
     session.add(row)
     session.commit()
     session.refresh(row)

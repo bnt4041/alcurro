@@ -25,6 +25,7 @@ from app.schemas.crud import (
 from app.schemas.whatsapp import normalize_mobile_digits
 from app.services.code_generator import next_employee_code
 from app.services.employee_bulk_import_service import bulk_import_employees
+from app.services.ref_resolver import resolve_employee_ref
 from app.services.id_document import validate_id_document
 from app.services.rbac_service import assign_role_default_group
 from app.models.documents import DocumentDelivery
@@ -77,10 +78,25 @@ def _scope_ids(
         user,
         ctx.tenant.id,
         "employees",
-        company_id=ctx.company.id,
+        company_id=ctx.scope_company_id(),
         work_center_id=ctx.work_center.id if ctx.work_center else None,
         department_id=ctx.department.id if ctx.department else None,
     )
+
+
+@router.get("/lookup", response_model=EmployeeRead)
+def lookup_employee(
+    ref: str,
+    ctx: OrgContext = Depends(get_org_context),
+    session: Session = Depends(get_session),
+    _: object = Depends(require_permission(Permission.READ, "employees")),
+) -> Employee:
+    """Find a single employee by employee_code, phone, email, or UUID."""
+    emp_id = resolve_employee_ref(session, ctx.company.id, employee_ref=ref)
+    emp = session.get(Employee, emp_id)
+    if not emp or emp.company_id != ctx.company.id:
+        raise HTTPException(status_code=404, detail="Empleado no encontrado")
+    return emp
 
 
 @router.get("", response_model=list[EmployeeRead])
@@ -91,6 +107,9 @@ def list_employees(
     q: str | None = None,
     role: Role | None = None,
     active_only: bool = False,
+    phone: str | None = None,
+    code: str | None = None,
+    email: str | None = None,
     _: object = Depends(require_permission(Permission.READ, "employees")),
 ) -> list[Employee]:
     ids = _scope_ids(ctx, session, user)
@@ -112,6 +131,12 @@ def list_employees(
         stmt = stmt.where(Employee.role == role)
     if active_only:
         stmt = stmt.where(Employee.is_active == True)  # noqa: E712
+    if phone:
+        stmt = stmt.where(Employee.phone == phone)
+    if code:
+        stmt = stmt.where(Employee.employee_code.ilike(code))  # type: ignore[attr-defined]
+    if email:
+        stmt = stmt.where(Employee.email.ilike(email))  # type: ignore[attr-defined]
     return list(session.exec(stmt).all())
 
 

@@ -190,6 +190,7 @@ class Employee(SQLModel, table=True):
     )
     welcome_sent_at: datetime | None = Field(default=None)
     last_clock_reminder_at: datetime | None = Field(default=None)
+    last_exit_reminder_at: datetime | None = Field(default=None)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 

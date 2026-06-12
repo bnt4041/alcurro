@@ -4,7 +4,6 @@ import { useResponsiveSidebar } from "../hooks/useResponsiveSidebar";
 import { api } from "../api/client";
 import BrandLogo from "./BrandLogo";
 import NotificationBell from "./NotificationBell";
-import OrgSelector from "./OrgSelector";
 import { useAuth } from "../context/AuthContext";
 import { applyBranding, getStoredTenantSlug } from "../hooks/useBranding";
 import { canModule, ROLE_LABELS } from "../lib/permissions";
@@ -27,6 +26,7 @@ const nav = [
   { to: "/app/legal", label: "Textos legales", module: "legal" as const },
   { to: "/app/grupos", label: "Grupos", module: "groups" as const },
   { to: "/app/cuenta", label: "Cuenta", module: "tenant" as const, write: true },
+  { to: "/app/developer", label: "APIs y Webhooks", module: "tenant" as const, write: true },
 ];
 
 export default function Layout() {
@@ -77,7 +77,6 @@ export default function Layout() {
           <span className="user-name">{user.full_name}</span>
           <span className="badge">{displayRole}</span>
         </div>
-        <OrgSelector />
         <nav onClick={closeSidebar}>
           {nav
             .filter((item) => {

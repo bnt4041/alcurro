@@ -41,6 +41,12 @@ const statusLabel: Record<string, string> = {
   refunded: "Reembolsado",
 };
 
+type PaymentRow = StripePayment & {
+  date_label: string;
+  amount_label: string;
+  status_text: string;
+};
+
 export default function PlatformStripePage() {
   const toast = useToast();
   const [status, setStatus] = useState<StripeStatus | null>(null);
@@ -49,6 +55,27 @@ export default function PlatformStripePage() {
   const [tenantId, setTenantId] = useState("");
   const [simulating, setSimulating] = useState(false);
   const [lastSim, setLastSim] = useState<SimulateResult | null>(null);
+
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  const handlePaymentAction = async (action: string, row: PaymentRow) => {
+    setActionLoading(row.id + action);
+    try {
+      if (action === "refund") {
+        if (!confirm(`¿Reembolsar el pago de ${row.amount_label}?`)) return;
+        await api.post(`/platform/stripe/payments/${row.id}/refund`, {});
+        toast.success("Reembolso procesado");
+        load();
+      } else if (action === "invoice") {
+        await api.post(`/platform/invoices/from-payment/${row.id}`, {});
+        toast.success("Factura generada correctamente");
+      }
+    } catch (err) {
+      toast.error(String(err).replace(/^Error:\s*/i, ""));
+    } finally {
+      setActionLoading(null);
+    }
+  };
 
   const load = async () => {
     setLoading(true);
@@ -88,12 +115,6 @@ export default function PlatformStripePage() {
     } finally {
       setSimulating(false);
     }
-  };
-
-  type PaymentRow = StripePayment & {
-    date_label: string;
-    amount_label: string;
-    status_text: string;
   };
 
   const paymentTableData = useMemo<PaymentRow[]>(
@@ -145,8 +166,24 @@ export default function PlatformStripePage() {
         formatter: (c) => `<span class="mono small">${String(c.getValue() ?? "—")}</span>`,
         minWidth: 140,
       },
+      {
+        title: "Acciones",
+        field: "id",
+        width: 170,
+        formatter: (cell) => {
+          const r = cell.getRow().getData() as PaymentRow;
+          const canRefund = r.status === "succeeded";
+          return `
+            <div class="table-actions">
+              ${canRefund ? `<button class="btn btn-xs btn-danger" data-action="refund" title="Reembolsar">Reembolsar</button>` : ""}
+              ${r.status === "succeeded" ? `<button class="btn btn-xs" data-action="invoice" title="Generar factura">Factura</button>` : ""}
+            </div>
+          `;
+        },
+      },
     ],
-    []
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [actionLoading]
   );
 
   return (
@@ -262,6 +299,7 @@ export default function PlatformStripePage() {
             columns={paymentColumns}
             exportFilename="cobros_stripe"
             height="400px"
+            onCellAction={(action, row) => handlePaymentAction(action, row as PaymentRow)}
           />
         )}
       </div>
