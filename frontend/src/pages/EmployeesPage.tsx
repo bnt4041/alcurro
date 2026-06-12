@@ -262,14 +262,17 @@ export default function EmployeesPage() {
     else if (action === "delete") remove(row.id);
   };
 
+  const [showInactive, setShowInactive] = useState(false);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setRows(await api.get<Employee[]>(`/employees?limit=3000`));
+      const qs = showInactive ? "" : "&active_only=true";
+      setRows(await api.get<Employee[]>(`/employees?limit=3000${qs}`));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [showInactive]);
 
   useEffect(() => {
     load();
@@ -496,9 +499,14 @@ export default function EmployeesPage() {
   };
 
   const remove = async (id: string) => {
-    if (!confirm("¿Eliminar empleado?")) return;
-    await api.delete(`/employees/${id}`);
-    load();
+    if (!confirm("¿Desactivar empleado?")) return;
+    try {
+      await api.delete(`/employees/${id}`);
+      notify("Empleado desactivado", "success");
+      load();
+    } catch (err) {
+      notify(String(err).replace(/^Error:\s*/i, ""), "error");
+    }
   };
 
   const openBulkSchedule = () => {
@@ -592,6 +600,16 @@ export default function EmployeesPage() {
           </button>
         </div>
       )}
+      <div className="toolbar" style={{ marginBottom: "0.5rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+        <label className="checkbox-label" style={{ display: "flex", alignItems: "center", gap: "0.35rem", cursor: "pointer", fontSize: "0.85rem" }}>
+          <input
+            type="checkbox"
+            checked={showInactive}
+            onChange={(e) => setShowInactive(e.target.checked)}
+          />
+          Mostrar inactivos
+        </label>
+      </div>
       <DataTable
         data={tableData}
         columns={employeeColumns}

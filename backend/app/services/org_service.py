@@ -260,5 +260,11 @@ def employee_ids_in_scope(
 
     stmt = select(Employee.id).where(Employee.company_id.in_(company_ids))  # type: ignore[attr-defined]
     if dept_ids is not None:
-        stmt = stmt.where(Employee.department_id.in_(dept_ids))  # type: ignore[attr-defined]
+        from sqlalchemy import or_
+        stmt = stmt.where(
+            or_(
+                Employee.department_id.in_(dept_ids),  # type: ignore[attr-defined]
+                Employee.department_id.is_(None),  # type: ignore[attr-defined]
+            )
+        )
     return list(session.exec(stmt).all())

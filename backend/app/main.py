@@ -235,16 +235,86 @@ async def _reminder_scheduler() -> None:
         await asyncio.sleep(300)  # cada 5 minutos
 
 
+async def _pending_cleanup_scheduler() -> None:
+    """Limpia procesos pendientes de WhatsApp expirados (3 min) cada 60 segundos."""
+    from datetime import datetime, timedelta, timezone
+    from sqlmodel import Session, select
+    from app.models.project import ClockPendingFichaje
+    from app.models.clock_settings import InboundPendingUpload
+    from app.models.models import Employee
+    from app.models.tenant import Tenant as _Tenant
+    from app.services.gowa_service import GoWAService
+    from app.services.clock_pending_service import clear_pending as _clear_clock_pending
+    from app.services.inbound_pending_service import clear_pending_upload
+
+    await asyncio.sleep(30)  # espera inicial
+    while True:
+        try:
+            with Session(engine) as session:
+                cutoff = datetime.now(timezone.utc) - timedelta(minutes=3)
+                # Buscar pendientes de fichaje expirados
+                expired = session.exec(
+                    select(ClockPendingFichaje).where(
+                        ClockPendingFichaje.created_at < cutoff.replace(tzinfo=None)
+                    )
+                ).all()
+                for p in expired:
+                    try:
+                        employee = session.get(Employee, p.employee_id)
+                        if not employee or not employee.is_active:
+                            _clear_clock_pending(session, p.employee_id)
+                            continue
+                        _clear_clock_pending(session, p.employee_id)
+                        try:
+                            gowa = GoWAService(session)
+                            gowa.send_text_sync(
+                                employee.phone,
+                                "⏰ Tu solicitud pendiente se ha cerrado por inactividad (más de 3 min). ¿Necesitas algo más?",
+                            )
+                        except Exception:
+                            pass
+                    except Exception:
+                        _clear_clock_pending(session, p.employee_id)
+                # Buscar uploads pendientes expirados
+                expired_uploads = session.exec(
+                    select(InboundPendingUpload).where(
+                        InboundPendingUpload.created_at < cutoff.replace(tzinfo=None)
+                    )
+                ).all()
+                for up in expired_uploads:
+                    employee = session.get(Employee, up.employee_id)
+                    clear_pending_upload(session, up.employee_id)
+                    if employee and employee.is_active:
+                        try:
+                            gowa = GoWAService(session)
+                            gowa.send_text_sync(
+                                employee.phone,
+                                "⏰ La subida de documento pendiente se ha cerrado por inactividad.",
+                            )
+                        except Exception:
+                            pass
+                session.commit()
+        except Exception as exc:
+            print(f"[pending-cleanup] error: {exc}")
+        await asyncio.sleep(60)  # cada minuto
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     create_db_and_tables()
     _run_startup_migrations()
     task = asyncio.create_task(_reminder_scheduler())
+    cleanup_task = asyncio.create_task(_pending_cleanup_scheduler())
     yield
     task.cancel()
+    cleanup_task.cancel()
     try:
         await task
+    except asyncio.CancelledError:
+        pass
+    try:
+        await cleanup_task
     except asyncio.CancelledError:
         pass
 

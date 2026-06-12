@@ -173,6 +173,39 @@ class WebhookService:
             except Exception:
                 pass
 
+        # ── Timeout / cancelación de procesos pendientes (antes del legal check) ─
+        message = payload.resolve_message()
+        if message and message.is_text and message.plain_text:
+            pending = get_pending(self._session, employee.id)
+            if pending:
+                from datetime import datetime, timedelta, timezone
+                text = message.plain_text
+                timeout = timedelta(minutes=3)
+                created = pending.created_at
+                if created:
+                    created_aware = created.replace(tzinfo=timezone.utc) if created.tzinfo is None else created
+                else:
+                    created_aware = datetime.now(timezone.utc) - timeout - timedelta(seconds=1)
+                expired = datetime.now(timezone.utc) - created_aware > timeout
+
+                cancelled = is_negative_reply(text) or text.strip().lower() in (
+                    "cancelar", "cancela", "cancel", "anular", "anula", "salir", "terminar", "dejar",
+                )
+
+                if expired or cancelled:
+                    reason = "por inactividad" if expired else "a petición tuya"
+                    clear_pending(self._session, employee.id)
+                    from app.services.inbound_pending_service import clear_pending_upload
+                    clear_pending_upload(self._session, employee.id)
+                    self._session.commit()
+
+                    reply = f"⏰ He cerrado la solicitud pendiente {reason}. ¿Necesitas algo más?"
+                    try:
+                        await self._gowa.send_text(phone, reply)
+                    except Exception:
+                        pass
+                    return {"ok": True, "action": "pending_cancelled", "reason": reason}
+
         # ── Legal check ──────────────────────────────────────────────────────────
         try:
             from app.services.legal_service import create_whatsapp_token, employee_legal_status
@@ -748,6 +781,59 @@ class WebhookService:
         text: str,
         message_id: str | None,
     ) -> dict:
+        # ── Timeout / cancelación de procesos pendientes ──────────────────────
+        pending = get_pending(self._session, employee.id)
+        if pending:
+            from datetime import datetime, timedelta, timezone
+            timeout = timedelta(minutes=3)
+            if pending.created_at:
+                # Convertir naive a aware (asumimos UTC)
+                created = pending.created_at.replace(tzinfo=timezone.utc) if pending.created_at.tzinfo is None else pending.created_at
+            else:
+                created = datetime.now(timezone.utc) - timeout - timedelta(seconds=1)
+            expired = datetime.now(timezone.utc) - created > timeout
+
+            # Cancelación explícita por palabra clave
+            cancelled = is_negative_reply(text) or text.strip().lower() in (
+                "cancelar", "cancela", "cancel", "anular", "anula", "salir", "terminar", "dejar",
+            )
+
+            if expired or cancelled:
+                reason = "por inactividad" if expired else "a petición tuya"
+                clear_pending(self._session, employee.id)
+                # También limpiar uploads pendientes
+                from app.services.inbound_pending_service import clear_pending_upload
+                clear_pending_upload(self._session, employee.id)
+                self._session.commit()
+
+                reply = f"⏰ He cerrado la solicitud pendiente {reason}. ¿Necesitas algo más?"
+                try:
+                    await self._gowa.send_text(phone, reply)
+                except Exception:
+                    pass
+
+                # Si fue cancelación explícita (no timeout), procesar el nuevo texto
+                if cancelled and not expired:
+                    # Procesar el texto como nueva intención
+                    self._ollama.profile_key = profile_key_for_employee(employee.role)
+                    intent_data = await self._ollama.extract_intent(
+                        text,
+                        employee=employee,
+                        tenant=self._tenant,
+                        clock_settings=self._settings,
+                    )
+                    append_message(
+                        self._session,
+                        tenant_id=self._tenant_id,
+                        employee_id=employee.id,
+                        role="user",
+                        content=text,
+                    )
+                    self._session.flush()
+                    return await self._handle_stage(employee, phone, intent_data, text, message_id)
+
+                return {"ok": True, "action": "pending_cancelled", "reason": reason}
+
         # 0. Comando debug: "${prompt}" -> devuelve el prompt COMPLETO (system + historial) que se envía a la IA
         if text.strip() == "${prompt}":
             import json

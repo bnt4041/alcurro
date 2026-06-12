@@ -606,5 +606,94 @@ def delete_employee(
     row = get_or_404(session, Employee, employee_id)
     if row.id not in _scope_ids(ctx, session, user):
         raise HTTPException(status_code=404, detail="Empleado no encontrado")
+
+    # Verificar que no tenga registros que impidan el borrado
+    from app.models.models import ClockIn, WorkBreak, LeaveRequest
+    from app.models.documents import DocumentDelivery
+    from app.models.signature import SignatureSigner
+    from app.models.incident import Incident
+
+    blockers: list[str] = []
+
+    if session.exec(
+        select(ClockIn).where(ClockIn.employee_id == employee_id).limit(1)
+    ).first():
+        blockers.append("fichajes")
+    if session.exec(
+        select(WorkBreak).where(WorkBreak.employee_id == employee_id).limit(1)
+    ).first():
+        blockers.append("paradas")
+    if session.exec(
+        select(LeaveRequest).where(LeaveRequest.employee_id == employee_id).limit(1)
+    ).first():
+        blockers.append("permisos/vacaciones")
+    if session.exec(
+        select(DocumentDelivery).where(DocumentDelivery.employee_id == employee_id).limit(1)
+    ).first():
+        blockers.append("documentos")
+    if session.exec(
+        select(SignatureSigner).where(SignatureSigner.employee_id == employee_id).limit(1)
+    ).first():
+        blockers.append("firmas")
+    if session.exec(
+        select(Incident).where(Incident.employee_id == employee_id).limit(1)
+    ).first():
+        blockers.append("incidencias")
+
+    if blockers:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"No se puede eliminar: tiene {', '.join(blockers)}. "
+                f"Desactívalo como alternativa."
+            ),
+        )
+
+    # Borrado definitivo: limpiar tablas auxiliares y luego el empleado
+    from app.models.rbac import EmployeeGroup
+    from app.models.clock_settings import EmployeeInboundDocument, InboundPendingUpload
+    from app.models.legal import LegalAcceptance, LegalToken
+    from app.models.models import EmployeeLeaveBalance
+    from app.models.notification import Notification, NotificationPreference
+    from app.models.project import ClockPendingFichaje
+    from app.models.ai import AiWhatsappMessage
+    from app.models.password_reset import PasswordResetToken
+    from app.models.developer import ApiKey
+
+    # Null out supervisor references
+    for emp in session.exec(
+        select(Employee).where(Employee.supervisor_id == employee_id)
+    ).all():
+        emp.supervisor_id = None
+        session.add(emp)
+
+    # Null out api keys created by this employee
+    for key in session.exec(
+        select(ApiKey).where(ApiKey.created_by_id == employee_id)
+    ).all():
+        key.created_by_id = None
+        session.add(key)
+
+    ancillary = [
+        (EmployeeGroup, EmployeeGroup.employee_id),
+        (EmployeeInboundDocument, EmployeeInboundDocument.employee_id),
+        (InboundPendingUpload, InboundPendingUpload.employee_id),
+        (EmployeeLeaveBalance, EmployeeLeaveBalance.employee_id),
+        (LegalAcceptance, LegalAcceptance.employee_id),
+        (LegalToken, LegalToken.employee_id),
+        (Notification, Notification.employee_id),
+        (NotificationPreference, NotificationPreference.employee_id),
+        (PasswordResetToken, PasswordResetToken.employee_id),
+        (ClockPendingFichaje, ClockPendingFichaje.employee_id),
+        (AiWhatsappMessage, AiWhatsappMessage.employee_id),
+    ]
+    # Importar ShiftAssignment dentro del bloque para evitar errores de tipado
+    from app.models.models import ShiftAssignment
+    ancillary.append((ShiftAssignment, ShiftAssignment.employee_id))  # type: ignore[arg-type]
+
+    for model, col in ancillary:
+        for rec in session.exec(select(model).where(col == employee_id)).all():  # type: ignore[arg-type]
+            session.delete(rec)
+
     session.delete(row)
     session.commit()
