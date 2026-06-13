@@ -18,6 +18,11 @@ from app.services.clock_incident_hook import (
     should_notify_whatsapp,
     whatsapp_message_for_incident,
 )
+from app.services.incident_service import (
+    get_pending_justification_incidents,
+    submit_employee_justification,
+    add_note,
+)
 from app.services.clock_service import ClockService
 from app.services.clock_settings_service import get_or_create_settings
 from app.services.daily_summary_service import build_daily_summary
@@ -79,6 +84,23 @@ _RE_SKIP_SUMMARY = _re.compile(
     r"^\s*(sin\s+resumen|–|—|-+|nada|no|skip|omitir|sin\s+novedad|sin\s+novedades|paso|ok|vale|ninguna?)\s*$",
     _re.IGNORECASE,
 )
+_RE_JUSTIFICAR = _re.compile(
+    r"^\s*justific[ao]r?\s*[:\-]?\s*",
+    _re.IGNORECASE,
+)
+
+
+def _extract_justification_text(text: str) -> str | None:
+    """Devuelve el texto de justificación si el mensaje empieza por «justificar».
+    Si el mensaje es sólo «justificar» (sin texto), devuelve cadena vacía.
+    Devuelve None si el mensaje no es una justificación.
+    """
+    stripped = text.strip()
+    if not _RE_JUSTIFICAR.match(stripped):
+        return None
+    body = _RE_JUSTIFICAR.sub("", stripped).strip()
+    return body  # "" si solo dijo "justificar"
+
 
 def _extract_work_summary(text: str) -> str | None:
     """Extrae el texto libre tras el verbo de salida como resumen del día."""
@@ -180,7 +202,8 @@ class WebhookService:
             if pending:
                 from datetime import datetime, timedelta, timezone
                 text = message.plain_text
-                timeout = timedelta(minutes=3)
+                _is_justif = (pending.pending_meta or {}).get("awaiting_incident_justification")
+                timeout = timedelta(minutes=60) if _is_justif else timedelta(minutes=3)
                 created = pending.created_at
                 if created:
                     created_aware = created.replace(tzinfo=timezone.utc) if created.tzinfo is None else created
@@ -785,7 +808,9 @@ class WebhookService:
         pending = get_pending(self._session, employee.id)
         if pending:
             from datetime import datetime, timedelta, timezone
-            timeout = timedelta(minutes=3)
+            # Justificación de incidencia: timeout de 60 min en lugar de 3
+            is_justification_pending = (pending.pending_meta or {}).get("awaiting_incident_justification")
+            timeout = timedelta(minutes=60) if is_justification_pending else timedelta(minutes=3)
             if pending.created_at:
                 # Convertir naive a aware (asumimos UTC)
                 created = pending.created_at.replace(tzinfo=timezone.utc) if pending.created_at.tzinfo is None else pending.created_at
@@ -910,6 +935,16 @@ class WebhookService:
         if upload_pending:
             return await self._handle_inbound_document_pick(employee, phone, text)
 
+        # 1b. Pendiente de justificación por WhatsApp (paso 2: el empleado escribe el texto)
+        pending = get_pending(self._session, employee.id)
+        if pending and (pending.pending_meta or {}).get("awaiting_incident_justification"):
+            return await self._complete_whatsapp_justification(employee, phone, text, pending)
+
+        # 1c. Detección de "justificar [texto]" — sin necesidad de estado previo
+        _jtext = _extract_justification_text(text)
+        if _jtext is not None:
+            return await self._handle_whatsapp_justification(employee, phone, _jtext)
+
         # 2. Pendiente de resumen de trabajo al fichar salida
         pending = get_pending(self._session, employee.id)
         if pending and (pending.pending_meta or {}).get("awaiting_summary"):
@@ -948,6 +983,172 @@ class WebhookService:
         self._session.flush()
 
         return await self._handle_stage(employee, phone, intent_data, text, message_id)
+
+    async def _handle_whatsapp_justification(
+        self,
+        employee: Employee,
+        phone: str,
+        justification_text: str,
+    ) -> dict:
+        """Gestiona el flujo de justificación de incidencia desde WhatsApp."""
+        incidents = get_pending_justification_incidents(self._session, employee.id)
+
+        if not incidents:
+            reply = "No tienes incidencias pendientes de justificación en este momento."
+            try:
+                await self._gowa.send_text(phone, reply)
+            except Exception:
+                pass
+            return {"ok": True, "action": "incident_justification_none"}
+
+        # Si no hay texto aún, preguntar cuál es la justificación
+        if not justification_text:
+            if len(incidents) == 1:
+                inc = incidents[0]
+                # Guardar pending state: awaiting_incident_justification
+                set_pending(
+                    self._session,
+                    employee_id=employee.id,
+                    pending_meta={
+                        "awaiting_incident_justification": True,
+                        "incident_id": str(inc.id),
+                    },
+                )
+                self._session.commit()
+                reply = (
+                    f"📝 Incidencia: *{inc.title}*\n"
+                    f"Escribe tu justificación y te la registraré."
+                )
+            else:
+                lines = ["Tienes varias incidencias pendientes. Escribe el número y tu justificación:"]
+                for i, inc in enumerate(incidents, 1):
+                    fecha = inc.incident_date.strftime("%d/%m/%Y") if inc.incident_date else "—"
+                    lines.append(f"*{i}.* {inc.title} ({fecha})")
+                lines.append("")
+                lines.append("Ejemplo: _justificar 1: Llegué tarde por un retraso del metro_")
+                reply = "\n".join(lines)
+            try:
+                await self._gowa.send_text(phone, reply)
+            except Exception:
+                pass
+            return {"ok": True, "action": "incident_justification_asked"}
+
+        # Detectar si viene con número de selección: "1: [texto]" o "1 [texto]"
+        _num_match = _re.match(r"^(\d+)\s*[:\-]?\s*(.+)$", justification_text, _re.DOTALL)
+        if _num_match and len(incidents) > 1:
+            idx = int(_num_match.group(1)) - 1
+            if 0 <= idx < len(incidents):
+                selected_incident = incidents[idx]
+                justification_text = _num_match.group(2).strip()
+            else:
+                reply = f"Número fuera de rango. Tienes {len(incidents)} incidencias. Indica 1–{len(incidents)}."
+                try:
+                    await self._gowa.send_text(phone, reply)
+                except Exception:
+                    pass
+                return {"ok": True, "action": "incident_justification_bad_index"}
+        else:
+            # Una sola incidencia o texto sin número: usar la más reciente
+            selected_incident = incidents[0]
+            # Si hay varias y no especificó número, avisar que se usó la primera
+            if len(incidents) > 1:
+                justification_text = justification_text.lstrip("0123456789: -")
+
+        if len(justification_text) < 3:
+            reply = "La justificación es demasiado corta. Escribe «justificar» seguido de tu explicación."
+            try:
+                await self._gowa.send_text(phone, reply)
+            except Exception:
+                pass
+            return {"ok": True, "action": "incident_justification_too_short"}
+
+        submit_employee_justification(self._session, selected_incident.public_token, justification_text)
+        add_note(
+            self._session,
+            incident_id=selected_incident.id,
+            content=f"📱 Justificación recibida por WhatsApp: {justification_text[:500]}",
+            author_name="Sistema",
+        )
+        self._session.commit()
+
+        reply = (
+            f"✅ Justificación registrada para «{selected_incident.title}».\n"
+            f"RRHH la revisará y resolverá la incidencia. Gracias."
+        )
+        try:
+            await self._gowa.send_text(phone, reply)
+        except Exception:
+            pass
+        return {"ok": True, "action": "incident_justified_whatsapp", "incident_id": str(selected_incident.id)}
+
+    async def _complete_whatsapp_justification(
+        self,
+        employee: Employee,
+        phone: str,
+        text: str,
+        pending,
+    ) -> dict:
+        """Paso 2 del flujo de justificación: el empleado escribe el texto después de que el sistema lo pidió."""
+        if is_negative_reply(text) or text.strip().lower() in ("cancelar", "no", "nada"):
+            from app.services.clock_pending_service import clear_pending as _clear
+            _clear(self._session, employee.id)
+            self._session.commit()
+            reply = "De acuerdo, justificación cancelada."
+            try:
+                await self._gowa.send_text(phone, reply)
+            except Exception:
+                pass
+            return {"ok": True, "action": "incident_justification_cancelled"}
+
+        if len(text.strip()) < 3:
+            reply = "La justificación es demasiado corta. Escribe tu explicación o «cancelar» para salir."
+            try:
+                await self._gowa.send_text(phone, reply)
+            except Exception:
+                pass
+            return {"ok": True, "action": "incident_justification_too_short"}
+
+        from uuid import UUID as _UUID
+        incident_id_str = (pending.pending_meta or {}).get("incident_id")
+        from app.services.clock_pending_service import clear_pending as _clear
+        _clear(self._session, employee.id)
+
+        if not incident_id_str:
+            reply = "No encontré la incidencia asociada. Intenta de nuevo con «justificar [texto]»."
+            try:
+                await self._gowa.send_text(phone, reply)
+            except Exception:
+                pass
+            return {"ok": True, "action": "incident_justification_missing"}
+
+        from app.models.incident import Incident as _Incident
+        inc = self._session.get(_Incident, _UUID(incident_id_str))
+        if not inc or inc.employee_id != employee.id:
+            reply = "No encontré la incidencia. Intenta de nuevo."
+            try:
+                await self._gowa.send_text(phone, reply)
+            except Exception:
+                pass
+            return {"ok": True, "action": "incident_justification_not_found"}
+
+        submit_employee_justification(self._session, inc.public_token, text.strip())
+        add_note(
+            self._session,
+            incident_id=inc.id,
+            content=f"📱 Justificación recibida por WhatsApp: {text.strip()[:500]}",
+            author_name="Sistema",
+        )
+        self._session.commit()
+
+        reply = (
+            f"✅ Justificación registrada para «{inc.title}».\n"
+            f"RRHH la revisará y resolverá la incidencia. Gracias."
+        )
+        try:
+            await self._gowa.send_text(phone, reply)
+        except Exception:
+            pass
+        return {"ok": True, "action": "incident_justified_whatsapp", "incident_id": str(inc.id)}
 
     async def _handle_stage(
         self,

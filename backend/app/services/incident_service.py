@@ -28,7 +28,7 @@ from app.schemas.incident import (
     IncidentAutoRuleUpdate,
     IncidentRead,
 )
-from app.services.work_schedule import earliest_work_start, is_work_day
+from app.services.work_schedule import earliest_work_start, is_work_day, is_within_working_hours
 
 
 def get_or_create_rules(session: Session, tenant_id: UUID) -> IncidentAutoRule:
@@ -183,18 +183,32 @@ def _schedule_whatsapp_notify(session: Session, incident: Incident) -> None:
 
 
 def build_whatsapp_incident_message(session: Session, incident: Incident) -> str:
-    url = _justify_url(incident.public_token)
     lines = [
-        f"⚠️ Incidencia: {incident.title}",
-        incident.description or "",
+        f"⚠️ *Incidencia: {incident.title}*",
     ]
-    if url:
-        lines.append("")
-        lines.append(f"Puedes justificarla aquí: {url}")
+    if incident.description:
+        lines.append(incident.description)
+    lines.append("")
+    if incident.public_token:
+        lines.append("Responde *justificar* seguido de tu explicación para resolverla. Ejemplo:")
+        lines.append("_justificar Llegué tarde por un retraso del metro_")
     else:
-        lines.append("")
         lines.append("Contacta con RRHH para más información.")
     return "\n".join(lines).strip()
+
+
+def get_pending_justification_incidents(
+    session: Session, employee_id: UUID
+) -> list[Incident]:
+    """Devuelve incidencias con estado pending_justification del empleado, ordenadas por fecha."""
+    return list(
+        session.exec(
+            select(Incident).where(
+                Incident.employee_id == employee_id,
+                Incident.status == "pending_justification",
+            ).order_by(Incident.created_at)  # type: ignore[attr-defined]
+        ).all()
+    )
 
 
 def check_late_clock_in(
@@ -238,6 +252,131 @@ def check_late_clock_in(
         original_data=_clock_snapshot(clock),
         require_justification=rules.late_entrada_require_justification,
         notify_whatsapp=rules.late_entrada_notify_whatsapp,
+    )
+
+
+def _has_approved_leave(session: Session, employee_id: UUID, on_date: date) -> bool:
+    """True si el empleado tiene permiso aprobado que cubre on_date."""
+    from app.models.models import LeaveRequest, LeaveStatus
+
+    leave = session.exec(
+        select(LeaveRequest).where(
+            LeaveRequest.employee_id == employee_id,
+            LeaveRequest.status == LeaveStatus.APPROVED,
+            LeaveRequest.start_date <= on_date,
+            LeaveRequest.end_date >= on_date,
+        )
+    ).first()
+    return leave is not None
+
+
+def check_missing_clock_in(
+    session: Session,
+    tenant_id: UUID,
+    employee: Employee,
+    today: date,
+) -> Incident | None:
+    """Crea incidencia si el empleado no ha fichado entrada X horas tras inicio de jornada."""
+    rules = get_or_create_rules(session, tenant_id)
+    if not rules.missing_clock_in_enabled:
+        return None
+    if not is_work_day(employee, today):
+        return None
+    if _has_approved_leave(session, employee.id, today):
+        return None
+    expected = earliest_work_start(employee, today)
+    if not expected:
+        return None
+    now_local = _to_spain(datetime.now(timezone.utc)).replace(tzinfo=None)
+    threshold = datetime.combine(today, expected) + timedelta(hours=rules.missing_clock_in_hours)
+    if now_local < threshold:
+        return None
+    has_clock = session.exec(
+        select(ClockIn).where(
+            ClockIn.employee_id == employee.id,
+            ClockIn.entrada_at >= datetime.combine(today, time.min),
+        )
+    ).first()
+    if has_clock:
+        return None
+    existing = session.exec(
+        select(Incident).where(
+            Incident.employee_id == employee.id,
+            Incident.incident_date == today,
+            Incident.incident_type == "missing_clock_in",
+        )
+    ).first()
+    if existing:
+        return None
+    return create_incident(
+        session,
+        tenant_id=tenant_id,
+        employee_id=employee.id,
+        category="fichaje",
+        incident_type="missing_clock_in",
+        title=f"Sin entrada registrada ({expected.strftime('%H:%M')})",
+        description=(
+            f"No se ha registrado entrada. "
+            f"Horario previsto desde las {expected.strftime('%H:%M')}."
+        ),
+        source="auto",
+        incident_date=today,
+        original_data={"expected_start_time": expected.isoformat()},
+        require_justification=rules.missing_clock_in_require_justification,
+        notify_whatsapp=rules.missing_clock_in_notify_whatsapp,
+    )
+
+
+def check_missing_clock_out(
+    session: Session,
+    tenant_id: UUID,
+    employee: Employee,
+) -> Incident | None:
+    """Crea incidencia si hay fichaje abierto (sin salida) más de X horas."""
+    rules = get_or_create_rules(session, tenant_id)
+    if not rules.missing_clock_out_enabled:
+        return None
+    now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+    cutoff = now_utc - timedelta(hours=rules.missing_clock_out_hours)
+    open_clock = session.exec(
+        select(ClockIn).where(
+            ClockIn.employee_id == employee.id,
+            ClockIn.salida_at == None,  # noqa: E711
+            ClockIn.entrada_at <= cutoff,
+        )
+    ).first()
+    if not open_clock:
+        return None
+    clock_date = open_clock.entrada_at.date()
+    if _has_approved_leave(session, employee.id, clock_date):
+        return None
+    existing = session.exec(
+        select(Incident).where(
+            Incident.clock_in_id == open_clock.id,
+            Incident.incident_type == "missing_clock_out",
+        )
+    ).first()
+    if existing:
+        return None
+    hours_open = int((now_utc - open_clock.entrada_at).total_seconds() // 3600)
+    entrada_local = _to_spain(open_clock.entrada_at.replace(tzinfo=timezone.utc))
+    return create_incident(
+        session,
+        tenant_id=tenant_id,
+        employee_id=employee.id,
+        category="fichaje",
+        incident_type="missing_clock_out",
+        title=f"Fichaje sin cerrar ({hours_open} h)",
+        description=(
+            f"Fichaje de entrada abierto desde las {entrada_local.strftime('%H:%M')} "
+            f"del {clock_date.strftime('%d/%m/%Y')} sin registrar salida."
+        ),
+        source="auto",
+        incident_date=clock_date,
+        clock_in_id=open_clock.id,
+        original_data=_clock_snapshot(open_clock),
+        require_justification=rules.missing_clock_out_require_justification,
+        notify_whatsapp=rules.missing_clock_out_notify_whatsapp,
     )
 
 

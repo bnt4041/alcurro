@@ -78,11 +78,17 @@ class SimulatePaymentResponse(BaseModel):
     simulated: bool = True
 
 
+class PublicLsConfig(BaseModel):
+    enabled: bool
+    store_id: str | None
+
+
 class PublicSignupResponse(BaseModel):
     tenant_id: UUID
     tenant_slug: str
     company_name: str
     checkout_url: str | None
     stripe_enabled: bool
+    ls_enabled: bool = False
     simulation_mode: bool = False
     admin_login_hint: str

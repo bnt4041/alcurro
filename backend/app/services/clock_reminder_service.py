@@ -1,4 +1,4 @@
-"""Recordatorios de fichaje por WhatsApp (entrada y salida)."""
+"""Recordatorios de fichaje e incidencias por WhatsApp (entrada, salida, incidencias)."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 
 from sqlmodel import Session, select
 
+from app.models.incident import Incident
 from app.models.models import ClockIn, Employee
 from app.models.tenant import Company
 from app.schemas.clock_settings import ClockReminderRunResult
@@ -91,6 +92,81 @@ async def run_clock_reminders(session: Session, tenant_id) -> ClockReminderRunRe
 
     session.commit()
     return result
+
+
+async def run_incident_reminders(session: Session, tenant_id) -> int:
+    """Envía recordatorio por WA a empleados con incidencias pendientes de justificación.
+
+    Usa ClockSettings.incident_reminder_enabled y incident_reminder_minutes.
+    Solo envía una vez por empleado por día. Solo durante horas laborales.
+    """
+    from uuid import UUID
+
+    tid = tenant_id if isinstance(tenant_id, UUID) else UUID(str(tenant_id))
+    settings = get_or_create_settings(session, tid)
+    if not settings.incident_reminder_enabled or not settings.incident_reminder_minutes:
+        return 0
+
+    now = _now_local()
+    today = now.date()
+    gowa = GoWAService(session)
+    sent = 0
+
+    company_ids = [
+        c.id
+        for c in session.exec(select(Company).where(Company.tenant_id == tid)).all()
+    ]
+    if not company_ids:
+        return 0
+
+    employees = session.exec(
+        select(Employee).where(
+            Employee.company_id.in_(company_ids),  # type: ignore[attr-defined]
+            Employee.is_active == True,  # noqa: E712
+        )
+    ).all()
+
+    for emp in employees:
+        if not emp.phone:
+            continue
+        if emp.last_incident_reminder_at and emp.last_incident_reminder_at.date() == today:
+            continue
+
+        pending = session.exec(
+            select(Incident).where(
+                Incident.employee_id == emp.id,
+                Incident.status == "pending_justification",
+            )
+        ).all()
+        if not pending:
+            continue
+
+        # Solo enviar durante jornada laboral del empleado
+        if not is_work_day(emp, today):
+            continue
+        slots = slots_for_day(emp, today)
+        if slots:
+            work_start = datetime.combine(today, min(s[0] for s in slots))
+            work_end = datetime.combine(today, max(s[1] for s in slots))
+            if now < work_start or now > work_end:
+                continue
+
+        count = len(pending)
+        noun = "incidencia" if count == 1 else "incidencias"
+        msg = (
+            f"Hola {emp.full_name.split()[0]}, tienes {count} {noun} pendiente{'s' if count > 1 else ''} "
+            f"de justificación. Por favor, accede al enlace que te enviamos para gestionarla{'s' if count > 1 else ''}."
+        )
+        try:
+            await gowa.send_text(emp.phone, msg)
+            emp.last_incident_reminder_at = datetime.utcnow()
+            session.add(emp)
+            sent += 1
+        except Exception:
+            pass
+
+    session.commit()
+    return sent
 
 
 async def _check_entry_reminder(

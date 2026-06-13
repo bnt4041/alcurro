@@ -178,6 +178,7 @@ class TenantAccountBillingRead(BaseModel):
     invoices: list[InvoiceRead]
     active_users: int = 0
     max_users: int | None = None
+    customer_portal_url: str | None = None
 
 
 class TenantListItemRead(BaseModel):

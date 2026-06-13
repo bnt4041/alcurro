@@ -211,6 +211,27 @@ def _run_startup_migrations() -> None:
     except Exception as exc:
         print(f"migrate_leave_balance_v1: {exc}")
 
+    try:
+        from scripts.migrate_incidents_v5 import main as migrate_incidents_v5
+
+        migrate_incidents_v5()
+    except Exception as exc:
+        print(f"migrate_incidents_v5: {exc}")
+
+    try:
+        from scripts.migrate_lemon_squeezy_v1 import run as migrate_lemon_squeezy_v1
+
+        migrate_lemon_squeezy_v1()
+    except Exception as exc:
+        print(f"migrate_lemon_squeezy_v1: {exc}")
+
+    try:
+        from scripts.migrate_lemon_squeezy_v2 import run as migrate_lemon_squeezy_v2
+
+        migrate_lemon_squeezy_v2()
+    except Exception as exc:
+        print(f"migrate_lemon_squeezy_v2: {exc}")
+
 
 async def _reminder_scheduler() -> None:
     """Ejecuta recordatorios de fichaje cada 5 minutos para todos los tenants activos."""
@@ -233,6 +254,91 @@ async def _reminder_scheduler() -> None:
         except Exception as exc:
             print(f"[reminders] loop error: {exc}")
         await asyncio.sleep(300)  # cada 5 minutos
+
+
+async def _omission_incident_scheduler() -> None:
+    """Detecta omisión de fichaje (entrada y salida) y envía avisos cada 15 min."""
+    from sqlmodel import Session, select
+    from app.models.models import Employee
+    from app.models.tenant import Company, Tenant
+    from app.services.incident_service import (
+        build_whatsapp_incident_message,
+        check_missing_clock_in,
+        check_missing_clock_out,
+        get_or_create_rules,
+    )
+    from app.services.gowa_service import GoWAService
+    from app.services.clock_reminder_service import run_incident_reminders
+    from zoneinfo import ZoneInfo
+
+    _SPAIN = ZoneInfo("Europe/Madrid")
+
+    await asyncio.sleep(90)  # espera inicial escalonada
+    while True:
+        try:
+            with Session(engine) as session:
+                tenants = session.exec(
+                    select(Tenant).where(Tenant.is_active == True)  # noqa: E712
+                ).all()
+                for tenant in tenants:
+                    try:
+                        rules = get_or_create_rules(session, tenant.id)
+                        has_missing_in = rules.missing_clock_in_enabled
+                        has_missing_out = rules.missing_clock_out_enabled
+                        if not has_missing_in and not has_missing_out:
+                            continue
+
+                        now_local = datetime.now(_SPAIN).replace(tzinfo=None)
+                        today = now_local.date()
+                        gowa = GoWAService(session)
+
+                        company_ids = [
+                            c.id for c in session.exec(
+                                select(Company).where(Company.tenant_id == tenant.id)
+                            ).all()
+                        ]
+                        if not company_ids:
+                            continue
+
+                        employees = session.exec(
+                            select(Employee).where(
+                                Employee.company_id.in_(company_ids),  # type: ignore[attr-defined]
+                                Employee.is_active == True,  # noqa: E712
+                            )
+                        ).all()
+
+                        for emp in employees:
+                            if not emp.phone:
+                                continue
+                            for inc in [
+                                check_missing_clock_in(session, tenant.id, emp, today) if has_missing_in else None,
+                                check_missing_clock_out(session, tenant.id, emp) if has_missing_out else None,
+                            ]:
+                                if inc is None:
+                                    continue
+                                if not inc.whatsapp_notified_at or not inc.public_token:
+                                    continue
+                                msg = build_whatsapp_incident_message(session, inc)
+                                try:
+                                    gowa.send_text_sync(emp.phone, msg)
+                                    session.add(inc)
+                                except Exception as exc:
+                                    print(f"[omission] WA {emp.full_name}: {exc}")
+
+                        session.commit()
+                    except Exception as exc:
+                        print(f"[omission] tenant {tenant.id}: {exc}")
+
+                # Recordatorio de incidencias pendientes
+                for tenant in tenants:
+                    try:
+                        await run_incident_reminders(session, tenant.id)
+                    except Exception as exc:
+                        print(f"[incident-reminder] tenant {tenant.id}: {exc}")
+
+        except Exception as exc:
+            print(f"[omission] loop error: {exc}")
+        await asyncio.sleep(900)  # cada 15 minutos
 
 
 async def _pending_cleanup_scheduler() -> None:
@@ -260,19 +366,25 @@ async def _pending_cleanup_scheduler() -> None:
                 ).all()
                 for p in expired:
                     try:
+                        # No expirar el pending de justificación de incidencia (timeout más largo: 60 min)
+                        if (p.pending_meta or {}).get("awaiting_incident_justification"):
+                            justification_cutoff = datetime.now(timezone.utc) - timedelta(minutes=60)
+                            if p.created_at and p.created_at > justification_cutoff.replace(tzinfo=None):
+                                continue
                         employee = session.get(Employee, p.employee_id)
                         if not employee or not employee.is_active:
                             _clear_clock_pending(session, p.employee_id)
                             continue
                         _clear_clock_pending(session, p.employee_id)
-                        try:
-                            gowa = GoWAService(session)
-                            gowa.send_text_sync(
-                                employee.phone,
-                                "⏰ Tu solicitud pendiente se ha cerrado por inactividad (más de 3 min). ¿Necesitas algo más?",
-                            )
-                        except Exception:
-                            pass
+                        if not (p.pending_meta or {}).get("awaiting_incident_justification"):
+                            try:
+                                gowa = GoWAService(session)
+                                gowa.send_text_sync(
+                                    employee.phone,
+                                    "⏰ Tu solicitud pendiente se ha cerrado por inactividad (más de 3 min). ¿Necesitas algo más?",
+                                )
+                            except Exception:
+                                pass
                     except Exception:
                         _clear_clock_pending(session, p.employee_id)
                 # Buscar uploads pendientes expirados
@@ -306,15 +418,21 @@ async def lifespan(_app: FastAPI):
     _run_startup_migrations()
     task = asyncio.create_task(_reminder_scheduler())
     cleanup_task = asyncio.create_task(_pending_cleanup_scheduler())
+    omission_task = asyncio.create_task(_omission_incident_scheduler())
     yield
     task.cancel()
     cleanup_task.cancel()
+    omission_task.cancel()
     try:
         await task
     except asyncio.CancelledError:
         pass
     try:
         await cleanup_task
+    except asyncio.CancelledError:
+        pass
+    try:
+        await omission_task
     except asyncio.CancelledError:
         pass
 

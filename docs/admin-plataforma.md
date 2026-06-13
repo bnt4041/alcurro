@@ -10,7 +10,7 @@ Acceso: http://localhost:5174/admin (tras login como administrador de plataforma
 | `/admin/usuarios` | Usuarios administradores de la plataforma (CRUD) |
 | `/admin/tarifas` | Catálogo de precios / planes |
 | `/admin/descuentos` | Descuentos sobre tarifas |
-| `/admin/cobros` | Historial Stripe y simulación de cobros |
+| `/admin/cobros` | Historial de cobros (Stripe + Lemon Squeezy) y simulación |
 | `/admin/whatsapp` | goWA compartido: URL API, QR, prueba de conexión |
 | `/admin/mail` | SMTP global y logs de correo |
 
@@ -39,16 +39,49 @@ Gestión del catálogo comercial usado en el registro y facturación:
 - `/api/platform/catalog/...` (planes, precios)
 - Descuentos asociados a tenants o promociones
 
-## Cobros Stripe (`/admin/cobros`)
+## Cobros (`/admin/cobros`)
+
+La plataforma admite dos proveedores de pago, configurables de forma independiente.
+
+### Lemon Squeezy (principal)
+
+Variables de entorno:
+
+```env
+LEMON_SQUEEZY_API_KEY=...          # clave API de tu cuenta LS
+LEMON_SQUEEZY_STORE_ID=...         # ID de la tienda en LS
+LEMON_SQUEEZY_WEBHOOK_SECRET=...   # secret para verificar webhook LS
+```
+
+Flujo:
+1. **Crear plan** en `/admin/tarifas` → queda sin `ls_product_id`
+2. **Sincronizar con LS** en `/admin/tarifas` → botón "Sync LS" por plan → `sync_plan_to_ls()` crea Product + variantes mensual/anual → guarda `ls_product_id`, `ls_variant_id_monthly`, `ls_variant_id_annual`
+3. **Checkout**: al registrarse un nuevo cliente, `create_checkout()` genera la URL de checkout de LS con `custom_price_cents` si hay descuento aplicado
+4. **Webhook**: `POST /api/webhooks/lemon-squeezy` (firmado con `LEMON_SQUEEZY_WEBHOOK_SECRET`)
+
+Eventos gestionados: `subscription_created`, `subscription_updated`, `subscription_cancelled`, `subscription_expired`, `subscription_payment_success`, `subscription_payment_failed`, `subscription_payment_recovered`.
+
+Tras 3 fallos de pago consecutivos (`payment_failure_count >= 3`), la cuenta se suspende automáticamente (`is_active=False`) y se notifica por email y WhatsApp al titular de la facturación.
+
+Referencia de endpoints LS:
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| `POST` | `/api/platform/ls/sync-plan/{plan_id}` | Sincronizar plan con Lemon Squeezy |
+| `GET` | `/api/platform/ls/payments` | Historial de pagos LS |
+| `POST` | `/api/webhooks/lemon-squeezy` | Webhook LS (firmado) |
+
+### Stripe (alternativo)
 
 Con `STRIPE_SIMULATION_MODE=true` (por defecto):
-
 - El registro en `/registro` pasa por pago simulado.
 - Puedes simular cobro + activación goWA para un tenant existente.
 
 Con Stripe real: configura `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` y `STRIPE_SIMULATION_MODE=false`.
 
 Webhook: `POST /api/webhooks/stripe`
+
+Ver [Stripe](stripe.md) para detalles completos.
 
 ## WhatsApp compartido (`/admin/whatsapp`)
 

@@ -24,6 +24,7 @@ from app.routers import (
     platform_billing,
     platform_catalog,
     platform_invoices,
+    platform_lemon_squeezy,
     platform_settings,
     platform_stripe,
     platform_whatsapp,
@@ -37,6 +38,7 @@ from app.routers import (
     signatures,
     signatures_public,
     stripe_webhook,
+    lemon_squeezy_webhook,
     tenants,
 )
 from app.schemas.tenant import TenantBrandingRead
@@ -47,10 +49,12 @@ api_router.include_router(public.router)
 api_router.include_router(incidents_public.router)
 api_router.include_router(signatures_public.router)
 api_router.include_router(stripe_webhook.router)
+api_router.include_router(lemon_squeezy_webhook.router)
 api_router.include_router(platform.router)
 api_router.include_router(platform_billing.router)
 api_router.include_router(platform_catalog.router)
 api_router.include_router(platform_invoices.router)
+api_router.include_router(platform_lemon_squeezy.router)
 api_router.include_router(platform_settings.router)
 api_router.include_router(platform_stripe.router)
 api_router.include_router(platform_whatsapp.router)

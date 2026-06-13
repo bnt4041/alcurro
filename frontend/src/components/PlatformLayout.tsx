@@ -9,6 +9,7 @@ const nav = [
   { to: "/admin/tarifas", label: "Tarifas", end: false },
   { to: "/admin/descuentos", label: "Descuentos", end: false },
   { to: "/admin/cobros", label: "Cobros Stripe", end: false },
+  { to: "/admin/cobros-ls", label: "Cobros LS", end: false },
   { to: "/admin/facturas", label: "Facturas", end: false },
   { to: "/admin/configuracion", label: "Configuración", end: false },
   { to: "/admin/whatsapp", label: "WhatsApp", end: false },

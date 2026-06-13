@@ -40,6 +40,7 @@ interface BillingSummaryResponse {
   invoices: InvoiceRow[];
   active_users: number;
   max_users: number | null;
+  customer_portal_url?: string | null;
 }
 
 export default function AccountPage() {
@@ -236,6 +237,21 @@ export default function AccountPage() {
         {billingSummary?.subscription?.pending_plan_id && (
           <div className="alert alert-info" style={{ marginTop: "0.75rem" }}>
             Cambio de tarifa programado para el final del período actual.
+          </div>
+        )}
+        {billingSummary?.customer_portal_url && (
+          <div style={{ marginTop: "1rem" }}>
+            <a
+              href={billingSummary.customer_portal_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn btn-secondary btn-sm"
+            >
+              Portal de cliente (Lemon Squeezy)
+            </a>
+            <p className="muted small" style={{ marginTop: "0.4rem" }}>
+              Actualiza tu método de pago, descarga facturas y gestiona tu suscripción.
+            </p>
           </div>
         )}
       </section>

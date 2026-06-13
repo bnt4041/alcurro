@@ -15,7 +15,7 @@
           ┌────────────────┼────────────────┐
           ▼                ▼                ▼
    ┌─────────────┐  ┌─────────────┐  ┌──────────────┐
-   │   BROWSER   │  │  WHATSAPP   │  │    STRIPE    │
+   │   BROWSER   │  │  WHATSAPP   │  │ LEMON SQUEEZY│
    │  React SPA  │  │  (empleado) │  │  (pagos)     │
    └──────┬──────┘  └──────┬──────┘  └──────┬───────┘
           │                │                 │
@@ -154,6 +154,7 @@ GET  /api/legal/public/token/{token}              ← legal por WhatsApp
 POST /api/legal/public/token/{token}/accept/{doc}
 POST /api/webhook/whatsapp/{slug}                 ← webhook goWA
 POST /api/webhooks/stripe                         ← webhook Stripe
+POST /api/webhooks/lemon-squeezy                  ← webhook Lemon Squeezy
                     └─────────────────────────────────────────────────────────┘
 
                     ┌── CON AUTH (JWT) ────────────────────────────────────────┐
@@ -189,6 +190,8 @@ GET/POST/PATCH/DELETE /api/platform/ai/…
 GET/PUT/POST          /api/platform/whatsapp/…
 GET/PUT/POST          /api/platform/mail/…
 GET/POST              /api/platform/stripe/…
+POST                  /api/platform/ls/sync-plan/{plan_id}
+GET                   /api/platform/ls/payments
 POST                  /api/platform/purge/{tenant_id}
                     └─────────────────────────────────────────────────────────┘
 ```
@@ -203,7 +206,7 @@ services/
 ├── FICHAJES & ASISTENCIA
 │   ├── clock_service.py ─────────── register_clock(), get_day_clock()
 │   ├── clock_settings_service.py ── get_or_create_settings(), inbound_name()
-│   ├── clock_reminder_service.py ── send_reminders()
+│   ├── clock_reminder_service.py ── run_clock_reminders(), run_incident_reminders()
 │   ├── clock_report_service.py ──── generate_day_report()
 │   ├── clock_pending_service.py ──── get_pending(), set_pending(), clear_pending()
 │   └── clock_incident_hook.py ────── trigger_incident(), should_notify_whatsapp()
@@ -215,6 +218,10 @@ services/
 │
 ├── INCIDENCIAS
 │   └── incident_service.py ──────── create_incident(), apply_clock_correction()
+│                                    check_missing_clock_in(), check_missing_clock_out()
+│                                    submit_employee_justification(), add_note()
+│                                    get_pending_justification_incidents()
+│                                    build_whatsapp_incident_message()
 │
 ├── DOCUMENTOS
 │   ├── document_service.py ──────── create_delivery(), store_upload_file()
@@ -261,11 +268,14 @@ services/
 │   ├── ai_config_service.py ─────── create_rule(), get_rules(), reorder_rules()
 │   └── ai_usage_service.py ──────── record_usage(), get_usage_stats()
 │
-├── FACTURACIÓN & STRIPE
+├── FACTURACIÓN
 │   ├── billing_service.py ───────── calculate_amount(), create_invoice()
 │   ├── billing_read.py ──────────── get_tenant_billing()
 │   ├── stripe_service.py ────────── create_payment_intent(), sync_subscription()
 │   ├── stripe_simulation.py ─────── simulate_payment()
+│   ├── lemon_squeezy_service.py ─── sync_plan_to_ls(), create_checkout()
+│   │                                handle_webhook_event(), verify_webhook_signature()
+│   ├── invoice_service.py ───────── generate_invoice_for_ls_payment()
 │   └── pricing_service.py ───────── calculate_tenant_price()
 │
 ├── RBAC & ACCESO
@@ -411,6 +421,15 @@ Empleado escribe "entrada" en WA
            │                                     RETURN
            ├─ [3] ¿Primera vez? ──Sí──▶ Mensaje bienvenida
            │
+           ├─ [1b] ¿Pending justificación activo?
+           │         → _complete_whatsapp_justification()
+           │         → submit_employee_justification()
+           │         RETURN
+           │
+           ├─ [1c] Detectar "justificar [texto]"
+           │         → _handle_whatsapp_justification()
+           │         RETURN
+           │
            ├─ [4] Clasificar intent (Ollama NLU)
            │        "entrada" → CLOCK_IN
            │
@@ -420,9 +439,45 @@ Empleado escribe "entrada" en WA
                     → GoWAService.send_text("Fichaje registrado…")
 ```
 
+### Flujo de justificación de incidencias por WhatsApp
+
+```
+_omission_incident_scheduler (cada 15 min)
+  → check_missing_clock_in() / check_missing_clock_out()
+  → Crea Incident(status="pending_justification", public_token=...)
+  → GoWAService.send_text("⚠️ Incidencia... Responde justificar ...")
+
+Empleado responde "justificar [texto]"
+  → _handle_whatsapp_justification()
+       ├─ 0 incidencias → "No tienes incidencias pendientes"
+       ├─ 1 incidencia + texto → submit_employee_justification()
+       ├─ 1 incidencia + sin texto → pending(awaiting_incident_justification=True)
+       │     Siguiente mensaje → _complete_whatsapp_justification()
+       └─ N incidencias → lista numerada
+             "justificar 2: texto" → resuelve incidencia #2
+```
+
 ---
 
-## 9. Flujo de firma electrónica
+## 9. Background schedulers (tareas periódicas)
+
+Tres tareas `asyncio` arrancadas en el `lifespan` del servidor:
+
+| Scheduler | Intervalo | Función |
+|---|---|---|
+| `_reminder_scheduler` | 5 min | Recordatorios de fichaje pendiente por WA (inicio: 60s) |
+| `_omission_incident_scheduler` | 15 min | Detecta omisión de entrada/salida → crea incidencia + WA; lanza recordatorios de incidencias pendientes (inicio: 90s) |
+| `_pending_cleanup_scheduler` | 60 seg | Limpia `ClockPendingFichaje` expirados: 3 min estándar, 60 min para `awaiting_incident_justification` |
+
+El scheduler de omisión evalúa para cada tenant activo → cada empleado activo:
+- `check_missing_clock_in()`: si no hay fichaje hoy y han pasado `missing_clock_in_hours` desde el inicio de jornada
+- `check_missing_clock_out()`: si hay un fichaje de entrada sin cerrar de más de `missing_clock_out_hours`
+
+Ambas funciones excluyen días de permiso aprobado (`LeaveRequest.APPROVED`) y deduplicamos por `(employee_id, incident_date, incident_type)` para no crear incidencias duplicadas.
+
+---
+
+## 10. Flujo de firma electrónica
 
 ```
 Admin crea sobre (SignatureEnvelope)
@@ -450,7 +505,7 @@ GET /api/signatures/{id}/certificate ← descargar certificado
 
 ---
 
-## 10. Flujo de textos legales
+## 11. Flujo de textos legales
 
 ```
 WhatsApp entrante (cualquier mensaje)
@@ -487,7 +542,7 @@ Aceptación desde la app web (LegalAcceptanceModal)
 
 ---
 
-## 11. Modelo de permisos (RBAC)
+## 12. Modelo de permisos (RBAC)
 
 ```
 ROLES (jerarquía aproximada de acceso)
@@ -519,7 +574,7 @@ EVALUACIÓN (core/permissions.py)
 
 ---
 
-## 12. Esquema de base de datos (tablas principales)
+## 13. Esquema de base de datos (tablas principales)
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -528,10 +583,13 @@ EVALUACIÓN (core/permissions.py)
 │  tenants ──┬── companies ──┬── work_centers ──┬── departments           │
 │            │               │                  └── employees              │
 │            │               └── employees                                 │
-│            ├── pricing_plans                                             │
-│            ├── subscriptions                                             │
+│            ├── pricing_plans (ls_product_id, ls_variant_id_monthly/annual)│
+│            ├── subscriptions (ls_subscription_id, payment_failure_count) │
 │            ├── billing_methods                                           │
-│            └── stripe_payments                                           │
+│            ├── stripe_payments       (pagos vía Stripe)                  │
+│            └── lemon_squeezy_payments (pagos vía Lemon Squeezy)         │
+│                                                                          │
+│  (tenants también tiene: ls_customer_id, ls_customer_portal_url)        │
 │                                                                          │
 ├─────────────────────────────────────────────────────────────────────────┤
 │  EMPLEADOS & ASISTENCIA                                                  │
@@ -541,7 +599,9 @@ EVALUACIÓN (core/permissions.py)
 │              ├── leave_requests ──── leave_types                         │
 │              ├── employee_leave_balances ── leave_types                  │
 │              ├── shift_assignments ──── shift_configurations             │
-│              └── clock_pending_fichajes                                  │
+│              └── clock_pending_fichajes (pending_meta para justificación)│
+│                                                                          │
+│  (employees también tiene: last_incident_reminder_at)                   │
 │                                                                          │
 ├─────────────────────────────────────────────────────────────────────────┤
 │  DOCUMENTOS & FIRMAS                                                     │
@@ -562,7 +622,10 @@ EVALUACIÓN (core/permissions.py)
 ├─────────────────────────────────────────────────────────────────────────┤
 │  INCIDENCIAS                                                             │
 │                                                                          │
-│  incidents ──── incident_auto_rules (motor de detección automática)     │
+│  incidents ──── incident_auto_rules                                      │
+│                   (late_entrada: grace_minutes, enabled, notify_wa, ...)  │
+│                   (missing_clock_in: hours, enabled, notify_wa, ...)     │
+│                   (missing_clock_out: hours, enabled, notify_wa, ...)    │
 │                                                                          │
 ├─────────────────────────────────────────────────────────────────────────┤
 │  IA & WHATSAPP                                                           │
@@ -586,7 +649,7 @@ EVALUACIÓN (core/permissions.py)
 
 ---
 
-## 13. Stack tecnológico completo
+## 14. Stack tecnológico completo
 
 | Capa | Tecnología | Versión |
 |---|---|---|
@@ -606,14 +669,15 @@ EVALUACIÓN (core/permissions.py)
 | PDF backend | reportlab + pypdf + Pillow | 4.2 / 5 / 10 |
 | IA local | Ollama | llama3.2 |
 | WhatsApp | goWA multidevice | latest |
-| Pagos | Stripe | 11 |
+| Pagos (alternativo) | Stripe | 11 |
+| Pagos (principal) | Lemon Squeezy | v1 API |
 | Proxy/SSL | Traefik | v2.11 |
 | Contenedores | Docker Compose | — |
 | Frontend server | Nginx | alpine |
 
 ---
 
-## 14. Infraestructura Docker
+## 15. Infraestructura Docker
 
 ```
 docker-compose.yml
@@ -646,7 +710,7 @@ Red: hrm-net (bridge)
 
 ---
 
-## 15. Persistencia y migración de datos
+## 16. Persistencia y migración de datos
 
 ### Estructura en el host
 
@@ -709,7 +773,7 @@ curl http://localhost:8000/health
 
 ---
 
-## 16. Índice de documentación
+## 17. Índice de documentación
 
 | Documento | Contenido |
 |---|---|
@@ -724,7 +788,8 @@ curl http://localhost:8000/health
 | `docs/legal.md` | Sistema de textos legales y aceptación |
 | `docs/correo-smtp.md` | Configuración de correo SMTP |
 | `docs/stripe.md` | Stripe: claves, webhook, productos, checkout, producción |
+| `docs/lemon-squeezy.md` | Lemon Squeezy: configuración, webhook, sincronización de planes |
 | `docs/api.md` | Referencia de endpoints REST |
-| `docs/AI_WHATSAPP.md` | IA y automatización WhatsApp |
+| `docs/AI_WHATSAPP.md` | IA, automatización WhatsApp e incidencias por WA |
 | `scripts/backup.sh` | Backup PostgreSQL + uploads (manual o cron) |
 | `scripts/restore.sh` | Restaurar BD desde archivo `.sql.gz` |

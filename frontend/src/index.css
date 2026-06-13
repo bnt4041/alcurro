@@ -807,11 +807,24 @@ tbody tr:nth-child(even):hover td {
 }
 
 .form-grid label {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
+  display: block;
   font-size: 0.85rem;
   color: var(--muted);
+}
+
+.form-grid label > input,
+.form-grid label > select,
+.form-grid label > textarea {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 0.35rem;
+}
+
+.form-grid label > .muted,
+.form-grid label > small {
+  display: block;
+  margin-top: 0.2rem;
 }
 
 .form-grid label.full,
@@ -882,15 +895,19 @@ tbody tr:nth-child(even):hover td {
 }
 
 .settings-grid label {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
+  display: block;
   margin-bottom: 0.75rem;
   font-size: 0.85rem;
   color: var(--muted);
 }
 
-.settings-grid input {
+.settings-grid input,
+.settings-grid select,
+.settings-grid textarea {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 0.35rem;
   padding: 0.5rem 0.65rem;
   border-radius: 8px;
   border: 1px solid var(--border);

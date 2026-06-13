@@ -132,6 +132,78 @@ Las acciones que modifican estado requieren confirmación explícita del emplead
 | `resumen_dia` | `build_employee_day_report` (fichajes + paradas) | ❌ |
 | `desconocido` | Lista de acciones permitidas para ese empleado | ❌ |
 
+## Justificación de incidencias por WhatsApp
+
+Las incidencias marcadas con `require_justification=True` (ya sean manuales o automáticas por omisión de fichaje) se pueden justificar directamente desde WhatsApp, sin necesidad de abrir un enlace web.
+
+### Palabra clave `justificar`
+
+El empleado escribe `justificar [texto]` en cualquier momento:
+
+```
+justificar Llegué tarde por un retraso en el metro
+justificar: No pude fichar la salida porque el móvil se quedó sin batería
+```
+
+La regex de detección acepta variantes: `justificar`, `justifica`, `justifícar`, con o sin dos puntos, con o sin espacio.
+
+### Flujo completo
+
+```
+Empleado → "justificar [texto]"
+         │
+         ▼
+  _extract_justification_text()   ← detecta la palabra clave
+         │
+         ├─ ¿0 incidencias pending_justification?
+         │    → "No tienes incidencias pendientes de justificación"
+         │
+         ├─ ¿1 incidencia + texto en el mensaje?
+         │    → submit_employee_justification() + add_note()
+         │    → "✅ Justificación enviada para: [título incidencia]"
+         │
+         ├─ ¿1 incidencia + sin texto?
+         │    → Guarda pending (awaiting_incident_justification=True)
+         │    → "¿Cuál es tu justificación para [título]? Responde con el texto."
+         │    → Empleado responde texto → _complete_whatsapp_justification()
+         │
+         └─ ¿N incidencias (>1)?
+              → Lista numerada de todas las incidencias
+              → "Responde: justificar 2: tu explicación"
+              → Empleado responde con número → se resuelve esa incidencia
+```
+
+### Estado pendiente de justificación
+
+Cuando el empleado escribe `justificar` sin texto y tiene una sola incidencia pendiente, se crea un registro en `clock_pending_fichajes` con:
+
+```python
+pending_meta = {"awaiting_incident_justification": True, "incident_id": "..."}
+```
+
+- **Timeout**: 60 minutos (vs. 3 min para el resto de pendientes de WA)
+- El mensaje siguiente del empleado (cualquier texto) se interpreta como la justificación
+- El cleanup scheduler respeta este timeout extendido
+
+### Notificación automática de incidencias (schedulers)
+
+El scheduler `_omission_incident_scheduler` (cada 15 min) detecta:
+- **Omisión de entrada**: empleado sin fichar N horas después de su hora de inicio (configurable, mínimo 0.5 h)
+- **Omisión de salida**: fichaje de entrada abierto hace más de N horas (configurable, mínimo 1 h)
+
+Al crear la incidencia, si `missing_clock_in_notify_whatsapp=True` (o `missing_clock_out_notify_whatsapp=True`), envía por WhatsApp:
+
+```
+⚠️ *Incidencia: Omisión de fichaje de entrada*
+
+No se ha registrado fichaje de entrada hoy a las 09:00.
+
+Responde *justificar* seguido de tu explicación para resolverla. Ejemplo:
+_justificar Llegué tarde por un retraso del metro_
+```
+
+El scheduler `_reminder_scheduler` (cada 5 min) también puede enviar recordatorios periódicos de incidencias pendientes si `incident_reminder_enabled=True` en `ClockSettings`.
+
 ### Modelo de fichaje: entrada + salida = una jornada
 
 Un **fichaje** como registro completo se compone de:
@@ -191,15 +263,19 @@ El historial ahora incluye:
 - Respuestas del asistente (confirmaciones, resultados, ayuda)
 - Estados intermedios: `pending_confirmation`, `cancelled`, `denied`
 
-## Estado pendiente (nuevo)
+## Estado pendiente
 
 | Tabla | `clock_pending_fichajes` |
 |-------|--------------------------|
-| Nuevos campos | `pending_confirmation` (bool), `pending_intent` (str) |
+| Campos de confirmación | `pending_confirmation` (bool), `pending_intent` (str) |
 | Migración | `scripts/migrate_ai_confirmation.py` |
+| Campo de justificación | `pending_meta` (JSON) — `{"awaiting_incident_justification": true, "incident_id": "..."}` |
 
 Cuando una acción requiere confirmación, se guarda en `clock_pending_fichajes` con `pending_confirmation=True`.
 Al recibir "sí" se ejecuta y se limpia; al recibir "no" se cancela.
+
+Para la justificación de incidencias, se guarda con `pending_meta.awaiting_incident_justification=True`.
+El cleanup scheduler usa timeout de 60 min para este tipo (en vez de los 3 min estándar).
 
 ## Reglas conversacionales
 
@@ -217,22 +293,28 @@ No sustituyen permisos: si la regla sugiere una acción no permitida, el modelo 
 ## Archivos principales
 
 ```
-backend/app/services/webhook_service.py       # Orquestación WhatsApp + confirmación sí/no
+backend/app/services/webhook_service.py         # Orquestación WA: fichajes, justificación, docs
 backend/app/services/whatsapp_permission_service.py
 backend/app/services/ollama_service.py
 backend/app/services/ai_conversation_service.py
-backend/app/services/ai_config_service.py     # Matriz y reglas
-backend/app/services/break_service.py         # Paradas asociadas a clock_in_id
-backend/app/services/clock_pending_service.py # Pendientes: proyecto + confirmación
-backend/app/services/whatsapp_nlu.py          # NLU + detección afirmativo/negativo
-backend/app/services/whatsapp_format.py       # Formato de mensajes WhatsApp
+backend/app/services/ai_config_service.py       # Matriz y reglas
+backend/app/services/break_service.py           # Paradas asociadas a clock_in_id
+backend/app/services/clock_pending_service.py   # Pendientes: proyecto + confirmación + justificación
+backend/app/services/incident_service.py        # check_missing_clock_in/out, submit_employee_justification
+backend/app/services/clock_reminder_service.py  # run_incident_reminders
+backend/app/services/whatsapp_nlu.py            # NLU + detección afirmativo/negativo
+backend/app/services/whatsapp_format.py         # Formato de mensajes WhatsApp
 backend/app/models/ai.py
-backend/app/models/models.py                  # WorkBreak.clock_in_id
-backend/app/models/project.py                 # ClockPendingFichaje (nuevos campos)
-backend/app/schemas/whatsapp.py               # Extracción robusta de ubicación GPS
+backend/app/models/models.py                    # WorkBreak.clock_in_id, Employee.last_incident_reminder_at
+backend/app/models/incident.py                  # IncidentAutoRule (8 nuevos campos de omisión)
+backend/app/models/project.py                   # ClockPendingFichaje (pending_meta)
+backend/app/schemas/whatsapp.py                 # Extracción robusta de ubicación GPS
 backend/app/routers/platform_ai.py
-backend/scripts/migrate_ai_confirmation.py    # Migración nuevos campos
+backend/app/main.py                             # _omission_incident_scheduler
+backend/scripts/migrate_ai_confirmation.py      # Migración confirmación sí/no
+backend/scripts/migrate_incidents_v5.py         # Migración campos omisión + last_incident_reminder_at
 frontend/src/pages/PlatformAIPage.tsx
+frontend/src/pages/ClockSettingsPage.tsx        # Config reglas omisión + recordatorio incidencias
 ```
 
 ## Configuración recomendada

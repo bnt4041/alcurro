@@ -11,7 +11,7 @@ from sqlmodel import Session, select
 
 from app.models.invoice import Invoice, InvoiceStatus
 from app.models.platform_settings import PLATFORM_SETTINGS_ID, PlatformSettings
-from app.models.billing import StripePayment
+from app.models.billing import LemonSqueezyPayment, StripePayment
 from app.models.tenant import Tenant
 
 UPLOAD_DIR = Path("/app/uploads/invoices")
@@ -113,6 +113,61 @@ def generate_invoice_for_payment(
     session.flush()
 
     # Guardar PDF
+    _save_invoice_pdf(session, invoice, settings)
+
+    if settings.auto_send_invoice_email and invoice.recipient_email:
+        _send_invoice_email_internal(session, invoice, settings, tenant)
+
+    return invoice
+
+
+def generate_invoice_for_ls_payment(
+    session: Session,
+    payment: LemonSqueezyPayment,
+    *,
+    concept: str | None = None,
+    vat_rate: int | None = None,
+) -> Invoice | None:
+    """Genera una factura interna a partir de un LemonSqueezyPayment. Idempotente."""
+    existing = session.exec(
+        select(Invoice).where(Invoice.ls_payment_id == payment.id)
+    ).first()
+    if existing:
+        return existing
+
+    if not payment.tenant_id:
+        return None
+
+    tenant = session.get(Tenant, payment.tenant_id)
+    if not tenant:
+        return None
+
+    settings = get_platform_settings(session)
+    effective_vat = vat_rate if vat_rate is not None else settings.vat_rate
+
+    total_cents = payment.amount_cents
+    base_cents = round(total_cents * 100 / (100 + effective_vat))
+    vat_cents = total_cents - base_cents
+
+    number = next_invoice_number(session, settings)
+
+    invoice = Invoice(
+        tenant_id=payment.tenant_id,
+        number=number,
+        concept=concept or payment.description or "Suscripción alcurro",
+        base_cents=base_cents,
+        vat_rate=effective_vat,
+        vat_cents=vat_cents,
+        total_cents=total_cents,
+        currency=payment.currency,
+        issue_date=date.today(),
+        status=InvoiceStatus.PAID,
+        ls_payment_id=payment.id,
+        **_snapshot_tenant(tenant),
+    )
+    session.add(invoice)
+    session.flush()
+
     _save_invoice_pdf(session, invoice, settings)
 
     if settings.auto_send_invoice_email and invoice.recipient_email:

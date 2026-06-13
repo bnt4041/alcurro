@@ -25,6 +25,12 @@ from app.services.stripe_simulation import (
     stripe_simulation_enabled,
     use_real_stripe,
 )
+from app.services.lemon_squeezy_service import (
+    create_checkout as create_ls_checkout,
+    get_ls_variant_id,
+    ls_configured,
+)
+from app.services.pricing_service import calculate_subscription_amount
 
 
 def register_tenant(session: Session, data: PublicSignupRequest) -> PublicSignupResponse:
@@ -95,8 +101,29 @@ def register_tenant(session: Session, data: PublicSignupRequest) -> PublicSignup
     base = settings.public_app_url.rstrip("/")
     checkout_url: str | None = None
     simulation = stripe_simulation_enabled()
+    ls_enabled = ls_configured()
 
-    if use_real_stripe():
+    if ls_enabled:
+        variant_id = get_ls_variant_id(plan, sub.billing_cycle)
+        if variant_id:
+            try:
+                custom_price: int | None = None
+                if discount:
+                    custom_price = calculate_subscription_amount(
+                        plan, sub.billing_cycle, discount
+                    )
+                checkout_url = create_ls_checkout(
+                    session,
+                    tenant,
+                    sub,
+                    variant_id,
+                    customer_email=data.billing_email,
+                    success_url=f"{base}/registro/ok",
+                    custom_price_cents=custom_price,
+                )
+            except Exception:
+                checkout_url = None
+    elif use_real_stripe():
         checkout_url = create_checkout_session(
             session,
             tenant,
@@ -118,6 +145,7 @@ def register_tenant(session: Session, data: PublicSignupRequest) -> PublicSignup
         company_name=tenant.name,
         checkout_url=checkout_url,
         stripe_enabled=use_real_stripe(),
-        simulation_mode=simulation and not use_real_stripe(),
+        ls_enabled=ls_enabled,
+        simulation_mode=simulation and not use_real_stripe() and not ls_enabled,
         admin_login_hint=f"Accede en {base}/acceso-cliente con cuenta «{tenant.slug}» y usuario ADM001",
     )

@@ -17,6 +17,19 @@ class IncidentAutoRule(SQLModel, table=True):
     late_entrada_grace_minutes: int = Field(default=10)
     late_entrada_notify_whatsapp: bool = Field(default=True)
     late_entrada_require_justification: bool = Field(default=True)
+
+    # Omisión de entrada: empleado no ficha en X horas tras inicio de jornada
+    missing_clock_in_enabled: bool = Field(default=False)
+    missing_clock_in_hours: float = Field(default=2.0)
+    missing_clock_in_notify_whatsapp: bool = Field(default=True)
+    missing_clock_in_require_justification: bool = Field(default=True)
+
+    # Omisión de salida: fichaje abierto más de X horas sin cerrar
+    missing_clock_out_enabled: bool = Field(default=False)
+    missing_clock_out_hours: float = Field(default=12.0)
+    missing_clock_out_notify_whatsapp: bool = Field(default=True)
+    missing_clock_out_require_justification: bool = Field(default=True)
+
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 

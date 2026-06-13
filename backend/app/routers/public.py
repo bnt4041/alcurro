@@ -5,6 +5,7 @@ from app.config import get_settings
 from app.database import get_session
 from app.models.billing import PricingPlan
 from app.schemas.public import (
+    PublicLsConfig,
     PublicPricingPlanRead,
     PublicSignupRequest,
     PublicSignupResponse,
@@ -13,6 +14,7 @@ from app.schemas.public import (
     SimulatePaymentRequest,
     SimulatePaymentResponse,
 )
+from app.services.lemon_squeezy_service import ls_configured
 from app.services.signup_service import register_tenant
 from app.services.stripe_simulation import (
     complete_simulated_checkout,
@@ -52,7 +54,9 @@ def public_stripe_config() -> PublicStripeConfig:
     settings = get_settings()
     real = use_real_stripe()
     sim = stripe_simulation_enabled() and not real
-    if real:
+    if ls_configured():
+        mode = "lemon_squeezy"
+    elif real:
         mode = "stripe"
     elif sim:
         mode = "simulation"
@@ -101,6 +105,15 @@ def confirm_simulated_payment(
         return SimulatePaymentResponse(**result)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/ls-config", response_model=PublicLsConfig)
+def public_ls_config() -> PublicLsConfig:
+    settings = get_settings()
+    return PublicLsConfig(
+        enabled=ls_configured(),
+        store_id=settings.lemon_squeezy_store_id or None,
+    )
 
 
 @router.post("/signup", response_model=PublicSignupResponse, status_code=201)

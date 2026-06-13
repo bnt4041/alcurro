@@ -59,6 +59,8 @@ class Tenant(SQLModel, table=True):
     ollama_model: str = Field(default="llama3.2")
 
     stripe_customer_id: str | None = Field(default=None, max_length=120, index=True)
+    ls_customer_id: str | None = Field(default=None, max_length=80, index=True)
+    ls_customer_portal_url: str | None = Field(default=None)
 
     # Empresa principal de facturación (los datos de esta empresa se usan en facturas)
     billing_company_id: UUID | None = Field(default=None, foreign_key="companies.id")

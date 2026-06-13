@@ -7,11 +7,21 @@ from app.models.models import BreakType
 
 
 class IncidentAutoRuleRead(BaseModel):
+    model_config = {"from_attributes": True}
+
     tenant_id: UUID
     late_entrada_enabled: bool
     late_entrada_grace_minutes: int
     late_entrada_notify_whatsapp: bool
     late_entrada_require_justification: bool
+    missing_clock_in_enabled: bool
+    missing_clock_in_hours: float
+    missing_clock_in_notify_whatsapp: bool
+    missing_clock_in_require_justification: bool
+    missing_clock_out_enabled: bool
+    missing_clock_out_hours: float
+    missing_clock_out_notify_whatsapp: bool
+    missing_clock_out_require_justification: bool
     updated_at: datetime
 
 
@@ -20,6 +30,14 @@ class IncidentAutoRuleUpdate(BaseModel):
     late_entrada_grace_minutes: int | None = Field(default=None, ge=0, le=240)
     late_entrada_notify_whatsapp: bool | None = None
     late_entrada_require_justification: bool | None = None
+    missing_clock_in_enabled: bool | None = None
+    missing_clock_in_hours: float | None = Field(default=None, ge=0.5, le=24.0)
+    missing_clock_in_notify_whatsapp: bool | None = None
+    missing_clock_in_require_justification: bool | None = None
+    missing_clock_out_enabled: bool | None = None
+    missing_clock_out_hours: float | None = Field(default=None, ge=1.0, le=48.0)
+    missing_clock_out_notify_whatsapp: bool | None = None
+    missing_clock_out_require_justification: bool | None = None
 
 
 class IncidentRead(BaseModel):

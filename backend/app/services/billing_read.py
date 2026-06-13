@@ -4,9 +4,9 @@ from uuid import UUID
 
 from sqlmodel import Session, select
 
-from app.models.billing import PricingPlan, StripePayment, Subscription
+from app.models.billing import LemonSqueezyPayment, LsPaymentStatus, PricingPlan, StripePayment, Subscription
 from app.models.models import Employee
-from app.models.tenant import Company
+from app.models.tenant import Company, Tenant
 from app.schemas.billing import InvoiceRead, SubscriptionSummaryRead
 from app.services.billing_service import (
     get_primary_subscription,
@@ -33,9 +33,66 @@ def subscription_to_summary(
     )
 
 
+def _stripe_to_invoice_read(inv: StripePayment) -> InvoiceRead:
+    return InvoiceRead(
+        id=inv.id,
+        amount_cents=inv.amount_cents,
+        currency=inv.currency,
+        status=inv.status.value if hasattr(inv.status, "value") else str(inv.status),
+        description=inv.description,
+        stripe_invoice_id=inv.stripe_invoice_id,
+        invoice_number=inv.invoice_number,
+        invoice_pdf_url=inv.invoice_pdf_url,
+        invoice_url=inv.invoice_url,
+        paid_at=inv.paid_at,
+        created_at=inv.created_at,
+    )
+
+
+def _ls_to_invoice_read(inv: LemonSqueezyPayment) -> InvoiceRead:
+    # Mapear estado LS al vocabulario de la UI (succeeded/failed/pending)
+    status_map = {
+        LsPaymentStatus.PAID: "succeeded",
+        LsPaymentStatus.FAILED: "failed",
+        LsPaymentStatus.PENDING: "pending",
+        LsPaymentStatus.REFUNDED: "refunded",
+    }
+    status = status_map.get(inv.status, str(inv.status))
+    return InvoiceRead(
+        id=inv.id,
+        amount_cents=inv.amount_cents,
+        currency=inv.currency,
+        status=status,
+        description=inv.description,
+        stripe_invoice_id=inv.ls_invoice_id,  # reutilizar campo como ref externa
+        invoice_number=inv.invoice_number,
+        invoice_pdf_url=inv.receipt_url,
+        invoice_url=inv.receipt_url,
+        paid_at=inv.paid_at,
+        created_at=inv.created_at,
+    )
+
+
 def tenant_account_billing(session: Session, tenant_id: UUID) -> dict:
     sub, company = get_primary_subscription(session, tenant_id)
-    invoices = list_tenant_invoices(session, tenant_id)
+    tenant = session.get(Tenant, tenant_id)
+
+    stripe_invoices = list_tenant_invoices(session, tenant_id)
+    ls_payments = list(
+        session.exec(
+            select(LemonSqueezyPayment)
+            .where(LemonSqueezyPayment.tenant_id == tenant_id)
+            .order_by(LemonSqueezyPayment.created_at.desc())  # type: ignore[attr-defined]
+            .limit(200)
+        ).all()
+    )
+
+    all_invoices: list[InvoiceRead] = [
+        _stripe_to_invoice_read(inv) for inv in stripe_invoices
+    ] + [
+        _ls_to_invoice_read(inv) for inv in ls_payments
+    ]
+    all_invoices.sort(key=lambda x: x.created_at, reverse=True)
 
     # Contar usuarios activos del tenant
     company_ids = [
@@ -63,19 +120,8 @@ def tenant_account_billing(session: Session, tenant_id: UUID) -> dict:
 
     return {
         "subscription": subscription_to_summary(sub, company),
-        "invoices": [
-            InvoiceRead(
-                id=inv.id,
-                amount_cents=inv.amount_cents,
-                currency=inv.currency,
-                status=inv.status.value if hasattr(inv.status, "value") else str(inv.status),
-                description=inv.description,
-                stripe_invoice_id=inv.stripe_invoice_id,
-                paid_at=inv.paid_at,
-                created_at=inv.created_at,
-            )
-            for inv in invoices
-        ],
+        "invoices": all_invoices,
         "active_users": active_users,
         "max_users": max_users,
+        "customer_portal_url": tenant.ls_customer_portal_url if tenant else None,
     }

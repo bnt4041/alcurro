@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     stripe_webhook_secret: str = ""
     stripe_publishable_key: str = ""
     stripe_simulation_mode: bool = True
+    lemon_squeezy_api_key: str = ""
+    lemon_squeezy_store_id: str = ""
+    lemon_squeezy_webhook_secret: str = ""
     public_app_url: str = "http://localhost:5174"
     deepseek_api_key: str = ""
     deepseek_model: str = "deepseek-chat"

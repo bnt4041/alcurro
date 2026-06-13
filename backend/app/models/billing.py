@@ -54,6 +54,9 @@ class PricingPlan(SQLModel, table=True):
     stripe_product_id: str | None = Field(default=None, max_length=120)
     stripe_price_monthly_id: str | None = Field(default=None, max_length=120)
     stripe_price_annual_id: str | None = Field(default=None, max_length=120)
+    ls_product_id: str | None = Field(default=None, max_length=80)
+    ls_variant_id_monthly: str | None = Field(default=None, max_length=80)
+    ls_variant_id_annual: str | None = Field(default=None, max_length=80)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -124,6 +127,9 @@ class Subscription(SQLModel, table=True):
     current_period_end: date | None = Field(default=None)
     stripe_subscription_id: str | None = Field(default=None, max_length=120, index=True)
     stripe_checkout_session_id: str | None = Field(default=None, max_length=120)
+    ls_subscription_id: str | None = Field(default=None, max_length=80, index=True)
+    payment_failure_count: int = Field(default=0, ge=0)
+    last_payment_failure_at: datetime | None = Field(default=None)
     pending_plan_id: UUID | None = Field(default=None, foreign_key="pricing_plans.id")
     pending_billing_cycle: str | None = Field(default=None, max_length=20)
     created_at: datetime = Field(default_factory=datetime.utcnow)
@@ -155,5 +161,33 @@ class StripePayment(SQLModel, table=True):
     invoice_number: str | None = Field(default=None, max_length=50)
     invoice_pdf_url: str | None = Field(default=None)
     invoice_url: str | None = Field(default=None)
+    paid_at: datetime | None = Field(default=None)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class LsPaymentStatus(StrEnum):
+    PENDING = "pending"
+    PAID = "paid"
+    FAILED = "failed"
+    REFUNDED = "refunded"
+
+
+class LemonSqueezyPayment(SQLModel, table=True):
+    """Registro de cobros recibidos vía Lemon Squeezy."""
+
+    __tablename__ = "ls_payments"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID | None = Field(default=None, foreign_key="tenants.id", index=True)
+    subscription_id: UUID | None = Field(default=None, foreign_key="subscriptions.id")
+    ls_order_id: str | None = Field(default=None, max_length=80, index=True)
+    ls_subscription_id: str | None = Field(default=None, max_length=80, index=True)
+    ls_invoice_id: str | None = Field(default=None, max_length=80, index=True)
+    amount_cents: int = Field(default=0, ge=0)
+    currency: str = Field(default="EUR", max_length=3)
+    status: LsPaymentStatus = Field(default=LsPaymentStatus.PENDING)
+    description: str | None = Field(default=None, max_length=500)
+    invoice_number: str | None = Field(default=None, max_length=50)
+    receipt_url: str | None = Field(default=None)
     paid_at: datetime | None = Field(default=None)
     created_at: datetime = Field(default_factory=datetime.utcnow)

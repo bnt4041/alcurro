@@ -17,6 +17,12 @@ class PricingPlanRead(BaseModel):
     currency: str
     is_active: bool
     sort_order: int
+    stripe_product_id: str | None = None
+    stripe_price_monthly_id: str | None = None
+    stripe_price_annual_id: str | None = None
+    ls_product_id: str | None = None
+    ls_variant_id_monthly: str | None = None
+    ls_variant_id_annual: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -33,6 +39,8 @@ class PricingPlanCreate(BaseModel):
     currency: str = "EUR"
     is_active: bool = True
     sort_order: int = 0
+    ls_variant_id_monthly: str | None = None
+    ls_variant_id_annual: str | None = None
 
     @field_validator("code", mode="before")
     @classmethod
@@ -48,6 +56,8 @@ class PricingPlanUpdate(BaseModel):
     max_active_users: int | None = Field(default=None, ge=1)
     is_active: bool | None = None
     sort_order: int | None = None
+    ls_variant_id_monthly: str | None = None
+    ls_variant_id_annual: str | None = None
 
 
 class DiscountRead(BaseModel):

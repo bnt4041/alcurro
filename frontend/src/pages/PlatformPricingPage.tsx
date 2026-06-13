@@ -18,6 +18,9 @@ interface PricingPlan {
   currency: string;
   is_active: boolean;
   sort_order: number;
+  ls_product_id: string | null;
+  ls_variant_id_monthly: string | null;
+  ls_variant_id_annual: string | null;
 }
 
 type PlanTableRow = PricingPlan & {
@@ -35,6 +38,8 @@ const empty = () => ({
   max_active_users: "3",
   sort_order: "0",
   is_active: true,
+  ls_variant_id_monthly: "",
+  ls_variant_id_annual: "",
 });
 
 export default function PlatformPricingPage() {
@@ -68,6 +73,8 @@ export default function PlatformPricingPage() {
       max_active_users: String(p.max_active_users),
       sort_order: String(p.sort_order),
       is_active: p.is_active,
+      ls_variant_id_monthly: p.ls_variant_id_monthly ?? "",
+      ls_variant_id_annual: p.ls_variant_id_annual ?? "",
     });
     setOpen(true);
   };
@@ -95,6 +102,8 @@ export default function PlatformPricingPage() {
       max_active_users: parseInt(form.max_active_users, 10) || 1,
       sort_order: parseInt(form.sort_order, 10) || 0,
       is_active: form.is_active,
+      ls_variant_id_monthly: form.ls_variant_id_monthly.trim() || null,
+      ls_variant_id_annual: form.ls_variant_id_annual.trim() || null,
     };
     try {
       if (editingId) {
@@ -102,7 +111,7 @@ export default function PlatformPricingPage() {
         await api.patch(`/platform/pricing-plans/${editingId}`, patchBody);
         toast.success("Tarifa actualizada");
       } else {
-        await api.post("/platform/pricing-plans", body);
+        await api.post<PricingPlan>("/platform/pricing-plans", body);
         toast.success("Tarifa creada");
       }
       setOpen(false);
@@ -165,8 +174,8 @@ export default function PlatformPricingPage() {
         field: "id",
         headerFilter: false,
         download: false,
-        width: 110,
-        minWidth: 110,
+        width: 140,
+        minWidth: 140,
         formatter: () =>
           tableActionButtons([
             { id: "toggle", label: "Activar/Desactivar" },
@@ -311,6 +320,40 @@ export default function PlatformPricingPage() {
             />
             Tarifa activa (disponible para nuevas suscripciones)
           </label>
+
+          <div className="form-span-2">
+            <p className="muted small" style={{ margin: "0.5rem 0 0.75rem" }}>
+              <strong>Lemon Squeezy</strong> — Crea el producto y sus variantes en el dashboard de LS
+              y pega aquí los IDs numéricos de cada variante.
+            </p>
+          </div>
+          <label>
+            Variant ID mensual (LS)
+            <input
+              value={form.ls_variant_id_monthly}
+              placeholder="p. ej. 123456"
+              onChange={(e) =>
+                setForm({ ...form, ls_variant_id_monthly: e.target.value })
+              }
+            />
+            <span className="field-hint muted small">
+              ID de la variante mensual en Lemon Squeezy
+            </span>
+          </label>
+          <label>
+            Variant ID anual (LS)
+            <input
+              value={form.ls_variant_id_annual}
+              placeholder="p. ej. 123457"
+              onChange={(e) =>
+                setForm({ ...form, ls_variant_id_annual: e.target.value })
+              }
+            />
+            <span className="field-hint muted small">
+              ID de la variante anual en Lemon Squeezy
+            </span>
+          </label>
+
           <div className="modal-actions form-span-2">
             <button type="submit" className="btn btn-primary">
               Guardar

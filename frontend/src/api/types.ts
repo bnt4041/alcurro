@@ -142,6 +142,14 @@ export interface IncidentAutoRule {
   late_entrada_grace_minutes: number;
   late_entrada_notify_whatsapp: boolean;
   late_entrada_require_justification: boolean;
+  missing_clock_in_enabled: boolean;
+  missing_clock_in_hours: number;
+  missing_clock_in_notify_whatsapp: boolean;
+  missing_clock_in_require_justification: boolean;
+  missing_clock_out_enabled: boolean;
+  missing_clock_out_hours: number;
+  missing_clock_out_notify_whatsapp: boolean;
+  missing_clock_out_require_justification: boolean;
   updated_at: string;
 }
 
