@@ -419,6 +419,10 @@ def _on_subscription_created(session: Session, meta: dict, data: dict) -> None:
 
 
 def _on_subscription_updated(session: Session, meta: dict, data: dict) -> None:
+    from sqlmodel import or_
+    from app.models.billing import PricingPlan
+    from app.services.pricing_service import calculate_subscription_amount, get_active_discount
+
     tenant, sub = _resolve(session, meta)
     attrs = data.get("attributes", {})
 
@@ -438,6 +442,34 @@ def _on_subscription_updated(session: Session, meta: dict, data: dict) -> None:
         period_end = _parse_date(attrs.get("renews_at"))
         if period_end:
             sub.current_period_end = period_end
+
+        # Aplicar cambio de plan si LS cambió la variante
+        new_variant_id = str(attrs.get("variant_id", ""))
+        if new_variant_id:
+            plan = session.exec(
+                select(PricingPlan).where(
+                    or_(
+                        PricingPlan.ls_variant_id_monthly == new_variant_id,
+                        PricingPlan.ls_variant_id_annual == new_variant_id,
+                    )
+                )
+            ).first()
+            if plan:
+                new_cycle = (
+                    BillingCycle.ANNUAL
+                    if plan.ls_variant_id_annual == new_variant_id
+                    else BillingCycle.MONTHLY
+                )
+                discount = get_active_discount(session, sub.discount_id, plan.id) if sub.discount_id else None
+                sub.pricing_plan_id = plan.id
+                sub.plan_code = plan.code
+                sub.plan_name = plan.name
+                sub.billing_cycle = new_cycle
+                sub.amount_cents = calculate_subscription_amount(plan, new_cycle, discount)
+                sub.currency = plan.currency
+                sub.pending_plan_id = None
+                sub.pending_billing_cycle = None
+
         session.add(sub)
 
 

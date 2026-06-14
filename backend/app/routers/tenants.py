@@ -440,12 +440,21 @@ def request_plan_change(
                     ),
                 )
 
+        # Determinar si es upgrade o downgrade
+        current_plan = session.get(PricingPlan, sub.pricing_plan_id) if sub.pricing_plan_id else None
+        def _monthly_equiv(plan: PricingPlan, cycle: str) -> int:
+            return plan.annual_price_cents // 12 if cycle == BillingCycle.ANNUAL else plan.monthly_price_cents
+
+        is_upgrade = True
+        if current_plan:
+            is_upgrade = _monthly_equiv(new_plan, data.billing_cycle) >= _monthly_equiv(current_plan, sub.billing_cycle)
+
         sub.pending_plan_id = data.plan_id
         sub.pending_billing_cycle = data.billing_cycle
         session.add(sub)
         session.flush()
 
-        # Sincronizar con Lemon Squeezy si hay suscripción LS activa
+        # Sincronizar con Lemon Squeezy
         ls_error: str | None = None
         if ls_configured() and sub.ls_subscription_id:
             variant_id = get_ls_variant_id(new_plan, data.billing_cycle)
@@ -454,7 +463,7 @@ def request_plan_change(
                     patch_ls_subscription_variant(
                         sub.ls_subscription_id,
                         variant_id,
-                        invoice_immediately=False,
+                        invoice_immediately=is_upgrade,
                     )
                 except Exception as exc:
                     import logging
@@ -464,12 +473,21 @@ def request_plan_change(
                     ls_error = "El cambio se ha guardado, pero no se pudo actualizar en Lemon Squeezy."
 
         session.commit()
-        msg = (
-            f"Cambio de tarifa a «{new_plan.name}» ({data.billing_cycle}) "
-            f"programado para el final del período actual."
-        )
+
+        if is_upgrade:
+            msg = (
+                f"Tarifa actualizada a «{new_plan.name}». "
+                f"Se te cobrará ahora la diferencia prorrateada del período actual."
+            )
+        else:
+            msg = (
+                f"Cambio a «{new_plan.name}» registrado. "
+                f"El nuevo precio se aplicará a partir de la próxima renovación "
+                f"({sub.current_period_end.isoformat() if sub.current_period_end else 'siguiente período'})."
+            )
         if ls_error:
             msg += f" Aviso: {ls_error}"
+
         return PlanChangePending(
             ok=True,
             message=msg,
@@ -521,22 +539,28 @@ def apply_tenant_discount(
     session.add(sub)
     session.flush()
 
-    # Actualizar precio en Lemon Squeezy
-    ls_error: str | None = None
+    # Actualizar precio en Lemon Squeezy (LS no acepta precio 0 en suscripciones)
+    ls_note: str | None = None
     if ls_configured() and sub.ls_subscription_id:
-        try:
-            patch_ls_subscription_price(sub.ls_subscription_id, new_amount)
-        except Exception as exc:
-            import logging
-            logging.getLogger(__name__).error(
-                "Error aplicando descuento en LS sub %s: %s", sub.ls_subscription_id, exc
-            )
-            ls_error = "Descuento guardado localmente, pero no se pudo actualizar en Lemon Squeezy."
+        if new_amount == 0:
+            ls_note = "Descuento del 100%: la suscripción en Lemon Squeezy no se modifica (LS no admite precio 0). Los próximos cobros deberán cancelarse manualmente desde el portal de LS."
+        else:
+            try:
+                patch_ls_subscription_price(sub.ls_subscription_id, new_amount)
+            except Exception as exc:
+                import logging
+                logging.getLogger(__name__).error(
+                    "Error aplicando descuento en LS sub %s: %s", sub.ls_subscription_id, exc
+                )
+                ls_note = "Descuento guardado localmente, pero no se pudo actualizar en Lemon Squeezy."
 
     session.commit()
-    msg = f"Descuento «{discount.name}» aplicado. Nuevo importe: {new_amount / 100:.2f} {sub.currency}."
-    if ls_error:
-        msg += f" Aviso: {ls_error}"
+    if new_amount == 0:
+        msg = f"Descuento «{discount.name}» aplicado — cuenta gratuita."
+    else:
+        msg = f"Descuento «{discount.name}» aplicado. Nuevo importe: {new_amount / 100:.2f} {sub.currency}."
+    if ls_note:
+        msg += f" Nota: {ls_note}"
     return ApplyDiscountResponse(
         ok=True,
         message=msg,
