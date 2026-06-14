@@ -127,11 +127,10 @@ def generate_invoice_pdf(invoice: Invoice, settings: PlatformSettings) -> bytes:
         invoice.recipient_email or "",
     ]
 
-    from reportlab.platypus import KeepTogether  # local import ok
     parties_data = [
         [
-            KeepTogether(_block("EMISOR", issuer_lines)),
-            KeepTogether(_block("CLIENTE", recipient_lines)),
+            _block("EMISOR", issuer_lines),
+            _block("CLIENTE", recipient_lines),
         ]
     ]
     parties_table = Table(parties_data, colWidths=[CONTENT_W * 0.5, CONTENT_W * 0.5])

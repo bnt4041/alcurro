@@ -279,7 +279,7 @@ export default function AccountPage() {
                     <span className="muted"> /mes</span>
                   </p>
                   <p className="muted small">
-                    Anual: {formatMoney(plan.annual_price_per_month_cents, plan.currency)}/mes
+                    Anual: {formatMoney(plan.annual_price_cents, plan.currency)}/año
                   </p>
                   <p className="muted small">Hasta {plan.max_active_users} usuarios</p>
                   {!isCurrent && (
@@ -321,8 +321,7 @@ export default function AccountPage() {
                     Mensual — {formatMoney(selectedPlan.monthly_price_cents, selectedPlan.currency)}/mes
                   </option>
                   <option value="annual">
-                    Anual — {formatMoney(selectedPlan.annual_price_per_month_cents, selectedPlan.currency)}/mes
-                    ({formatMoney(selectedPlan.annual_price_per_month_cents * 12, selectedPlan.currency)}/año)
+                    Anual — {formatMoney(selectedPlan.annual_price_cents, selectedPlan.currency)}/año
                   </option>
                 </select>
               </label>
@@ -467,6 +466,13 @@ export default function AccountPage() {
         <InvoiceHistoryTable
           invoices={billingSummary?.invoices ?? []}
           loading={billingLoading}
+          onDownload={async (id, filename) => {
+            try {
+              await api.download(`/tenants/current/invoices/${id}/pdf`, filename);
+            } catch (err) {
+              notify(String(err).replace(/^Error:\s*/i, ""), "error");
+            }
+          }}
         />
       </section>
 

@@ -15,13 +15,14 @@ from app.models.billing import (
 
 def plan_base_amount_cents(plan: PricingPlan, cycle: str) -> int:
     if cycle == BillingCycle.ANNUAL:
-        return plan.annual_price_per_month_cents * 12
+        return plan.annual_price_cents
     return plan.monthly_price_cents
 
 
 def plan_display_monthly_cents(plan: PricingPlan, cycle: str) -> int:
+    """Equivalente mensual para mostrar en UI (sin efecto en cobros)."""
     if cycle == BillingCycle.ANNUAL:
-        return plan.annual_price_per_month_cents
+        return plan.annual_price_cents // 12
     return plan.monthly_price_cents
 
 

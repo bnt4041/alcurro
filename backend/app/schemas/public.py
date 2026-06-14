@@ -11,7 +11,7 @@ class PublicPricingPlanRead(BaseModel):
     name: str
     description: str | None
     monthly_price_cents: int
-    annual_price_per_month_cents: int
+    annual_price_cents: int
     max_active_users: int
     currency: str
 
@@ -40,44 +40,6 @@ class PublicSignupRequest(BaseModel):
     accept_terms: bool = Field(description="Debe aceptar términos")
 
 
-class PublicStripeConfig(BaseModel):
-    enabled: bool
-    publishable_key: str | None
-    simulation_mode: bool
-    checkout_mode: str
-
-
-class SimulateCheckoutPreview(BaseModel):
-    token: str
-    company_name: str
-    tenant_slug: str
-    amount_cents: int
-    currency: str
-    plan_name: str
-    billing_cycle: str
-    subscription_status: str
-
-
-class SimulatePaymentRequest(BaseModel):
-    token: str
-
-
-class SimulatePaymentResponse(BaseModel):
-    tenant_id: UUID
-    tenant_slug: str
-    company_name: str
-    subscription_status: str
-    amount_cents: int
-    currency: str
-    already_completed: bool
-    gowa_status: str
-    gowa_ui_url: str | None = None
-    gowa_port: int | None = None
-    gowa_container_name: str | None = None
-    gowa_error: str | None = None
-    simulated: bool = True
-
-
 class PublicLsConfig(BaseModel):
     enabled: bool
     store_id: str | None
@@ -88,7 +50,4 @@ class PublicSignupResponse(BaseModel):
     tenant_slug: str
     company_name: str
     checkout_url: str | None
-    stripe_enabled: bool
-    ls_enabled: bool = False
-    simulation_mode: bool = False
     admin_login_hint: str

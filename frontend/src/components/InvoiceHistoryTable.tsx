@@ -7,6 +7,7 @@ import { PAYMENT_STATUS_LABELS } from "../lib/subscription";
 interface Props {
   invoices: InvoiceRow[];
   loading?: boolean;
+  onDownload?: (id: string, filename: string) => void;
 }
 
 type InvoiceTableRow = InvoiceRow & {
@@ -15,7 +16,7 @@ type InvoiceTableRow = InvoiceRow & {
   amount_label: string;
 };
 
-export default function InvoiceHistoryTable({ invoices, loading }: Props) {
+export default function InvoiceHistoryTable({ invoices, loading, onDownload }: Props) {
   const tableData = useMemo<InvoiceTableRow[]>(
     () =>
       invoices.map((inv) => ({
@@ -28,6 +29,7 @@ export default function InvoiceHistoryTable({ invoices, loading }: Props) {
   );
 
   const columns = useMemo<DataTableColumn<InvoiceTableRow>[]>(
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     () => [
       { title: "Fecha", field: "date_label", headerFilter: "input", width: 110 },
       {
@@ -37,8 +39,15 @@ export default function InvoiceHistoryTable({ invoices, loading }: Props) {
         formatter: (cell) => {
           const r = cell.getRow().getData() as InvoiceTableRow;
           const label = r.invoice_number || r.stripe_invoice_id || "—";
-          const pdfUrl = r.invoice_pdf_url || r.invoice_url;
-          if (pdfUrl) {
+          const hasPdf = !!(r.invoice_pdf_url || r.invoice_url);
+          if (hasPdf && onDownload) {
+            return `<button class="invoice-pdf-link" data-action="download" title="Descargar factura PDF" style="background:none;border:none;cursor:pointer;padding:0;color:inherit;text-decoration:underline;font:inherit;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:3px"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+              ${label}
+            </button>`;
+          }
+          if (hasPdf) {
+            const pdfUrl = r.invoice_pdf_url || r.invoice_url;
             return `<a href="${pdfUrl}" target="_blank" rel="noopener" class="invoice-pdf-link" title="Ver / descargar factura PDF">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
               ${label}
@@ -76,7 +85,7 @@ export default function InvoiceHistoryTable({ invoices, loading }: Props) {
         width: 120,
       },
     ],
-    []
+    [onDownload]
   );
 
   if (!loading && invoices.length === 0) {
@@ -95,6 +104,13 @@ export default function InvoiceHistoryTable({ invoices, loading }: Props) {
       exportFilename="facturas"
       height="360px"
       emptyMessage="Sin facturas"
+      onCellAction={(action, row) => {
+        if (action === "download" && onDownload) {
+          const r = row as InvoiceTableRow;
+          const filename = `${r.invoice_number ?? r.id}.pdf`;
+          onDownload(r.id, filename);
+        }
+      }}
     />
   );
 }

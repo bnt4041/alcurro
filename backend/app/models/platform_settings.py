@@ -37,6 +37,11 @@ class PlatformSettings(SQLModel, table=True):
     vat_rate: int = Field(default=21, ge=0, le=100)
     invoice_footer_text: str | None = Field(default=None, max_length=500)
 
+    # Numeración de facturas de abono (serie separada)
+    credit_note_prefix: str = Field(default="ALC-R", max_length=10)
+    credit_note_next_number: int = Field(default=1, ge=1)
+    credit_note_current_year: int = Field(default_factory=lambda: datetime.utcnow().year)
+
     # Automatizaciones
     auto_send_invoice_email: bool = Field(default=False)
 

@@ -3,6 +3,7 @@ from uuid import UUID
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile
+from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
@@ -26,6 +27,7 @@ from app.schemas.tenant import (
 )
 from app.services.billing_read import tenant_account_billing
 from app.services.gowa_client import get_shared_whatsapp_session
+from app.services.lemon_squeezy_service import update_ls_customer_name
 from app.services.org_service import (
     clone_groups_for_tenant,
     ensure_group_templates,
@@ -141,13 +143,17 @@ def update_current_billing(
     _: object = Depends(require_permission(Permission.WRITE, "tenant")),
 ) -> Tenant:
     tenant = ctx.tenant
-    for key, value in data.model_dump(exclude_unset=True).items():
+    payload = data.model_dump(exclude_unset=True)
+    new_legal_name = payload.get("legal_name")
+    for key, value in payload.items():
         if key == "billing_email" and value is not None:
             value = str(value)
         setattr(tenant, key, value)
     session.add(tenant)
     session.commit()
     session.refresh(tenant)
+    if new_legal_name and new_legal_name != ctx.tenant.legal_name:
+        update_ls_customer_name(tenant, new_legal_name)
     return tenant
 
 
@@ -208,6 +214,30 @@ def update_company(
     session.commit()
     session.refresh(row)
     return row
+
+
+@router.get("/current/invoices/{invoice_id}/pdf")
+def download_tenant_invoice_pdf(
+    invoice_id: UUID,
+    ctx: TenantContext = Depends(get_tenant_context),
+    session: Session = Depends(get_session),
+    _: object = Depends(require_permission(Permission.READ, "tenant")),
+) -> Response:
+    from app.models.invoice import Invoice
+    from app.services.invoice_service import get_invoice_pdf_bytes
+
+    invoice = session.get(Invoice, invoice_id)
+    if not invoice or invoice.tenant_id != ctx.tenant.id:
+        raise HTTPException(status_code=404, detail="Factura no encontrada")
+    pdf_bytes = get_invoice_pdf_bytes(session, invoice_id)
+    if not pdf_bytes:
+        raise HTTPException(status_code=500, detail="No se pudo generar el PDF")
+    filename = f"{invoice.number.replace('/', '-')}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/current/whatsapp/status", response_model=TenantWhatsAppStatusRead)
@@ -334,12 +364,12 @@ def request_plan_change(
                 )
             # Annual → annual: block if new plan is cheaper (downgrade)
             new_monthly_equiv = (
-                new_plan.annual_price_per_month_cents
+                new_plan.annual_price_cents // 12
                 if data.billing_cycle == BillingCycle.ANNUAL
                 else new_plan.monthly_price_cents
             )
             current_monthly_equiv = (
-                current_plan.annual_price_per_month_cents
+                current_plan.annual_price_cents // 12
                 if sub.billing_cycle == BillingCycle.ANNUAL
                 else current_plan.monthly_price_cents
             )

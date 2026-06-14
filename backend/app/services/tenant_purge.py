@@ -15,30 +15,36 @@ from fastapi import HTTPException
 from sqlmodel import Session, col, delete, select
 
 from app.models.ai import AiWhatsappMessage, AiUsageRecord
-from app.models.billing import BillingMethod, StripePayment, Subscription
+from app.models.billing import BillingMethod, LemonSqueezyPayment, StripePayment, Subscription
+from app.models.invoice import Invoice
 from app.models.clock_settings import (
     ClockSettings,
     EmployeeInboundDocument,
     InboundPendingUpload,
 )
+from app.models.developer import ApiKey, WebhookDelivery, WebhookEndpoint
 from app.models.documents import (
     DocumentDelivery,
     DocumentDeliveryTag,
+    DocumentExpiryNotificationLog,
     DocumentNotificationSettings,
     DocumentTag,
     DocumentType,
 )
 from app.models.incident import Incident, IncidentAutoRule
-from app.models.legal import LegalAcceptance, LegalDocument
+from app.models.legal import LegalAcceptance, LegalDocument, LegalToken
 from app.models.mail import MailLog
 from app.models.models import (
     ClockIn,
     Employee,
+    EmployeeLeaveBalance,
     LeaveRequest,
+    LeaveType,
     ShiftAssignment,
     ShiftConfiguration,
     WorkBreak,
 )
+from app.models.notification import Notification
 from app.models.organization import Department, WorkCenter
 from app.models.project import ClockPendingFichaje, Project
 from app.models.rbac import EmployeeGroup, UserGroup
@@ -257,10 +263,15 @@ def purge_accounts(session: Session, tenant_id: UUID) -> None:
         session.exec(delete(InboundPendingUpload).where(
             col(InboundPendingUpload.employee_id).in_(emp_subquery)
         ))
+        session.exec(delete(EmployeeLeaveBalance).where(
+            col(EmployeeLeaveBalance.employee_id).in_(emp_subquery)
+        ))
 
         session.exec(delete(Employee).where(
             col(Employee.company_id).in_(company_ids)
         ))
+
+        session.exec(delete(LeaveType).where(LeaveType.tenant_id == tenant_id))
 
         # 2. Jerarquía organizativa
         for cid in company_ids:
@@ -280,30 +291,56 @@ def purge_accounts(session: Session, tenant_id: UUID) -> None:
             ))
             session.exec(delete(Project).where(Project.company_id == cid))
 
-        # 3. Empresas
-        for cid in company_ids:
-            company = session.get(Company, cid)
-            if company:
-                session.delete(company)
-
-    # 4. Grupos y RBAC del tenant
-    session.exec(delete(UserGroup).where(UserGroup.tenant_id == tenant_id))
-
-    # 5. Configuraciones de clock del tenant
-    session.exec(delete(ClockSettings).where(ClockSettings.tenant_id == tenant_id))
-
-    # 6. Documentos legales
-    session.exec(delete(LegalDocument).where(LegalDocument.tenant_id == tenant_id))
-
-    # 7. Facturación y pagos
+    # 3. Facturación y pagos (antes de companies por FK subscriptions.company_id)
+    session.exec(delete(Invoice).where(Invoice.tenant_id == tenant_id))
+    session.exec(delete(LemonSqueezyPayment).where(LemonSqueezyPayment.tenant_id == tenant_id))
     session.exec(delete(StripePayment).where(StripePayment.tenant_id == tenant_id))
     session.exec(delete(Subscription).where(Subscription.tenant_id == tenant_id))
     session.exec(delete(BillingMethod).where(BillingMethod.tenant_id == tenant_id))
 
-    # 8. Correo
-    session.exec(delete(MailLog).where(MailLog.tenant_id == tenant_id))
+    if company_ids:
+        # 4. Empresas (después de borrar suscripciones)
+        # Primero anular billing_company_id del tenant para evitar FK tenants→companies
+        tenant_row = session.get(Tenant, tenant_id)
+        if tenant_row and tenant_row.billing_company_id:
+            tenant_row.billing_company_id = None
+            session.add(tenant_row)
+            session.flush()
+        for cid in company_ids:
+            company = session.get(Company, cid)
+            if company:
+                session.delete(company)
+        session.flush()
 
-    # 9. Tenant
+    # 5. Grupos y RBAC del tenant
+    session.exec(delete(UserGroup).where(UserGroup.tenant_id == tenant_id))
+
+    # 6. Configuraciones de clock del tenant
+    session.exec(delete(ClockSettings).where(ClockSettings.tenant_id == tenant_id))
+
+    # 7. Documentos legales y tokens
+    session.exec(delete(LegalDocument).where(LegalDocument.tenant_id == tenant_id))
+    session.exec(delete(LegalToken).where(LegalToken.tenant_id == tenant_id))
+
+    # 8. Correo y notificaciones
+    session.exec(delete(MailLog).where(MailLog.tenant_id == tenant_id))
+    session.exec(delete(Notification).where(Notification.tenant_id == tenant_id))
+    session.exec(delete(DocumentExpiryNotificationLog).where(
+        DocumentExpiryNotificationLog.tenant_id == tenant_id
+    ))
+
+    # 9. API keys y webhooks
+    webhook_ids = list(session.exec(
+        select(WebhookEndpoint.id).where(WebhookEndpoint.tenant_id == tenant_id)
+    ).all())
+    if webhook_ids:
+        session.exec(delete(WebhookDelivery).where(
+            col(WebhookDelivery.webhook_id).in_(webhook_ids)
+        ))
+    session.exec(delete(WebhookEndpoint).where(WebhookEndpoint.tenant_id == tenant_id))
+    session.exec(delete(ApiKey).where(ApiKey.tenant_id == tenant_id))
+
+    # 10. Tenant
     tenant = session.get(Tenant, tenant_id)
     if tenant:
         session.delete(tenant)

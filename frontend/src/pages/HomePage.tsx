@@ -461,8 +461,8 @@ export default function HomePage() {
                     Hasta <strong>{plan.max_active_users}</strong> usuarios activos
                   </p>
                   <p className="muted small">
-                    Anual: {formatMoney(plan.annual_price_per_month_cents, plan.currency)}
-                    /mes · ({formatMoney(plan.annual_price_per_month_cents * 12, plan.currency)}/año)
+                    Anual: {formatMoney(plan.annual_price_cents, plan.currency)}/año
+                    ({formatMoney(plan.annual_price_cents / 12, plan.currency)}/mes)
                   </p>
                   <Link to={`/registro?plan=${plan.id}`} className="btn btn-primary">
                     Empezar con {plan.name}

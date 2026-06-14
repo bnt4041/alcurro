@@ -102,7 +102,6 @@ def sync_plan_to_ls(session: Session, plan: PricingPlan) -> PricingPlan:
 
     # ── 3. Variante anual ─────────────────────────────────────────────────────
     if not plan.ls_variant_id_annual:
-        annual_total = plan.annual_price_per_month_cents * 12
         with httpx.Client(timeout=15) as client:
             resp = client.post(
                 f"{_LS_API}/variants",
@@ -112,7 +111,7 @@ def sync_plan_to_ls(session: Session, plan: PricingPlan) -> PricingPlan:
                         "type": "variants",
                         "attributes": {
                             "name": f"{plan.name} — Anual",
-                            "price": annual_total,
+                            "price": plan.annual_price_cents,
                             "is_subscription": True,
                             "interval": "year",
                             "interval_count": 1,
@@ -214,6 +213,8 @@ def handle_webhook_event(session: Session, payload: dict) -> None:
         _on_subscription_payment_failed(session, meta, data)
     elif event_name == "subscription_payment_recovered":
         _on_subscription_payment_recovered(session, meta, data)
+    elif event_name == "subscription_payment_refunded":
+        _on_subscription_payment_refunded(session, meta, data)
 
     session.commit()
 
@@ -382,6 +383,52 @@ def _on_subscription_payment_failed(session: Session, meta: dict, data: dict) ->
         )
 
 
+def _on_subscription_payment_refunded(session: Session, meta: dict, data: dict) -> None:
+    from app.models.invoice import Invoice
+    from app.services.invoice_service import create_credit_note
+
+    attrs = data.get("attributes", {})
+    ls_invoice_id = str(data.get("id", ""))
+
+    # Buscar el pago original por ls_invoice_id
+    payment = session.exec(
+        select(LemonSqueezyPayment).where(LemonSqueezyPayment.ls_invoice_id == ls_invoice_id)
+    ).first()
+
+    if not payment:
+        tenant, sub = _resolve(session, meta)
+        amount_cents = int(attrs.get("total", 0))
+        currency = (attrs.get("currency") or "EUR").upper()
+        payment = _record_ls_payment(
+            session,
+            tenant_id=tenant.id if tenant else None,
+            subscription_id=sub.id if sub else None,
+            amount_cents=amount_cents,
+            currency=currency,
+            status=LsPaymentStatus.REFUNDED,
+            ls_invoice_id=ls_invoice_id,
+            description="Reembolso suscripción",
+        )
+    else:
+        payment.status = LsPaymentStatus.REFUNDED
+        session.add(payment)
+        session.flush()
+
+    # Generar factura de abono si existe factura original
+    original_invoice = session.exec(
+        select(Invoice).where(Invoice.ls_payment_id == payment.id)
+    ).first()
+    if original_invoice:
+        existing_cn = session.exec(
+            select(Invoice).where(Invoice.credit_note_for_id == original_invoice.id)
+        ).first()
+        if not existing_cn:
+            try:
+                create_credit_note(session, original_invoice.id, ls_payment_id=payment.id)
+            except Exception:
+                pass
+
+
 def _on_subscription_payment_recovered(session: Session, meta: dict, data: dict) -> None:
     tenant, sub = _resolve(session, meta)
     attrs = data.get("attributes", {})
@@ -516,6 +563,93 @@ def _notify_payment(
             GoWAService(session).send_text_sync(phone, msg)
         except Exception:
             pass
+
+
+def update_ls_customer_name(tenant: "Tenant", new_name: str) -> None:
+    """Actualiza el nombre del cliente en Lemon Squeezy cuando cambia la razón social."""
+    if not ls_configured() or not tenant.ls_customer_id:
+        return
+    try:
+        with httpx.Client(timeout=10) as client:
+            client.patch(
+                f"{_LS_API}/customers/{tenant.ls_customer_id}",
+                headers=_headers(),
+                json={
+                    "data": {
+                        "type": "customers",
+                        "id": str(tenant.ls_customer_id),
+                        "attributes": {"name": new_name},
+                    }
+                },
+            )
+    except Exception:
+        pass
+
+
+def update_ls_subscription_variant(
+    session: Session,
+    tenant: "Tenant",
+    sub: Subscription,
+    new_plan: PricingPlan,
+    new_cycle: str,
+) -> None:
+    """Cambia la variante de la suscripción en Lemon Squeezy cuando cambia el plan o ciclo."""
+    if not ls_configured() or not sub.ls_subscription_id:
+        return
+    variant_id = get_ls_variant_id(new_plan, new_cycle)
+    if not variant_id:
+        return
+    try:
+        with httpx.Client(timeout=10) as client:
+            client.patch(
+                f"{_LS_API}/subscriptions/{sub.ls_subscription_id}",
+                headers=_headers(),
+                json={
+                    "data": {
+                        "type": "subscriptions",
+                        "id": str(sub.ls_subscription_id),
+                        "attributes": {"variant_id": int(variant_id)},
+                    }
+                },
+            )
+    except Exception:
+        pass
+
+
+def issue_refund_credit_note(
+    session: Session, payment_id: UUID
+) -> tuple["LemonSqueezyPayment", "Invoice"]:
+    """Marca un pago como reembolsado y genera la factura de abono correspondiente.
+
+    El reembolso monetario real debe hacerse desde el panel de Lemon Squeezy.
+    Esta función solo crea el registro contable en Alcurro.
+    """
+    from app.models.invoice import Invoice
+    from app.services.invoice_service import create_credit_note
+
+    payment = session.get(LemonSqueezyPayment, payment_id)
+    if not payment:
+        raise ValueError("Pago no encontrado")
+    if payment.status == LsPaymentStatus.REFUNDED:
+        raise ValueError("Este pago ya está marcado como reembolsado")
+    if payment.status != LsPaymentStatus.PAID:
+        raise ValueError("Solo se pueden reembolsar pagos completados (estado: paid)")
+
+    original_invoice = session.exec(
+        select(Invoice).where(Invoice.ls_payment_id == payment.id)
+    ).first()
+    if not original_invoice:
+        raise ValueError(
+            "No existe factura asociada a este pago. "
+            "Genera la factura primero desde el panel de Facturas."
+        )
+
+    payment.status = LsPaymentStatus.REFUNDED
+    session.add(payment)
+    session.flush()
+
+    credit_note = create_credit_note(session, original_invoice.id, ls_payment_id=payment.id)
+    return payment, credit_note
 
 
 def _notify_payment_failed(

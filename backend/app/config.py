@@ -21,10 +21,6 @@ class Settings(BaseSettings):
     jwt_expire_hours: int = 12
     docker_network: str = "hrm-net"
     platform_setup_key: str = "hrm-platform-setup"
-    stripe_secret_key: str = ""
-    stripe_webhook_secret: str = ""
-    stripe_publishable_key: str = ""
-    stripe_simulation_mode: bool = True
     lemon_squeezy_api_key: str = ""
     lemon_squeezy_store_id: str = ""
     lemon_squeezy_webhook_secret: str = ""

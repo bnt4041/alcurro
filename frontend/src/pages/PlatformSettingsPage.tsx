@@ -23,6 +23,9 @@ interface PlatformSettings {
   invoice_current_year: number;
   vat_rate: number;
   invoice_footer_text: string | null;
+  credit_note_prefix: string;
+  credit_note_next_number: number;
+  credit_note_current_year: number;
   auto_send_invoice_email: boolean;
 }
 
@@ -216,6 +219,27 @@ export default function PlatformSettingsPage() {
                 style={{ maxWidth: 100 }}
               />
             </label>
+            <label>
+              Prefijo de factura de abono
+              <input
+                required
+                maxLength={10}
+                value={data.credit_note_prefix}
+                onChange={(e) => set("credit_note_prefix", e.target.value.toUpperCase())}
+                placeholder="ALC-R"
+                style={{ maxWidth: 120 }}
+              />
+            </label>
+            <label>
+              Siguiente nº de abono
+              <input
+                type="number"
+                min={1}
+                value={data.credit_note_next_number}
+                onChange={(e) => set("credit_note_next_number", parseInt(e.target.value) || 1)}
+                style={{ maxWidth: 120 }}
+              />
+            </label>
             <label style={{ gridColumn: "1 / -1" }}>
               Texto de pie de factura
               <textarea
@@ -241,7 +265,7 @@ export default function PlatformSettingsPage() {
                 <strong>Enviar factura automáticamente por email</strong>
                 <br />
                 <span className="muted small">
-                  Al recibir un pago de Stripe, se genera la factura y se envía por email al cliente.
+                  Al recibir un pago de Lemon Squeezy, se genera la factura y se envía por email al cliente.
                   Requiere SMTP configurado y que el cliente tenga email de facturación.
                 </span>
               </span>

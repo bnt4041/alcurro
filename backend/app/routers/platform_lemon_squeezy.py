@@ -12,7 +12,7 @@ from app.models.billing import LemonSqueezyPayment
 from app.models.rbac import PlatformUser
 from app.models.tenant import Tenant
 from app.models.billing import PricingPlan
-from app.services.lemon_squeezy_service import ls_configured, sync_plan_to_ls
+from app.services.lemon_squeezy_service import issue_refund_credit_note, ls_configured, sync_plan_to_ls
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/platform/ls", tags=["platform-lemon-squeezy"])
@@ -92,6 +92,39 @@ def list_ls_payments(
             )
         )
     return result
+
+
+class LsRefundResult(BaseModel):
+    payment_id: UUID
+    payment_status: str
+    credit_note_number: str
+    credit_note_id: UUID
+
+
+@router.post("/refund/{payment_id}", response_model=LsRefundResult, status_code=201)
+def issue_refund(
+    payment_id: UUID,
+    session: Session = Depends(get_session),
+    _: PlatformUser = Depends(get_platform_user),
+) -> LsRefundResult:
+    from fastapi import HTTPException
+
+    try:
+        payment, credit_note = issue_refund_credit_note(session, payment_id)
+        session.commit()
+        session.refresh(payment)
+        session.refresh(credit_note)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Error al generar el abono: {exc}") from exc
+
+    return LsRefundResult(
+        payment_id=payment.id,
+        payment_status=payment.status.value if hasattr(payment.status, "value") else str(payment.status),
+        credit_note_number=credit_note.number,
+        credit_note_id=credit_note.id,
+    )
 
 
 class LsSyncPlanResult(BaseModel):

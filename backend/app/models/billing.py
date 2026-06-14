@@ -43,9 +43,9 @@ class PricingPlan(SQLModel, table=True):
     name: str = Field(max_length=120)
     description: str | None = Field(default=None, max_length=500)
     monthly_price_cents: int = Field(ge=0, description="Precio mensual sin compromiso anual")
-    annual_price_per_month_cents: int = Field(
+    annual_price_cents: int = Field(
         ge=0,
-        description="Equivalente mensual si contrata 12 meses (ej. 1500 = 15€/mes)",
+        description="Precio total del contrato anual (pago único, ej. 18000 = 180€/año)",
     )
     max_active_users: int = Field(ge=1, default=3)
     currency: str = Field(default="EUR", max_length=3)

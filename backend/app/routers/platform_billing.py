@@ -30,6 +30,7 @@ from app.services.pricing_service import (
     get_active_discount,
     sync_subscription_pricing,
 )
+from app.services.lemon_squeezy_service import update_ls_subscription_variant
 from app.services.org_service import seed_company_organization
 
 router = APIRouter(prefix="/platform/tenants", tags=["platform-billing"])
@@ -223,6 +224,9 @@ def update_subscription(
     discount_id = payload.pop("discount_id", None)
     cycle = payload.pop("billing_cycle", None)
 
+    ls_sync_plan: PricingPlan | None = None
+    ls_sync_cycle: str | None = None
+
     if plan_id is not None:
         plan = session.get(PricingPlan, plan_id)
         if not plan or not plan.is_active:
@@ -233,11 +237,13 @@ def update_subscription(
             plan.id,
         )
         sync_subscription_pricing(session, sub, plan, use_cycle, discount)
+        ls_sync_plan, ls_sync_cycle = plan, use_cycle
     elif cycle is not None and sub.pricing_plan_id:
         plan = session.get(PricingPlan, sub.pricing_plan_id)
         if plan:
             discount = get_active_discount(session, sub.discount_id, plan.id)
             sync_subscription_pricing(session, sub, plan, cycle, discount)
+            ls_sync_plan, ls_sync_cycle = plan, cycle
     elif discount_id is not None and sub.pricing_plan_id:
         plan = session.get(PricingPlan, sub.pricing_plan_id)
         if plan:
@@ -250,6 +256,12 @@ def update_subscription(
     session.add(sub)
     session.commit()
     session.refresh(sub)
+
+    if ls_sync_plan and ls_sync_cycle:
+        tenant = session.get(Tenant, tenant_id)
+        if tenant:
+            update_ls_subscription_variant(session, tenant, sub, ls_sync_plan, ls_sync_cycle)
+
     return _subscription_read(session, sub)
 
 

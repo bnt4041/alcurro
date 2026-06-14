@@ -54,6 +54,10 @@ export default function MarketingLayout() {
 
   return (
     <div className={`landing${mobileNavOpen ? " landing--nav-open" : ""}`}>
+      <div className="landing-announcement" role="banner" aria-label="Aviso de lanzamiento">
+        <span className="landing-announcement__badge">En desarrollo</span>
+        alcurro aún no está disponible comercialmente — estamos en fase de pruebas
+      </div>
       <header
         className={[
           "landing-nav",

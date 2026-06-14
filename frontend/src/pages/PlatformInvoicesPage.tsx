@@ -23,8 +23,21 @@ interface Invoice {
   pdf_url: string | null;
   email_sent_at: string | null;
   stripe_payment_id: string | null;
+  ls_payment_id: string | null;
+  ls_invoice_ref: string | null;
   credit_note_for_id: string | null;
   created_at: string;
+}
+
+interface InvoiceDetail extends Invoice {
+  recipient_legal_name: string | null;
+  recipient_tax_id: string | null;
+  recipient_address: string | null;
+  recipient_city: string | null;
+  recipient_postal_code: string | null;
+  recipient_province: string | null;
+  recipient_country: string;
+  recipient_email: string | null;
 }
 
 interface Tenant {
@@ -75,6 +88,12 @@ export default function PlatformInvoicesPage() {
   // Acción en curso
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
+  // Modal editar factura
+  const [editOpen, setEditOpen] = useState(false);
+  const [editInvoice, setEditInvoice] = useState<InvoiceDetail | null>(null);
+  const [editData, setEditData] = useState<Partial<InvoiceDetail>>({});
+  const [saving, setSaving] = useState(false);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -105,7 +124,44 @@ export default function PlatformInvoicesPage() {
     [invoices]
   );
 
+  const handleSaveEdit = async () => {
+    if (!editInvoice) return;
+    setSaving(true);
+    try {
+      await api.patch(`/platform/invoices/${editInvoice.id}`, editData);
+      notify("Factura actualizada", "success");
+      setEditOpen(false);
+      load();
+    } catch (err) {
+      notify(String(err).replace(/^Error:\s*/i, ""), "error");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleAction = async (action: string, row: TableRow) => {
+    if (action === "edit") {
+      try {
+        const detail = await api.get<InvoiceDetail>(`/platform/invoices/${row.id}`);
+        setEditInvoice(detail);
+        setEditData({
+          concept: detail.concept,
+          due_date: detail.due_date,
+          recipient_legal_name: detail.recipient_legal_name,
+          recipient_tax_id: detail.recipient_tax_id,
+          recipient_address: detail.recipient_address,
+          recipient_city: detail.recipient_city,
+          recipient_postal_code: detail.recipient_postal_code,
+          recipient_province: detail.recipient_province,
+          recipient_country: detail.recipient_country,
+          recipient_email: detail.recipient_email,
+        });
+        setEditOpen(true);
+      } catch (err) {
+        notify(String(err).replace(/^Error:\s*/i, ""), "error");
+      }
+      return;
+    }
     setActionLoading(row.id + action);
     try {
       if (action === "pdf") {
@@ -138,10 +194,17 @@ export default function PlatformInvoicesPage() {
         title: "Número",
         field: "number",
         headerFilter: "input",
-        width: 150,
+        width: 200,
         formatter: (cell) => {
           const r = cell.getRow().getData() as TableRow;
-          return `<span class="mono small">${r.number}</span>`;
+          let badges = "";
+          if (r.ls_invoice_ref) {
+            badges += `<span class="badge badge--info" title="Referencia LS: ${r.ls_invoice_ref}">LS ${r.ls_invoice_ref}</span> `;
+          } else if (r.ls_payment_id) {
+            badges += `<span class="badge badge--info" title="Vinculada a cobro LS">LS</span> `;
+          }
+          if (r.credit_note_for_id) badges += `<span class="badge badge--warning" title="Rectificativa">ABONO</span> `;
+          return `${badges}<span class="mono small">${r.number}</span>`;
         },
       },
       {
@@ -195,13 +258,14 @@ export default function PlatformInvoicesPage() {
       {
         title: "Acciones",
         field: "id",
-        width: 200,
+        width: 260,
         formatter: (cell) => {
           const r = cell.getRow().getData() as TableRow;
           const cancelled = r.status === "cancelled" || r.status === "credit_note";
           return `
             <div class="table-actions">
               <button class="btn btn-xs" data-action="pdf" title="Descargar PDF">PDF</button>
+              <button class="btn btn-xs" data-action="edit" title="Editar datos de factura">Editar</button>
               <button class="btn btn-xs" data-action="email" title="Enviar por email" ${cancelled ? "disabled" : ""}>Email</button>
               ${!cancelled ? `<button class="btn btn-xs btn-warning" data-action="credit" title="Factura rectificativa">Abono</button>` : ""}
               ${r.status !== "cancelled" && r.status !== "credit_note" ? `<button class="btn btn-xs btn-danger" data-action="cancel" title="Anular factura">Anular</button>` : ""}
@@ -278,6 +342,102 @@ export default function PlatformInvoicesPage() {
           onCellAction={(action, row) => handleAction(action, row as TableRow)}
         />
       </section>
+
+      <Modal
+        title={`Editar factura ${editInvoice?.number ?? ""}`}
+        open={editOpen}
+        onClose={() => setEditOpen(false)}
+      >
+        {editInvoice && (
+          <div className="form-grid">
+            <label>
+              Concepto
+              <input
+                value={editData.concept ?? ""}
+                onChange={(e) => setEditData({ ...editData, concept: e.target.value })}
+              />
+            </label>
+            <label>
+              Fecha de vencimiento
+              <input
+                type="date"
+                value={editData.due_date ?? ""}
+                onChange={(e) => setEditData({ ...editData, due_date: e.target.value || null })}
+              />
+            </label>
+            <label>
+              Razón social del cliente
+              <input
+                value={editData.recipient_legal_name ?? ""}
+                onChange={(e) => setEditData({ ...editData, recipient_legal_name: e.target.value || null })}
+              />
+            </label>
+            <label>
+              NIF / CIF del cliente
+              <input
+                value={editData.recipient_tax_id ?? ""}
+                onChange={(e) => setEditData({ ...editData, recipient_tax_id: e.target.value || null })}
+              />
+            </label>
+            <label>
+              Email del cliente
+              <input
+                type="email"
+                value={editData.recipient_email ?? ""}
+                onChange={(e) => setEditData({ ...editData, recipient_email: e.target.value || null })}
+              />
+            </label>
+            <label>
+              Dirección
+              <input
+                value={editData.recipient_address ?? ""}
+                onChange={(e) => setEditData({ ...editData, recipient_address: e.target.value || null })}
+              />
+            </label>
+            <label>
+              Ciudad
+              <input
+                value={editData.recipient_city ?? ""}
+                onChange={(e) => setEditData({ ...editData, recipient_city: e.target.value || null })}
+              />
+            </label>
+            <label>
+              Código postal
+              <input
+                value={editData.recipient_postal_code ?? ""}
+                onChange={(e) => setEditData({ ...editData, recipient_postal_code: e.target.value || null })}
+              />
+            </label>
+            <label>
+              Provincia
+              <input
+                value={editData.recipient_province ?? ""}
+                onChange={(e) => setEditData({ ...editData, recipient_province: e.target.value || null })}
+              />
+            </label>
+            <label>
+              País
+              <input
+                value={editData.recipient_country ?? "ES"}
+                onChange={(e) => setEditData({ ...editData, recipient_country: e.target.value })}
+              />
+            </label>
+          </div>
+        )}
+        <div className="form-actions" style={{ marginTop: "1.5rem" }}>
+          <button type="button" className="btn" onClick={() => setEditOpen(false)}>
+            Cancelar
+          </button>
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={saving}
+            onClick={handleSaveEdit}
+          >
+            {saving ? "Guardando…" : "Guardar cambios"}
+          </button>
+        </div>
+      </Modal>
 
       <Modal
         title="Nueva factura manual"

@@ -43,6 +43,22 @@ def next_invoice_number(session: Session, settings: PlatformSettings) -> str:
     return number
 
 
+def next_credit_note_number(session: Session, settings: PlatformSettings) -> str:
+    """Genera el próximo número de factura de abono y actualiza el contador."""
+    current_year = datetime.utcnow().year
+
+    if settings.credit_note_current_year != current_year:
+        settings.credit_note_current_year = current_year
+        settings.credit_note_next_number = 1
+
+    number = f"{settings.credit_note_prefix}-{current_year}-{settings.credit_note_next_number:04d}"
+    settings.credit_note_next_number += 1
+    settings.updated_at = datetime.utcnow()
+    session.add(settings)
+    session.flush()
+    return number
+
+
 def _snapshot_tenant(tenant: Tenant) -> dict:
     return {
         "recipient_legal_name": tenant.legal_name or tenant.name,
@@ -220,14 +236,26 @@ def generate_invoice_manually(
     return invoice
 
 
-def create_credit_note(session: Session, invoice_id: UUID) -> Invoice:
+def create_credit_note(
+    session: Session,
+    invoice_id: UUID,
+    *,
+    ls_payment_id: UUID | None = None,
+) -> Invoice:
     """Genera una factura rectificativa (abono) para una factura existente."""
     original = session.get(Invoice, invoice_id)
     if not original:
         raise ValueError("Factura no encontrada")
 
+    # Impedir doble rectificativa
+    existing = session.exec(
+        select(Invoice).where(Invoice.credit_note_for_id == invoice_id)
+    ).first()
+    if existing:
+        raise ValueError(f"Ya existe una factura rectificativa ({existing.number}) para esta factura")
+
     settings = get_platform_settings(session)
-    number = next_invoice_number(session, settings)
+    number = next_credit_note_number(session, settings)
 
     credit = Invoice(
         tenant_id=original.tenant_id,
@@ -241,6 +269,7 @@ def create_credit_note(session: Session, invoice_id: UUID) -> Invoice:
         issue_date=date.today(),
         status=InvoiceStatus.CREDIT_NOTE,
         credit_note_for_id=original.id,
+        ls_payment_id=ls_payment_id,
         recipient_legal_name=original.recipient_legal_name,
         recipient_tax_id=original.recipient_tax_id,
         recipient_address=original.recipient_address,

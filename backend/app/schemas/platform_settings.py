@@ -24,6 +24,9 @@ class PlatformSettingsRead(BaseModel):
     invoice_current_year: int
     vat_rate: int
     invoice_footer_text: str | None
+    credit_note_prefix: str
+    credit_note_next_number: int
+    credit_note_current_year: int
     auto_send_invoice_email: bool
     updated_at: datetime
 
@@ -48,4 +51,6 @@ class PlatformSettingsUpdate(BaseModel):
     invoice_next_number: int | None = None
     vat_rate: int | None = None
     invoice_footer_text: str | None = None
+    credit_note_prefix: str | None = None
+    credit_note_next_number: int | None = None
     auto_send_invoice_email: bool | None = None

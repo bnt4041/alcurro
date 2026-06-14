@@ -36,43 +36,9 @@ export interface PublicPricingPlan {
   name: string;
   description: string | null;
   monthly_price_cents: number;
-  annual_price_per_month_cents: number;
+  annual_price_cents: number;
   max_active_users: number;
   currency: string;
-}
-
-export interface PublicStripeConfig {
-  enabled: boolean;
-  publishable_key: string | null;
-  simulation_mode: boolean;
-  checkout_mode: "stripe" | "simulation" | "none";
-}
-
-export interface SimulateCheckoutPreview {
-  token: string;
-  company_name: string;
-  tenant_slug: string;
-  amount_cents: number;
-  currency: string;
-  plan_name: string;
-  billing_cycle: string;
-  subscription_status: string;
-}
-
-export interface SimulatePaymentResponse {
-  tenant_id: string;
-  tenant_slug: string;
-  company_name: string;
-  subscription_status: string;
-  amount_cents: number;
-  currency: string;
-  already_completed: boolean;
-  gowa_status: string;
-  gowa_ui_url: string | null;
-  gowa_port: number | null;
-  gowa_container_name: string | null;
-  gowa_error: string | null;
-  simulated: boolean;
 }
 
 export interface PublicSignupBody {
@@ -102,21 +68,11 @@ export interface PublicSignupResponse {
   tenant_slug: string;
   company_name: string;
   checkout_url: string | null;
-  stripe_enabled: boolean;
-  simulation_mode: boolean;
   admin_login_hint: string;
 }
 
 export const publicApi = {
   getPlans: () => publicRequest<PublicPricingPlan[]>("/pricing-plans"),
-  getStripeConfig: () => publicRequest<PublicStripeConfig>("/stripe-config"),
-  getSimulateCheckout: (token: string) =>
-    publicRequest<SimulateCheckoutPreview>(`/simulate-checkout/${encodeURIComponent(token)}`),
-  confirmSimulatePayment: (token: string) =>
-    publicRequest<SimulatePaymentResponse>("/simulate-payment", {
-      method: "POST",
-      body: JSON.stringify({ token }),
-    }),
   signup: (body: PublicSignupBody) =>
     publicRequest<PublicSignupResponse>("/signup", {
       method: "POST",

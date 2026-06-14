@@ -10,11 +10,11 @@ from sqlmodel import Session, select
 
 from app.core.platform_deps import get_platform_user
 from app.database import get_session
-from app.models.billing import StripePayment
+from app.models.billing import LemonSqueezyPayment, StripePayment
 from app.models.invoice import Invoice, InvoiceStatus
 from app.models.rbac import PlatformUser
 from app.models.tenant import Tenant
-from app.schemas.invoice import InvoiceCreate, InvoiceDetail, InvoiceListItem, InvoiceStatusUpdate
+from app.schemas.invoice import InvoiceCreate, InvoiceDetail, InvoiceListItem, InvoiceStatusUpdate, InvoiceUpdate
 from app.services.invoice_service import (
     create_credit_note,
     generate_invoice_for_payment,
@@ -31,8 +31,14 @@ def _enrich(session: Session, invoice: Invoice) -> InvoiceListItem:
     if invoice.tenant_id:
         t = session.get(Tenant, invoice.tenant_id)
         tenant_name = t.name if t else None
+    ls_invoice_ref: str | None = None
+    if invoice.ls_payment_id:
+        lsp = session.get(LemonSqueezyPayment, invoice.ls_payment_id)
+        if lsp and lsp.ls_invoice_id:
+            ls_invoice_ref = lsp.ls_invoice_id
     data = InvoiceListItem.model_validate(invoice)
     data.tenant_name = tenant_name
+    data.ls_invoice_ref = ls_invoice_ref
     return data
 
 
@@ -180,6 +186,29 @@ def update_invoice_status(
         raise HTTPException(status_code=404, detail="Factura no encontrada")
     invoice.status = data.status
     from datetime import datetime
+    invoice.updated_at = datetime.utcnow()
+    session.add(invoice)
+    session.commit()
+    session.refresh(invoice)
+    t = session.get(Tenant, invoice.tenant_id)
+    detail = InvoiceDetail.model_validate(invoice)
+    detail.tenant_name = t.name if t else None
+    return detail
+
+
+@router.patch("/{invoice_id}", response_model=InvoiceDetail)
+def update_invoice(
+    invoice_id: UUID,
+    data: InvoiceUpdate,
+    session: Session = Depends(get_session),
+    _: PlatformUser = Depends(get_platform_user),
+) -> InvoiceDetail:
+    from datetime import datetime
+    invoice = session.get(Invoice, invoice_id)
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Factura no encontrada")
+    for key, value in data.model_dump(exclude_unset=True).items():
+        setattr(invoice, key, value)
     invoice.updated_at = datetime.utcnow()
     session.add(invoice)
     session.commit()

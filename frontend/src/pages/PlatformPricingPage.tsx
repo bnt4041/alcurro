@@ -13,7 +13,7 @@ interface PricingPlan {
   name: string;
   description: string | null;
   monthly_price_cents: number;
-  annual_price_per_month_cents: number;
+  annual_price_cents: number;
   max_active_users: number;
   currency: string;
   is_active: boolean;
@@ -34,7 +34,7 @@ const empty = () => ({
   name: "",
   description: "",
   monthly_eur: "18.00",
-  annual_monthly_eur: "15.00",
+  annual_eur: "180.00",
   max_active_users: "3",
   sort_order: "0",
   is_active: true,
@@ -69,7 +69,7 @@ export default function PlatformPricingPage() {
       name: p.name,
       description: p.description ?? "",
       monthly_eur: centsToEurosInput(p.monthly_price_cents),
-      annual_monthly_eur: centsToEurosInput(p.annual_price_per_month_cents),
+      annual_eur: centsToEurosInput(p.annual_price_cents),
       max_active_users: String(p.max_active_users),
       sort_order: String(p.sort_order),
       is_active: p.is_active,
@@ -98,7 +98,7 @@ export default function PlatformPricingPage() {
       name: form.name.trim(),
       description: form.description.trim() || null,
       monthly_price_cents: parseEurosToCents(form.monthly_eur),
-      annual_price_per_month_cents: parseEurosToCents(form.annual_monthly_eur),
+      annual_price_cents: parseEurosToCents(form.annual_eur),
       max_active_users: parseInt(form.max_active_users, 10) || 1,
       sort_order: parseInt(form.sort_order, 10) || 0,
       is_active: form.is_active,
@@ -126,7 +126,7 @@ export default function PlatformPricingPage() {
       plans.map((p) => ({
         ...p,
         monthly_label: `${formatMoney(p.monthly_price_cents, p.currency)}/mes`,
-        annual_label: `${formatMoney(p.annual_price_per_month_cents, p.currency)}/mes (${formatMoney(p.annual_price_per_month_cents * 12, p.currency)}/año)`,
+        annual_label: `${formatMoney(p.annual_price_cents, p.currency)}/año`,
         status_label: p.is_active ? "Activa" : "Inactiva",
       })),
     [plans]
@@ -153,7 +153,7 @@ export default function PlatformPricingPage() {
         },
       },
       { title: "Mensual", field: "monthly_label", headerFilter: "input", width: 120 },
-      { title: "Anual (€/mes)", field: "annual_label", headerFilter: "input", minWidth: 140 },
+      { title: "Anual (€/año)", field: "annual_label", headerFilter: "input", minWidth: 140 },
       { title: "Usuarios", field: "max_active_users", headerFilter: "number", width: 90 },
       {
         title: "Estado",
@@ -273,19 +273,19 @@ export default function PlatformPricingPage() {
             />
           </label>
           <label>
-            Precio anual (€/mes)
+            Precio anual total (€/año)
             <input
               required
               type="number"
               step="0.01"
               min="0"
-              value={form.annual_monthly_eur}
+              value={form.annual_eur}
               onChange={(e) =>
-                setForm({ ...form, annual_monthly_eur: e.target.value })
+                setForm({ ...form, annual_eur: e.target.value })
               }
             />
             <span className="field-hint muted small">
-              Equivalente mensual si contrata 12 meses
+              Importe total del contrato anual (pago único)
             </span>
           </label>
           <label>

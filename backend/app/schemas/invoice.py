@@ -23,6 +23,8 @@ class InvoiceListItem(BaseModel):
     pdf_url: str | None
     email_sent_at: datetime | None
     stripe_payment_id: UUID | None
+    ls_payment_id: UUID | None
+    ls_invoice_ref: str | None = None
     credit_note_for_id: UUID | None
     created_at: datetime
 
@@ -55,3 +57,16 @@ class InvoiceCreate(BaseModel):
 
 class InvoiceStatusUpdate(BaseModel):
     status: InvoiceStatus
+
+
+class InvoiceUpdate(BaseModel):
+    concept: str | None = None
+    due_date: date | None = None
+    recipient_legal_name: str | None = None
+    recipient_tax_id: str | None = None
+    recipient_address: str | None = None
+    recipient_city: str | None = None
+    recipient_postal_code: str | None = None
+    recipient_province: str | None = None
+    recipient_country: str | None = None
+    recipient_email: str | None = None

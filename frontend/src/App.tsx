@@ -31,7 +31,6 @@ import PlatformDiscountsPage from "./pages/PlatformDiscountsPage";
 import PlatformPage from "./pages/PlatformPage";
 import PlatformUsersPage from "./pages/PlatformUsersPage";
 import PlatformPricingPage from "./pages/PlatformPricingPage";
-import PlatformStripePage from "./pages/PlatformStripePage";
 import PlatformLemonSqueezyPage from "./pages/PlatformLemonSqueezyPage";
 import PlatformWhatsAppPage from "./pages/PlatformWhatsAppPage";
 import PlatformMailPage from "./pages/PlatformMailPage";
@@ -43,7 +42,6 @@ import PlatformInvoicesPage from "./pages/PlatformInvoicesPage";
 import OrgChartPage from "./pages/OrgChartPage";
 import ShiftsPage from "./pages/ShiftsPage";
 import SignupPage from "./pages/SignupPage";
-import SignupSimulatePaymentPage from "./pages/SignupSimulatePaymentPage";
 import SignupSuccessPage from "./pages/SignupSuccessPage";
 import SignDocumentPage from "./pages/SignDocumentPage";
 import ReportsPage from "./pages/ReportsPage";
@@ -60,7 +58,6 @@ export default function App() {
             <Route element={<MarketingLayout />}>
               <Route index element={<HomePage />} />
               <Route path="registro" element={<SignupPage />} />
-              <Route path="registro/pago-simulado" element={<SignupSimulatePaymentPage />} />
               <Route path="registro/ok" element={<SignupSuccessPage />} />
               <Route path="aviso-legal" element={<AvisoLegalPage />} />
               <Route path="privacidad" element={<PrivacidadPage />} />
@@ -88,8 +85,7 @@ export default function App() {
                 <Route path="usuarios" element={<PlatformUsersPage />} />
                 <Route path="tarifas" element={<PlatformPricingPage />} />
                 <Route path="descuentos" element={<PlatformDiscountsPage />} />
-                <Route path="cobros" element={<PlatformStripePage />} />
-                <Route path="cobros-ls" element={<PlatformLemonSqueezyPage />} />
+                <Route path="cobros" element={<PlatformLemonSqueezyPage />} />
                 <Route path="facturas" element={<PlatformInvoicesPage />} />
                 <Route path="configuracion" element={<PlatformSettingsPage />} />
                 <Route path="whatsapp" element={<PlatformWhatsAppPage />} />

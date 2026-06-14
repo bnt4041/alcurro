@@ -45,6 +45,7 @@ from app.services.org_service import (
 from app.services.slug import resolve_tenant_slug, resolve_tenant_slug_update
 from app.services.tenant_delete import delete_tenant_permanent
 from app.services.tenant_purge import PURGE_CATEGORIES, purge_tenant_data
+from app.services.lemon_squeezy_service import update_ls_customer_name
 
 router = APIRouter(prefix="/platform", tags=["platform"])
 
@@ -455,6 +456,7 @@ def update_tenant_platform(
         raise HTTPException(status_code=404, detail="Cuenta no encontrada")
 
     payload = data.model_dump(exclude_unset=True)
+    old_legal_name = tenant.legal_name
     new_slug = payload.pop("slug", None)
     if new_slug is not None:
         slug = resolve_tenant_slug_update(
@@ -470,6 +472,11 @@ def update_tenant_platform(
     session.add(tenant)
     session.commit()
     session.refresh(tenant)
+
+    new_legal_name = payload.get("legal_name")
+    if new_legal_name and new_legal_name != old_legal_name:
+        update_ls_customer_name(tenant, new_legal_name)
+
     return tenant
 
 

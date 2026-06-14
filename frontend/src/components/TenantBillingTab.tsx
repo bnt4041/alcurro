@@ -8,7 +8,7 @@ interface PricingPlanOption {
   code: string;
   name: string;
   monthly_price_cents: number;
-  annual_price_per_month_cents: number;
+  annual_price_cents: number;
   max_active_users: number;
   currency: string;
 }

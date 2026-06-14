@@ -19,12 +19,6 @@ from app.services.legal_service import seed_default_legal_documents
 from app.services.rbac_service import assign_role_default_group, ensure_system_groups
 from app.services.slug import resolve_tenant_slug
 from app.config import get_settings
-from app.services.stripe_service import create_checkout_session
-from app.services.stripe_simulation import (
-    create_simulation_checkout_token,
-    stripe_simulation_enabled,
-    use_real_stripe,
-)
 from app.services.lemon_squeezy_service import (
     create_checkout as create_ls_checkout,
     get_ls_variant_id,
@@ -100,42 +94,26 @@ def register_tenant(session: Session, data: PublicSignupRequest) -> PublicSignup
     settings = get_settings()
     base = settings.public_app_url.rstrip("/")
     checkout_url: str | None = None
-    simulation = stripe_simulation_enabled()
-    ls_enabled = ls_configured()
 
-    if ls_enabled:
-        variant_id = get_ls_variant_id(plan, sub.billing_cycle)
-        if variant_id:
-            try:
-                custom_price: int | None = None
-                if discount:
-                    custom_price = calculate_subscription_amount(
-                        plan, sub.billing_cycle, discount
-                    )
-                checkout_url = create_ls_checkout(
-                    session,
-                    tenant,
-                    sub,
-                    variant_id,
-                    customer_email=data.billing_email,
-                    success_url=f"{base}/registro/ok",
-                    custom_price_cents=custom_price,
+    variant_id = get_ls_variant_id(plan, sub.billing_cycle)
+    if variant_id:
+        try:
+            custom_price: int | None = None
+            if discount:
+                custom_price = calculate_subscription_amount(
+                    plan, sub.billing_cycle, discount
                 )
-            except Exception:
-                checkout_url = None
-    elif use_real_stripe():
-        checkout_url = create_checkout_session(
-            session,
-            tenant,
-            sub,
-            plan,
-            customer_email=data.billing_email,
-            success_url=f"{base}/registro/ok?session_id={{CHECKOUT_SESSION_ID}}",
-            cancel_url=f"{base}/registro?cancelled=1",
-        )
-    elif simulation:
-        token = create_simulation_checkout_token(session, sub)
-        checkout_url = f"{base}/registro/pago-simulado?token={token}"
+            checkout_url = create_ls_checkout(
+                session,
+                tenant,
+                sub,
+                variant_id,
+                customer_email=data.billing_email,
+                success_url=f"{base}/registro/ok",
+                custom_price_cents=custom_price,
+            )
+        except Exception:
+            checkout_url = None
 
     session.commit()
 
@@ -144,8 +122,5 @@ def register_tenant(session: Session, data: PublicSignupRequest) -> PublicSignup
         tenant_slug=tenant.slug,
         company_name=tenant.name,
         checkout_url=checkout_url,
-        stripe_enabled=use_real_stripe(),
-        ls_enabled=ls_enabled,
-        simulation_mode=simulation and not use_real_stripe() and not ls_enabled,
         admin_login_hint=f"Accede en {base}/acceso-cliente con cuenta «{tenant.slug}» y usuario ADM001",
     )

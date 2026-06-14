@@ -12,7 +12,7 @@ class PricingPlanRead(BaseModel):
     name: str
     description: str | None
     monthly_price_cents: int
-    annual_price_per_month_cents: int
+    annual_price_cents: int
     max_active_users: int
     currency: str
     is_active: bool
@@ -34,7 +34,7 @@ class PricingPlanCreate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     description: str | None = None
     monthly_price_cents: int = Field(ge=0)
-    annual_price_per_month_cents: int = Field(ge=0)
+    annual_price_cents: int = Field(ge=0)
     max_active_users: int = Field(ge=1, default=3)
     currency: str = "EUR"
     is_active: bool = True
@@ -52,7 +52,7 @@ class PricingPlanUpdate(BaseModel):
     name: str | None = None
     description: str | None = None
     monthly_price_cents: int | None = Field(default=None, ge=0)
-    annual_price_per_month_cents: int | None = Field(default=None, ge=0)
+    annual_price_cents: int | None = Field(default=None, ge=0)
     max_active_users: int | None = Field(default=None, ge=1)
     is_active: bool | None = None
     sort_order: int | None = None

@@ -36,10 +36,10 @@ class Invoice(SQLModel, table=True):
 
     # Concepto e importes
     concept: str = Field(default="Suscripción alcurro", max_length=500)
-    base_cents: int = Field(default=0, ge=0)
+    base_cents: int = Field(default=0)
     vat_rate: int = Field(default=21, ge=0, le=100)
-    vat_cents: int = Field(default=0, ge=0)
-    total_cents: int = Field(default=0, ge=0)
+    vat_cents: int = Field(default=0)
+    total_cents: int = Field(default=0)
     currency: str = Field(default="EUR", max_length=3)
 
     # Fechas
