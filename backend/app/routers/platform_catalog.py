@@ -19,6 +19,7 @@ from app.schemas.pricing import (
     PricingPlanRead,
     PricingPlanUpdate,
 )
+from app.services.lemon_squeezy_service import sync_discount_to_ls
 from app.services.pricing_service import (
     calculate_subscription_amount,
     get_active_discount,
@@ -105,14 +106,23 @@ def create_discount(
 ) -> Discount:
     if data.valid_until < data.valid_from:
         raise HTTPException(status_code=400, detail="La fecha fin debe ser posterior al inicio")
-    if session.exec(select(Discount).where(Discount.code == data.code)).first():
+    normalized_code = data.code.strip().upper()
+    if session.exec(select(Discount).where(Discount.code == normalized_code)).first():
         raise HTTPException(status_code=409, detail="Ya existe un descuento con ese código")
     if data.pricing_plan_id and not session.get(PricingPlan, data.pricing_plan_id):
         raise HTTPException(status_code=404, detail="Tarifa no encontrada")
-    row = Discount(**data.model_dump())
+    payload = data.model_dump()
+    payload["code"] = normalized_code
+    row = Discount(**payload)
     session.add(row)
     session.commit()
     session.refresh(row)
+    ls_id = sync_discount_to_ls(row)
+    if ls_id and ls_id != row.ls_discount_id:
+        row.ls_discount_id = ls_id
+        session.add(row)
+        session.commit()
+        session.refresh(row)
     return row
 
 
@@ -127,6 +137,8 @@ def update_discount(
     if not row:
         raise HTTPException(status_code=404, detail="Descuento no encontrado")
     payload = data.model_dump(exclude_unset=True)
+    if "code" in payload:
+        payload["code"] = payload["code"].strip().upper()
     vf = payload.get("valid_from", row.valid_from)
     vu = payload.get("valid_until", row.valid_until)
     if vu < vf:
@@ -137,6 +149,12 @@ def update_discount(
     session.add(row)
     session.commit()
     session.refresh(row)
+    ls_id = sync_discount_to_ls(row)
+    if ls_id and ls_id != row.ls_discount_id:
+        row.ls_discount_id = ls_id
+        session.add(row)
+        session.commit()
+        session.refresh(row)
     return row
 
 

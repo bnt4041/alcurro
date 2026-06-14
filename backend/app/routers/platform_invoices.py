@@ -32,13 +32,18 @@ def _enrich(session: Session, invoice: Invoice) -> InvoiceListItem:
         t = session.get(Tenant, invoice.tenant_id)
         tenant_name = t.name if t else None
     ls_invoice_ref: str | None = None
+    ls_receipt_url: str | None = None
     if invoice.ls_payment_id:
         lsp = session.get(LemonSqueezyPayment, invoice.ls_payment_id)
-        if lsp and lsp.ls_invoice_id:
-            ls_invoice_ref = lsp.ls_invoice_id
+        if lsp:
+            if lsp.ls_invoice_id:
+                ls_invoice_ref = lsp.ls_invoice_id
+            if lsp.receipt_url:
+                ls_receipt_url = lsp.receipt_url
     data = InvoiceListItem.model_validate(invoice)
     data.tenant_name = tenant_name
     data.ls_invoice_ref = ls_invoice_ref
+    data.ls_receipt_url = ls_receipt_url
     return data
 
 

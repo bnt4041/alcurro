@@ -46,8 +46,9 @@ class PublicLsConfig(BaseModel):
 
 
 class PublicSignupResponse(BaseModel):
-    tenant_id: UUID
-    tenant_slug: str
-    company_name: str
-    checkout_url: str | None
-    admin_login_hint: str
+    tenant_id: UUID | None = None
+    tenant_slug: str | None = None
+    company_name: str | None = None
+    checkout_url: str | None = None
+    admin_login_hint: str | None = None
+    pending_signup_id: UUID | None = None

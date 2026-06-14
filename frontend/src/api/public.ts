@@ -64,11 +64,29 @@ export interface PublicSignupBody {
 }
 
 export interface PublicSignupResponse {
-  tenant_id: string;
-  tenant_slug: string;
-  company_name: string;
+  tenant_id: string | null;
+  tenant_slug: string | null;
+  company_name: string | null;
   checkout_url: string | null;
-  admin_login_hint: string;
+  admin_login_hint: string | null;
+  pending_signup_id: string | null;
+}
+
+export interface PendingSignupStatus {
+  status: "pending" | "active" | "failed";
+  tenant_slug: string | null;
+  admin_login_hint: string | null;
+  error_message: string | null;
+}
+
+export interface PublicDiscountPreview {
+  valid: boolean;
+  discount_code: string;
+  discount_type: "percent" | "fixed";
+  discount_value: number;
+  base_amount_cents: number;
+  final_amount_cents: number;
+  currency: string;
 }
 
 export const publicApi = {
@@ -78,4 +96,10 @@ export const publicApi = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+  discountPreview: (planId: string, cycle: string, code: string) =>
+    publicRequest<PublicDiscountPreview>(
+      `/discount-preview?plan_id=${planId}&billing_cycle=${cycle}&code=${encodeURIComponent(code)}`
+    ),
+  getPendingSignup: (id: string) =>
+    publicRequest<PendingSignupStatus>(`/pending-signup/${id}`),
 };

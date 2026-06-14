@@ -37,6 +37,7 @@ export interface InvoiceRow {
   invoice_number: string | null;
   invoice_pdf_url: string | null;
   invoice_url: string | null;
+  ls_receipt_url: string | null;
   paid_at: string | null;
   created_at: string;
 }

@@ -30,7 +30,10 @@ from app.services.pricing_service import (
     get_active_discount,
     sync_subscription_pricing,
 )
-from app.services.lemon_squeezy_service import update_ls_subscription_variant
+from app.services.lemon_squeezy_service import (
+    apply_ls_discount_to_subscription,
+    update_ls_subscription_variant,
+)
 from app.services.org_service import seed_company_organization
 
 router = APIRouter(prefix="/platform/tenants", tags=["platform-billing"])
@@ -226,18 +229,19 @@ def update_subscription(
 
     ls_sync_plan: PricingPlan | None = None
     ls_sync_cycle: str | None = None
+    ls_apply_discount_code: str | None | bool = False  # False=skip, None=remove, str=apply
 
     if plan_id is not None:
         plan = session.get(PricingPlan, plan_id)
         if not plan or not plan.is_active:
             raise HTTPException(status_code=404, detail="Tarifa no encontrada")
         use_cycle = cycle or sub.billing_cycle
-        discount = get_active_discount(
-            session, discount_id if discount_id is not None else sub.discount_id,
-            plan.id,
-        )
+        effective_discount_id = discount_id if discount_id is not None else sub.discount_id
+        discount = get_active_discount(session, effective_discount_id, plan.id)
         sync_subscription_pricing(session, sub, plan, use_cycle, discount)
         ls_sync_plan, ls_sync_cycle = plan, use_cycle
+        if discount_id is not None:
+            ls_apply_discount_code = discount.code if discount else None
     elif cycle is not None and sub.pricing_plan_id:
         plan = session.get(PricingPlan, sub.pricing_plan_id)
         if plan:
@@ -249,6 +253,7 @@ def update_subscription(
         if plan:
             discount = get_active_discount(session, discount_id, plan.id)
             sync_subscription_pricing(session, sub, plan, sub.billing_cycle, discount)
+            ls_apply_discount_code = discount.code if discount else None
 
     for key, value in payload.items():
         setattr(sub, key, value)
@@ -261,6 +266,12 @@ def update_subscription(
         tenant = session.get(Tenant, tenant_id)
         if tenant:
             update_ls_subscription_variant(session, tenant, sub, ls_sync_plan, ls_sync_cycle)
+
+    if ls_apply_discount_code is not False and sub.ls_subscription_id:
+        apply_ls_discount_to_subscription(
+            sub.ls_subscription_id,
+            ls_apply_discount_code if ls_apply_discount_code else None,
+        )
 
     return _subscription_read(session, sub)
 

@@ -1,8 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from app.database import get_session
-from app.models.billing import PricingPlan
+from app.models.billing import PendingSignup, PendingSignupStatus, PricingPlan
 from app.schemas.public import (
     PublicLsConfig,
     PublicPricingPlanRead,
@@ -10,7 +13,7 @@ from app.schemas.public import (
     PublicSignupResponse,
 )
 from app.services.lemon_squeezy_service import ls_configured
-from app.services.signup_service import register_tenant
+from app.services.signup_service import initiate_signup
 from app.services.password_reset_service import (
     request_password_reset,
     validate_and_reset_password,
@@ -22,6 +25,21 @@ from app.schemas.auth import (
     ResetPasswordResponse,
 )
 from app.config import get_settings
+from app.services.pricing_service import (
+    calculate_subscription_amount,
+    get_active_discount_by_code,
+    plan_base_amount_cents,
+)
+
+
+class PublicDiscountPreview(BaseModel):
+    valid: bool
+    discount_code: str
+    discount_type: str
+    discount_value: int
+    base_amount_cents: int
+    final_amount_cents: int
+    currency: str
 
 router = APIRouter(prefix="/public", tags=["public"])
 
@@ -36,6 +54,32 @@ def list_public_pricing_plans(
             .where(PricingPlan.is_active == True)  # noqa: E712
             .order_by(PricingPlan.sort_order, PricingPlan.name)
         ).all()
+    )
+
+
+@router.get("/discount-preview", response_model=PublicDiscountPreview)
+def public_discount_preview(
+    plan_id: UUID = Query(...),
+    billing_cycle: str = Query(...),
+    code: str = Query(...),
+    session: Session = Depends(get_session),
+) -> PublicDiscountPreview:
+    plan = session.get(PricingPlan, plan_id)
+    if not plan or not plan.is_active:
+        raise HTTPException(status_code=404, detail="Tarifa no encontrada")
+    discount = get_active_discount_by_code(session, code.strip().upper(), plan.id)
+    if not discount:
+        raise HTTPException(status_code=404, detail="Código de descuento no válido o expirado")
+    base = plan_base_amount_cents(plan, billing_cycle)
+    final = calculate_subscription_amount(plan, billing_cycle, discount)
+    return PublicDiscountPreview(
+        valid=True,
+        discount_code=code.upper(),
+        discount_type=discount.discount_type,
+        discount_value=discount.value,
+        base_amount_cents=base,
+        final_amount_cents=final,
+        currency=plan.currency,
     )
 
 
@@ -59,7 +103,7 @@ def public_signup(
             detail="Debes aceptar los términos y condiciones",
         )
     try:
-        return register_tenant(session, data)
+        return initiate_signup(session, data)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -91,3 +135,41 @@ def reset_password(
     )
     session.commit()
     return ResetPasswordResponse(**result)
+
+
+class PendingSignupStatusResponse(BaseModel):
+    status: str
+    tenant_slug: str | None = None
+    admin_login_hint: str | None = None
+    error_message: str | None = None
+
+
+@router.get("/pending-signup/{pending_id}", response_model=PendingSignupStatusResponse)
+def get_pending_signup_status(
+    pending_id: UUID,
+    session: Session = Depends(get_session),
+) -> PendingSignupStatusResponse:
+    pending = session.get(PendingSignup, pending_id)
+    if not pending:
+        raise HTTPException(status_code=404, detail="Alta pendiente no encontrada")
+
+    if pending.status == PendingSignupStatus.ACTIVE and pending.tenant_id:
+        from app.models.tenant import Tenant
+        tenant = session.get(Tenant, pending.tenant_id)
+        settings = get_settings()
+        base = settings.public_app_url.rstrip("/")
+        slug = tenant.slug if tenant else None
+        hint = (
+            f"Accede en {base}/acceso-cliente con cuenta «{slug}» y usuario ADM001"
+            if slug else None
+        )
+        return PendingSignupStatusResponse(
+            status="active",
+            tenant_slug=slug,
+            admin_login_hint=hint,
+        )
+
+    return PendingSignupStatusResponse(
+        status=pending.status,
+        error_message=pending.error_message,
+    )

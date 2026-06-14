@@ -83,6 +83,7 @@ class Discount(SQLModel, table=True):
         description="Null = aplica a todas las tarifas",
     )
     is_active: bool = Field(default=True)
+    ls_discount_id: str | None = Field(default=None, max_length=80)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -190,4 +191,24 @@ class LemonSqueezyPayment(SQLModel, table=True):
     invoice_number: str | None = Field(default=None, max_length=50)
     receipt_url: str | None = Field(default=None)
     paid_at: datetime | None = Field(default=None)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class PendingSignupStatus(StrEnum):
+    PENDING = "pending"
+    ACTIVE = "active"
+    FAILED = "failed"
+
+
+class PendingSignup(SQLModel, table=True):
+    """Registro temporal de alta pendiente de confirmación de pago LS."""
+
+    __tablename__ = "pending_signups"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    data_json: str = Field(description="JSON serializado del formulario de alta")
+    tenant_id: UUID | None = Field(default=None, foreign_key="tenants.id", nullable=True)
+    ls_subscription_id: str | None = Field(default=None, max_length=80, index=True)
+    status: PendingSignupStatus = Field(default=PendingSignupStatus.PENDING)
+    error_message: str | None = Field(default=None, max_length=500)
     created_at: datetime = Field(default_factory=datetime.utcnow)

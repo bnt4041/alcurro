@@ -38,7 +38,6 @@ import PlatformAIPage from "./pages/PlatformAIPage";
 import PlatformPurgePage from "./pages/PlatformPurgePage";
 import PlatformPolicyPage from "./pages/PlatformPolicyPage";
 import PlatformSettingsPage from "./pages/PlatformSettingsPage";
-import PlatformInvoicesPage from "./pages/PlatformInvoicesPage";
 import OrgChartPage from "./pages/OrgChartPage";
 import ShiftsPage from "./pages/ShiftsPage";
 import SignupPage from "./pages/SignupPage";
@@ -86,7 +85,6 @@ export default function App() {
                 <Route path="tarifas" element={<PlatformPricingPage />} />
                 <Route path="descuentos" element={<PlatformDiscountsPage />} />
                 <Route path="cobros" element={<PlatformLemonSqueezyPage />} />
-                <Route path="facturas" element={<PlatformInvoicesPage />} />
                 <Route path="configuracion" element={<PlatformSettingsPage />} />
                 <Route path="whatsapp" element={<PlatformWhatsAppPage />} />
                 <Route path="mail" element={<PlatformMailPage />} />

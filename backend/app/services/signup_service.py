@@ -1,11 +1,13 @@
 """Alta pública de nuevos clientes (tenant)."""
 
+import json
+import logging
 from uuid import UUID
 
 from sqlmodel import Session, select
 
 from app.core.security import hash_password
-from app.models.billing import BillingCycle, PricingPlan, SubscriptionStatus
+from app.models.billing import BillingCycle, PendingSignup, PendingSignupStatus, PricingPlan, SubscriptionStatus
 from app.models.models import Employee, Role
 from app.models.tenant import Tenant
 from app.schemas.public import PublicSignupRequest, PublicSignupResponse
@@ -14,6 +16,7 @@ from app.services.org_service import clone_groups_for_tenant, ensure_group_templ
 from app.services.pricing_service import (
     get_active_discount_by_code,
     sync_subscription_pricing,
+    calculate_subscription_amount,
 )
 from app.services.legal_service import seed_default_legal_documents
 from app.services.rbac_service import assign_role_default_group, ensure_system_groups
@@ -24,10 +27,12 @@ from app.services.lemon_squeezy_service import (
     get_ls_variant_id,
     ls_configured,
 )
-from app.services.pricing_service import calculate_subscription_amount
+
+_log = logging.getLogger(__name__)
 
 
 def register_tenant(session: Session, data: PublicSignupRequest) -> PublicSignupResponse:
+    """Crea el tenant inmediatamente (sin LS o desde webhook de PendingSignup)."""
     plan = session.get(PricingPlan, data.pricing_plan_id)
     if not plan or not plan.is_active:
         raise ValueError("Tarifa no válida")
@@ -56,7 +61,7 @@ def register_tenant(session: Session, data: PublicSignupRequest) -> PublicSignup
     ensure_group_templates(session)
     company, _, _ = seed_tenant_organization(session, tenant, data.company_name)
     copy_tenant_billing_to_company(tenant, company)
-    tenant.billing_company_id = company.id  # empresa principal = facturación
+    tenant.billing_company_id = company.id
     session.add(company)
     session.add(tenant)
     clone_groups_for_tenant(session, tenant.id)
@@ -93,34 +98,70 @@ def register_tenant(session: Session, data: PublicSignupRequest) -> PublicSignup
 
     settings = get_settings()
     base = settings.public_app_url.rstrip("/")
-    checkout_url: str | None = None
-
-    variant_id = get_ls_variant_id(plan, sub.billing_cycle)
-    if variant_id:
-        try:
-            custom_price: int | None = None
-            if discount:
-                custom_price = calculate_subscription_amount(
-                    plan, sub.billing_cycle, discount
-                )
-            checkout_url = create_ls_checkout(
-                session,
-                tenant,
-                sub,
-                variant_id,
-                customer_email=data.billing_email,
-                success_url=f"{base}/registro/ok",
-                custom_price_cents=custom_price,
-            )
-        except Exception:
-            checkout_url = None
-
-    session.commit()
 
     return PublicSignupResponse(
         tenant_id=tenant.id,
         tenant_slug=tenant.slug,
         company_name=tenant.name,
-        checkout_url=checkout_url,
+        checkout_url=None,
         admin_login_hint=f"Accede en {base}/acceso-cliente con cuenta «{tenant.slug}» y usuario ADM001",
+    )
+
+
+def initiate_signup(session: Session, data: PublicSignupRequest) -> PublicSignupResponse:
+    """Punto de entrada público. Si LS está configurado, crea PendingSignup; si no, crea el tenant."""
+    plan = session.get(PricingPlan, data.pricing_plan_id)
+    if not plan or not plan.is_active:
+        raise ValueError("Tarifa no válida")
+
+    cycle = (
+        data.billing_cycle.value
+        if hasattr(data.billing_cycle, "value")
+        else str(data.billing_cycle)
+    )
+    variant_id = get_ls_variant_id(plan, cycle)
+
+    if not ls_configured() or not variant_id:
+        # Sin LS: crear cuenta inmediatamente
+        resp = register_tenant(session, data)
+        session.commit()
+        return resp
+
+    # Con LS: guardar PendingSignup y redirigir a checkout
+    discount = get_active_discount_by_code(session, data.discount_code, plan.id)
+    discounted_cents = calculate_subscription_amount(plan, cycle, discount)
+
+    pending = PendingSignup(
+        data_json=data.model_dump_json(),
+        status=PendingSignupStatus.PENDING,
+    )
+    session.add(pending)
+    session.flush()
+
+    settings = get_settings()
+    base = settings.public_app_url.rstrip("/")
+    success_url = f"{base}/registro/ok?pending={pending.id}"
+
+    try:
+        checkout_url = create_ls_checkout(
+            session,
+            tenant=None,
+            subscription=None,
+            variant_id=variant_id,
+            customer_email=data.billing_email,
+            success_url=success_url,
+            custom_price_cents=discounted_cents if discount else None,
+            custom_data={"pending_signup_id": str(pending.id)},
+        )
+    except Exception as exc:
+        _log.error("LS checkout error: %s", exc, exc_info=True)
+        session.rollback()
+        raise ValueError("No se pudo crear el checkout de pago. Inténtalo de nuevo.") from exc
+
+    session.commit()
+
+    return PublicSignupResponse(
+        pending_signup_id=pending.id,
+        checkout_url=checkout_url,
+        company_name=data.company_name.strip(),
     )

@@ -8,6 +8,7 @@ from app.models.billing import (  # noqa: F401
     BillingMethod,
     Discount,
     LemonSqueezyPayment,
+    PendingSignup,
     PricingPlan,
     StripePayment,
     Subscription,

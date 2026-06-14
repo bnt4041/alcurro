@@ -11,7 +11,7 @@ from app.config import get_settings
 from app.core.permissions import Permission, require_permission
 from app.core.tenant_context import TenantContext, get_tenant_context
 from app.database import get_session
-from app.models.billing import BillingCycle, PricingPlan, Subscription
+from app.models.billing import BillingCycle, LemonSqueezyPayment, LsPaymentStatus, PricingPlan, Subscription
 from app.models.tenant import Company, Tenant
 from app.schemas.billing import TenantAccountBillingRead
 from app.schemas.tenant import (
@@ -27,7 +27,18 @@ from app.schemas.tenant import (
 )
 from app.services.billing_read import tenant_account_billing
 from app.services.gowa_client import get_shared_whatsapp_session
-from app.services.lemon_squeezy_service import update_ls_customer_name
+from app.services.lemon_squeezy_service import (
+    get_ls_variant_id,
+    ls_configured,
+    patch_ls_subscription_price,
+    patch_ls_subscription_variant,
+    update_ls_customer_name,
+)
+from app.services.pricing_service import (
+    calculate_subscription_amount,
+    get_active_discount_by_code,
+    sync_subscription_pricing,
+)
 from app.services.org_service import (
     clone_groups_for_tenant,
     ensure_group_templates,
@@ -240,6 +251,52 @@ def download_tenant_invoice_pdf(
     )
 
 
+class TenantPaymentRead(BaseModel):
+    id: str
+    amount_cents: int
+    currency: str
+    status: str
+    description: str | None
+    receipt_url: str | None
+    ls_invoice_id: str | None
+    paid_at: str | None
+    created_at: str
+
+
+@router.get("/current/payments", response_model=list[TenantPaymentRead])
+def list_tenant_payments(
+    ctx: TenantContext = Depends(get_tenant_context),
+    session: Session = Depends(get_session),
+    _: object = Depends(require_permission(Permission.READ, "tenant")),
+) -> list[TenantPaymentRead]:
+    rows = session.exec(
+        select(LemonSqueezyPayment)
+        .where(LemonSqueezyPayment.tenant_id == ctx.tenant.id)
+        .order_by(LemonSqueezyPayment.created_at.desc())  # type: ignore[attr-defined]
+        .limit(200)
+    ).all()
+    status_map = {
+        LsPaymentStatus.PAID: "Cobrado",
+        LsPaymentStatus.PENDING: "Pendiente",
+        LsPaymentStatus.FAILED: "Fallido",
+        LsPaymentStatus.REFUNDED: "Reembolsado",
+    }
+    return [
+        TenantPaymentRead(
+            id=str(r.id),
+            amount_cents=r.amount_cents,
+            currency=r.currency,
+            status=status_map.get(r.status, r.status),
+            description=r.description,
+            receipt_url=r.receipt_url,
+            ls_invoice_id=r.ls_invoice_id,
+            paid_at=r.paid_at.isoformat() if r.paid_at else None,
+            created_at=r.created_at.isoformat(),
+        )
+        for r in rows
+    ]
+
+
 @router.get("/current/whatsapp/status", response_model=TenantWhatsAppStatusRead)
 async def tenant_whatsapp_status(
     session: Session = Depends(get_session),
@@ -383,24 +440,110 @@ def request_plan_change(
                     ),
                 )
 
-        # Store pending change in pending_meta (reuse existing JSON or store in notes)
-        # We record it as a note on the subscription for now
         sub.pending_plan_id = data.plan_id
         sub.pending_billing_cycle = data.billing_cycle
         session.add(sub)
+        session.flush()
+
+        # Sincronizar con Lemon Squeezy si hay suscripción LS activa
+        ls_error: str | None = None
+        if ls_configured() and sub.ls_subscription_id:
+            variant_id = get_ls_variant_id(new_plan, data.billing_cycle)
+            if variant_id:
+                try:
+                    patch_ls_subscription_variant(
+                        sub.ls_subscription_id,
+                        variant_id,
+                        invoice_immediately=False,
+                    )
+                except Exception as exc:
+                    import logging
+                    logging.getLogger(__name__).error(
+                        "Error actualizando variante en LS sub %s: %s", sub.ls_subscription_id, exc
+                    )
+                    ls_error = "El cambio se ha guardado, pero no se pudo actualizar en Lemon Squeezy."
+
         session.commit()
+        msg = (
+            f"Cambio de tarifa a «{new_plan.name}» ({data.billing_cycle}) "
+            f"programado para el final del período actual."
+        )
+        if ls_error:
+            msg += f" Aviso: {ls_error}"
         return PlanChangePending(
             ok=True,
-            message=(
-                f"Cambio de tarifa a «{new_plan.name}» ({data.billing_cycle}) "
-                f"programado para el final del período actual."
-            ),
+            message=msg,
             pending_plan_name=new_plan.name,
             pending_billing_cycle=data.billing_cycle,
             effective_date=sub.current_period_end.isoformat() if sub.current_period_end else None,
         )
 
     raise HTTPException(status_code=404, detail="No tienes ninguna suscripción activa")
+
+
+class ApplyDiscountRequest(BaseModel):
+    discount_code: str
+
+
+class ApplyDiscountResponse(BaseModel):
+    ok: bool
+    message: str
+    discount_name: str | None = None
+    new_amount_cents: int | None = None
+    currency: str | None = None
+
+
+@router.post("/current/apply-discount", response_model=ApplyDiscountResponse)
+def apply_tenant_discount(
+    data: ApplyDiscountRequest,
+    ctx: TenantContext = Depends(get_tenant_context),
+    session: Session = Depends(get_session),
+    _: object = Depends(require_permission(Permission.WRITE, "tenant")),
+) -> ApplyDiscountResponse:
+    """Aplica un código de descuento a la suscripción activa del tenant."""
+    sub = session.exec(
+        select(Subscription).where(Subscription.tenant_id == ctx.tenant.id)
+    ).first()
+    if not sub:
+        raise HTTPException(status_code=404, detail="No tienes ninguna suscripción activa")
+
+    discount = get_active_discount_by_code(session, data.discount_code.strip(), sub.pricing_plan_id)
+    if not discount:
+        raise HTTPException(status_code=404, detail="Código de descuento no válido o expirado")
+
+    plan = session.get(PricingPlan, sub.pricing_plan_id) if sub.pricing_plan_id else None
+    if not plan:
+        raise HTTPException(status_code=400, detail="No se puede aplicar el descuento sin tarifa activa")
+
+    new_amount = calculate_subscription_amount(plan, sub.billing_cycle, discount)
+    sub.discount_id = discount.id
+    sub.amount_cents = new_amount
+    session.add(sub)
+    session.flush()
+
+    # Actualizar precio en Lemon Squeezy
+    ls_error: str | None = None
+    if ls_configured() and sub.ls_subscription_id:
+        try:
+            patch_ls_subscription_price(sub.ls_subscription_id, new_amount)
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).error(
+                "Error aplicando descuento en LS sub %s: %s", sub.ls_subscription_id, exc
+            )
+            ls_error = "Descuento guardado localmente, pero no se pudo actualizar en Lemon Squeezy."
+
+    session.commit()
+    msg = f"Descuento «{discount.name}» aplicado. Nuevo importe: {new_amount / 100:.2f} {sub.currency}."
+    if ls_error:
+        msg += f" Aviso: {ls_error}"
+    return ApplyDiscountResponse(
+        ok=True,
+        message=msg,
+        discount_name=discount.name,
+        new_amount_cents=new_amount,
+        currency=sub.currency,
+    )
 
 
 class BillingCompanyRequest(BaseModel):

@@ -1,13 +1,13 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
   publicApi,
+  type PublicDiscountPreview,
   type PublicPricingPlan,
   type PublicSignupBody,
 } from "../api/public";
 import { applyAlcurroDefaults } from "../hooks/useBranding";
 import {
-  isValidAccountCode,
   normalizeAccountCode,
   suggestAccountCode,
 } from "../lib/slug";
@@ -41,9 +41,11 @@ export default function SignupPage() {
   const [planId, setPlanId] = useState("");
   const [cycle, setCycle] = useState<"monthly" | "annual">("monthly");
   const [form, setForm] = useState(emptyForm);
-  const [slugTouched, setSlugTouched] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [discountPreview, setDiscountPreview] = useState<PublicDiscountPreview | null>(null);
+  const [discountError, setDiscountError] = useState("");
+  const discountCheckRef = useRef<string>("");
   useEffect(() => {
     applyAlcurroDefaults();
     publicApi.getPlans().then((list) => {
@@ -58,15 +60,43 @@ export default function SignupPage() {
   }, [searchParams]);
 
   useEffect(() => {
-    if (!slugTouched && form.company_name) {
+    if (form.company_name) {
       setForm((f) => ({
         ...f,
         account_code: suggestAccountCode(f.company_name, f.legal_name),
       }));
     }
-  }, [form.company_name, form.legal_name, slugTouched]);
+  }, [form.company_name, form.legal_name]);
 
   const selectedPlan = plans.find((p) => p.id === planId);
+
+  // Limpiar preview si cambia plan o ciclo
+  useEffect(() => {
+    setDiscountPreview(null);
+    setDiscountError("");
+  }, [planId, cycle]);
+
+  const checkDiscount = async () => {
+    const code = form.discount_code.trim().toUpperCase();
+    if (!code || !planId) {
+      setDiscountPreview(null);
+      setDiscountError("");
+      return;
+    }
+    discountCheckRef.current = code;
+    try {
+      const preview = await publicApi.discountPreview(planId, cycle, code);
+      if (discountCheckRef.current === code) {
+        setDiscountPreview(preview);
+        setDiscountError("");
+      }
+    } catch {
+      if (discountCheckRef.current === code) {
+        setDiscountPreview(null);
+        setDiscountError("Código de descuento no válido o expirado");
+      }
+    }
+  };
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -84,12 +114,6 @@ export default function SignupPage() {
       return;
     }
     const code = normalizeAccountCode(form.account_code);
-    if (!isValidAccountCode(code)) {
-      setError(
-        "Código de cuenta inválido: solo minúsculas, números y guiones (mín. 2 caracteres)"
-      );
-      return;
-    }
     const body: PublicSignupBody = {
       company_name: form.company_name.trim(),
       legal_name: form.legal_name.trim(),
@@ -196,21 +220,15 @@ export default function SignupPage() {
                 />
               </label>
               <label className="full">
-                Código de cuenta (login) <span className="required">*</span>
+                Código de cuenta (login)
                 <input
-                  required
+                  readOnly
                   value={form.account_code}
-                  onChange={(e) => {
-                    setSlugTouched(true);
-                    setForm({
-                      ...form,
-                      account_code: normalizeAccountCode(e.target.value),
-                    });
-                  }}
-                  placeholder="ej. mi-empresa"
+                  placeholder="Se genera al escribir el nombre comercial"
+                  style={{ background: "var(--color-bg-muted, #f5f5f5)", cursor: "default" }}
                 />
                 <span className="muted small">
-                  Identificador único para el acceso de tu equipo
+                  Identificador único para el acceso de tu equipo — generado automáticamente
                 </span>
               </label>
             </div>
@@ -249,19 +267,36 @@ export default function SignupPage() {
                 Código descuento
                 <input
                   value={form.discount_code}
-                  onChange={(e) =>
-                    setForm({ ...form, discount_code: e.target.value })
-                  }
+                  onChange={(e) => {
+                    setForm({ ...form, discount_code: e.target.value });
+                    if (!e.target.value.trim()) {
+                      setDiscountPreview(null);
+                      setDiscountError("");
+                    }
+                  }}
+                  onBlur={checkDiscount}
                 />
+                {discountError && (
+                  <span className="small" style={{ color: "var(--color-danger, #c0392b)" }}>
+                    {discountError}
+                  </span>
+                )}
               </label>
             </div>
             {selectedPlan && (
               <p className="muted small signup-plan-hint">
                 {cycle === "annual"
-                  ? `Contrato anual: ${formatMoney(
-                      selectedPlan.annual_price_cents
-                    )} (pago único anual)`
+                  ? `Contrato anual: ${formatMoney(selectedPlan.annual_price_cents)} (pago único anual)`
                   : `Mensual: ${formatMoney(selectedPlan.monthly_price_cents)}/mes`}
+                {discountPreview && (
+                  <>
+                    {" "}→{" "}
+                    <strong style={{ color: "var(--color-ok, #27ae60)" }}>
+                      {formatMoney(discountPreview.final_amount_cents)}
+                      {cycle === "annual" ? " (anual con descuento)" : "/mes con descuento"}
+                    </strong>
+                  </>
+                )}
               </p>
             )}
           </fieldset>

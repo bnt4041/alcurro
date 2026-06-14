@@ -25,6 +25,7 @@ class InvoiceListItem(BaseModel):
     stripe_payment_id: UUID | None
     ls_payment_id: UUID | None
     ls_invoice_ref: str | None = None
+    ls_receipt_url: str | None = None
     credit_note_for_id: UUID | None
     created_at: datetime
 

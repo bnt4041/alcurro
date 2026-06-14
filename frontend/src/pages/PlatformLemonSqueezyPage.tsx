@@ -68,7 +68,7 @@ export default function PlatformLemonSqueezyPage() {
   }, [load]);
 
   const handleRefund = async (row: PaymentRow) => {
-    if (!confirm(`¿Emitir factura de abono para el pago de ${row.amount_label} (${row.tenant_name ?? "—"})?\n\nRecuerda realizar también el reembolso monetario desde el panel de Lemon Squeezy.`)) return;
+    if (!confirm(`¿Reembolsar el pago de ${row.amount_label} (${row.tenant_name ?? "—"})?\n\nSe realizará el reembolso monetario en Lemon Squeezy y se generará la factura rectificativa en Alcurro.`)) return;
     setActionLoading(row.id);
     try {
       const res = await api.post<RefundResult>(`/platform/ls/refund/${row.id}`, {});
@@ -103,18 +103,23 @@ export default function PlatformLemonSqueezyPage() {
         minWidth: 160,
       },
       {
-        title: "Referencia LS",
+        title: "Factura LS",
         field: "ls_invoice_id",
-        headerFilter: "input",
+        width: 100,
         formatter: (cell) => {
           const r = cell.getRow().getData() as PaymentRow;
-          const ref = r.ls_invoice_id || r.ls_order_id || "—";
-          if (r.receipt_url) {
-            return `<a href="${r.receipt_url}" target="_blank" rel="noopener" class="invoice-pdf-link" title="Ver factura">${ref}</a>`;
-          }
-          return `<span class="mono small">${ref}</span>`;
+          if (!r.receipt_url) return `<span class="muted small">—</span>`;
+          const ref = r.ls_invoice_id || r.ls_order_id || "";
+          return `<div style="display:flex;gap:6px;align-items:center">
+            <a href="${r.receipt_url}" target="_blank" rel="noopener" title="Abrir factura en Lemon Squeezy" style="color:var(--color-primary,#27ae60);display:flex;align-items:center">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+            </a>
+            <button data-action="copy-url" data-url="${r.receipt_url}" title="Copiar enlace" style="background:none;border:none;cursor:pointer;padding:0;color:var(--color-muted,#888);display:flex;align-items:center">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            </button>
+            ${ref ? `<span class="mono" style="font-size:0.75rem;color:var(--color-muted,#888)">${ref}</span>` : ""}
+          </div>`;
         },
-        minWidth: 140,
       },
       {
         title: "Concepto",
@@ -161,6 +166,10 @@ export default function PlatformLemonSqueezyPage() {
 
   const handleAction = (action: string, row: PaymentRow) => {
     if (action === "refund") handleRefund(row);
+    if (action === "copy-url") {
+      const url = row.receipt_url ?? "";
+      if (url) navigator.clipboard.writeText(url).then(() => notify("Enlace copiado", "success"));
+    }
   };
 
   return (
@@ -235,10 +244,7 @@ LEMON_SQUEEZY_WEBHOOK_SECRET=tu_webhook_secret`}
       <section className="card settings-section">
         <h3>Pagos recibidos</h3>
         <p className="muted small" style={{ marginBottom: "0.75rem" }}>
-          <strong>Nota sobre abonos:</strong> «Emitir abono» genera una factura rectificativa en Alcurro,
-          pero <strong>no</strong> realiza el reembolso monetario en Lemon Squeezy. Debes tramitar
-          el reembolso económico manualmente desde el{" "}
-          <a href="https://app.lemonsqueezy.com" target="_blank" rel="noopener noreferrer">panel de Lemon Squeezy</a>.
+          «Emitir abono» realiza el reembolso monetario en Lemon Squeezy y genera la factura rectificativa en Alcurro automáticamente.
         </p>
         <DataTable
           data={tableData}

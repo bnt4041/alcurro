@@ -135,43 +135,49 @@ def sync_plan_to_ls(session: Session, plan: PricingPlan) -> PricingPlan:
 
 def create_checkout(
     session: Session,
-    tenant: Tenant,
-    subscription: Subscription,
+    tenant: "Tenant | None",
+    subscription: "Subscription | None",
     variant_id: str,
     customer_email: str,
     success_url: str,
     *,
     custom_price_cents: int | None = None,
+    custom_data: dict | None = None,
 ) -> str | None:
     """Crea un checkout de Lemon Squeezy y devuelve la URL.
 
-    Si se pasa custom_price_cents se sobreescribe el precio de la variante
-    (útil para aplicar descuentos calculados en Alcurro).
+    custom_price_cents sobreescribe el precio de la variante (útil para descuentos).
+    custom_data se añade al campo 'custom' del checkout para identificar al tenant/signup.
     """
     if not ls_configured():
         return None
 
     store_id = get_settings().lemon_squeezy_store_id
-    checkout_attrs: dict = {
+
+    data_custom: dict = {}
+    if tenant:
+        data_custom["tenant_id"] = str(tenant.id)
+    if subscription:
+        data_custom["subscription_id"] = str(subscription.id)
+    if custom_data:
+        data_custom.update(custom_data)
+
+    attrs: dict = {
         "checkout_data": {
             "email": customer_email,
-            "custom": {
-                "tenant_id": str(tenant.id),
-                "subscription_id": str(subscription.id),
-            },
+            "custom": data_custom,
         },
         "product_options": {
             "redirect_url": success_url,
         },
     }
-
     if custom_price_cents is not None:
-        checkout_attrs["custom_price"] = custom_price_cents
+        attrs["custom_price"] = custom_price_cents
 
     payload = {
         "data": {
             "type": "checkouts",
-            "attributes": checkout_attrs,
+            "attributes": attrs,
             "relationships": {
                 "store": {"data": {"type": "stores", "id": str(store_id)}},
                 "variant": {"data": {"type": "variants", "id": str(variant_id)}},
@@ -184,8 +190,7 @@ def create_checkout(
         resp.raise_for_status()
         data = resp.json()
 
-    checkout_url: str | None = data["data"]["attributes"].get("url")
-    return checkout_url
+    return data["data"]["attributes"].get("url")
 
 
 def verify_webhook_signature(body: bytes, signature: str) -> bool:
@@ -251,10 +256,134 @@ def _parse_date(value: str | None) -> date | None:
 
 # ── Event handlers ────────────────────────────────────────────────────────────
 
+def _patch_ls_subscription_price(ls_sub_id: str, price_cents: int) -> None:
+    """Sobreescribe el precio recurrente de una suscripción en LS."""
+    with httpx.Client(timeout=15) as client:
+        resp = client.patch(
+            f"{_LS_API}/subscriptions/{ls_sub_id}",
+            headers=_headers(),
+            json={
+                "data": {
+                    "type": "subscriptions",
+                    "id": ls_sub_id,
+                    "attributes": {"price": price_cents},
+                }
+            },
+        )
+        resp.raise_for_status()
+
+
+def patch_ls_subscription_variant(ls_sub_id: str, variant_id: str, *, invoice_immediately: bool = False) -> None:
+    """Cambia la variante (tarifa/ciclo) de una suscripción en LS.
+
+    invoice_immediately=False → el cambio se aplica al próximo renewal sin cobrar ahora.
+    """
+    with httpx.Client(timeout=15) as client:
+        resp = client.patch(
+            f"{_LS_API}/subscriptions/{ls_sub_id}",
+            headers=_headers(),
+            json={
+                "data": {
+                    "type": "subscriptions",
+                    "id": ls_sub_id,
+                    "attributes": {
+                        "variant_id": int(variant_id),
+                        "invoice_immediately": invoice_immediately,
+                    },
+                }
+            },
+        )
+        resp.raise_for_status()
+
+
+def patch_ls_subscription_price(ls_sub_id: str, price_cents: int) -> None:
+    """Versión pública de _patch_ls_subscription_price para uso externo."""
+    _patch_ls_subscription_price(ls_sub_id, price_cents)
+
+
 def _on_subscription_created(session: Session, meta: dict, data: dict) -> None:
-    tenant, sub = _resolve(session, meta)
+    import logging
+    from app.services.pricing_service import calculate_subscription_amount, get_active_discount
+
     attrs = data.get("attributes", {})
     ls_sub_id = str(data.get("id", ""))
+    custom = meta.get("custom_data") or {}
+
+    # ── PendingSignup flow ────────────────────────────────────────────────────
+    pending_id_raw = custom.get("pending_signup_id")
+    if pending_id_raw:
+        from uuid import UUID as _UUID
+        from app.models.billing import PendingSignup, PendingSignupStatus
+        from app.schemas.public import PublicSignupRequest
+        from app.services.signup_service import register_tenant
+
+        try:
+            pending = session.get(PendingSignup, _UUID(pending_id_raw))
+        except Exception:
+            pending = None
+
+        if pending and pending.status == PendingSignupStatus.PENDING:
+            pending.ls_subscription_id = ls_sub_id
+            try:
+                import json as _json
+                signup_data = PublicSignupRequest.model_validate_json(pending.data_json)
+                resp = register_tenant(session, signup_data)
+                pending.tenant_id = resp.tenant_id
+                pending.status = PendingSignupStatus.ACTIVE
+                session.add(pending)
+
+                # Actualizar suscripción recién creada con ls_subscription_id
+                if resp.tenant_id:
+                    from sqlmodel import select as _select
+                    from app.models.billing import Subscription
+                    sub = session.exec(
+                        _select(Subscription).where(Subscription.tenant_id == resp.tenant_id)
+                    ).first()
+                    if sub:
+                        sub.ls_subscription_id = ls_sub_id
+                        sub.status = SubscriptionStatus.ACTIVE
+                        period_end = _parse_date(attrs.get("renews_at"))
+                        if period_end:
+                            sub.current_period_end = period_end
+                            sub.current_period_start = date.today()
+                        session.add(sub)
+
+                        if sub.discount_id and sub.pricing_plan_id:
+                            from app.models.billing import PricingPlan
+                            plan = session.get(PricingPlan, sub.pricing_plan_id)
+                            discount = get_active_discount(session, sub.discount_id, sub.pricing_plan_id)
+                            if plan and discount:
+                                discounted = calculate_subscription_amount(plan, sub.billing_cycle, discount)
+                                try:
+                                    _patch_ls_subscription_price(ls_sub_id, discounted)
+                                except Exception:
+                                    logging.getLogger(__name__).warning(
+                                        "No se pudo aplicar precio de descuento a LS sub %s", ls_sub_id
+                                    )
+
+                    # Portal URL y customer id
+                    tenant_obj = session.get(Tenant, resp.tenant_id)
+                    if tenant_obj:
+                        portal_url = (attrs.get("urls") or {}).get("customer_portal")
+                        if portal_url:
+                            tenant_obj.ls_customer_portal_url = portal_url
+                        ls_cid = attrs.get("customer_id")
+                        if ls_cid:
+                            tenant_obj.ls_customer_id = str(ls_cid)
+                        session.add(tenant_obj)
+
+            except Exception as exc:
+                logging.getLogger(__name__).error(
+                    "Error creando tenant desde PendingSignup %s: %s", pending_id_raw, exc, exc_info=True
+                )
+                if pending:
+                    pending.status = PendingSignupStatus.FAILED
+                    pending.error_message = str(exc)[:500]
+                    session.add(pending)
+        return
+
+    # ── Flujo normal (tenant ya existe) ──────────────────────────────────────
+    tenant, sub = _resolve(session, meta)
 
     if sub:
         sub.status = SubscriptionStatus.ACTIVE
@@ -264,6 +393,20 @@ def _on_subscription_created(session: Session, meta: dict, data: dict) -> None:
             sub.current_period_end = period_end
             sub.current_period_start = date.today()
         session.add(sub)
+
+        if sub.discount_id and sub.pricing_plan_id:
+            from app.models.billing import PricingPlan
+            plan = session.get(PricingPlan, sub.pricing_plan_id)
+            discount = get_active_discount(session, sub.discount_id, sub.pricing_plan_id)
+            if plan and discount:
+                discounted = calculate_subscription_amount(plan, sub.billing_cycle, discount)
+                try:
+                    _patch_ls_subscription_price(ls_sub_id, discounted)
+                except Exception:
+                    import logging as _log
+                    _log.getLogger(__name__).warning(
+                        "No se pudo aplicar precio de descuento a LS sub %s", ls_sub_id
+                    )
 
     portal_url = (attrs.get("urls") or {}).get("customer_portal")
     if tenant:
@@ -616,14 +759,131 @@ def update_ls_subscription_variant(
         pass
 
 
+def sync_discount_to_ls(discount: "Discount") -> str | None:
+    """Crea o actualiza un descuento en Lemon Squeezy. Devuelve el ID de LS o None."""
+    from app.models.billing import Discount, DiscountType  # noqa: F401
+
+    if not ls_configured():
+        return None
+    store_id = get_settings().lemon_squeezy_store_id
+    amount_type = "percent" if discount.discount_type == DiscountType.PERCENT else "flat"
+    attrs: dict = {
+        "name": discount.name,
+        "code": discount.code.upper(),
+        "amount": discount.value,
+        "amount_type": amount_type,
+        "is_limited_to_products": False,
+        "is_limited_redemptions": False,
+        "duration": "forever",
+        "starts_at": discount.valid_from.isoformat() + "T00:00:00Z",
+        "expires_at": discount.valid_until.isoformat() + "T23:59:59Z",
+    }
+    try:
+        with httpx.Client(timeout=15) as client:
+            if discount.ls_discount_id:
+                resp = client.patch(
+                    f"{_LS_API}/discounts/{discount.ls_discount_id}",
+                    headers=_headers(),
+                    json={
+                        "data": {
+                            "type": "discounts",
+                            "id": str(discount.ls_discount_id),
+                            "attributes": attrs,
+                        }
+                    },
+                )
+            else:
+                resp = client.post(
+                    f"{_LS_API}/discounts",
+                    headers=_headers(),
+                    json={
+                        "data": {
+                            "type": "discounts",
+                            "attributes": attrs,
+                            "relationships": {
+                                "store": {"data": {"type": "stores", "id": str(store_id)}}
+                            },
+                        }
+                    },
+                )
+            if resp.status_code in (200, 201):
+                return str(resp.json()["data"]["id"])
+    except Exception:
+        pass
+    return None
+
+
+def apply_ls_discount_to_subscription(ls_subscription_id: str, discount_code: str | None) -> bool:
+    """Aplica o elimina un código de descuento en una suscripción de Lemon Squeezy."""
+    if not ls_configured():
+        return False
+    attrs: dict = {"discount_identifier": discount_code or ""}
+    try:
+        with httpx.Client(timeout=10) as client:
+            resp = client.patch(
+                f"{_LS_API}/subscriptions/{ls_subscription_id}",
+                headers=_headers(),
+                json={
+                    "data": {
+                        "type": "subscriptions",
+                        "id": str(ls_subscription_id),
+                        "attributes": attrs,
+                    }
+                },
+            )
+            return resp.status_code == 200
+    except Exception:
+        return False
+
+
+def cancel_ls_subscription(ls_subscription_id: str) -> bool:
+    """Cancela la suscripción en Lemon Squeezy al final del período actual."""
+    if not ls_configured():
+        return False
+    try:
+        with httpx.Client(timeout=10) as client:
+            resp = client.delete(
+                f"{_LS_API}/subscriptions/{ls_subscription_id}",
+                headers=_headers(),
+            )
+            return resp.status_code in (200, 204)
+    except Exception:
+        return False
+
+
+def ls_refund_subscription_invoice(ls_invoice_id: str, amount_cents: int | None = None) -> bool:
+    """Reembolsa total o parcialmente una factura de suscripción en Lemon Squeezy.
+
+    Si amount_cents es None se reembolsa el total. Devuelve True si LS aceptó el reembolso.
+    """
+    if not ls_configured():
+        return False
+    attrs: dict = {}
+    if amount_cents is not None:
+        attrs["amount"] = amount_cents
+    body = {
+        "data": {
+            "type": "subscription-invoices",
+            "id": str(ls_invoice_id),
+            "attributes": attrs,
+        }
+    }
+    try:
+        with httpx.Client(timeout=15) as client:
+            resp = client.post(
+                f"{_LS_API}/subscription-invoices/{ls_invoice_id}/refund",
+                headers=_headers(),
+                json=body,
+            )
+            return resp.status_code == 200
+    except Exception:
+        return False
+
+
 def issue_refund_credit_note(
     session: Session, payment_id: UUID
 ) -> tuple["LemonSqueezyPayment", "Invoice"]:
-    """Marca un pago como reembolsado y genera la factura de abono correspondiente.
-
-    El reembolso monetario real debe hacerse desde el panel de Lemon Squeezy.
-    Esta función solo crea el registro contable en Alcurro.
-    """
+    """Marca un pago como reembolsado, ejecuta el reembolso en LS y genera la factura de abono."""
     from app.models.invoice import Invoice
     from app.services.invoice_service import create_credit_note
 
@@ -643,6 +903,15 @@ def issue_refund_credit_note(
             "No existe factura asociada a este pago. "
             "Genera la factura primero desde el panel de Facturas."
         )
+
+    # Reembolso monetario en LS (sin especificar importe = reembolso del total pendiente)
+    if payment.ls_invoice_id:
+        ls_ok = ls_refund_subscription_invoice(payment.ls_invoice_id)
+        if not ls_ok:
+            raise ValueError(
+                "El reembolso en Lemon Squeezy no se pudo completar. "
+                "Comprueba la configuración de la API o hazlo manualmente desde el panel de LS."
+            )
 
     payment.status = LsPaymentStatus.REFUNDED
     session.add(payment)

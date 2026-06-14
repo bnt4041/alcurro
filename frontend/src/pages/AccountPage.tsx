@@ -1,15 +1,26 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { api } from "../api/client";
 import Modal from "../components/Modal";
-import InvoiceHistoryTable from "../components/InvoiceHistoryTable";
 import PageHeader from "../components/PageHeader";
 import SubscriptionSummaryCard from "../components/SubscriptionSummaryCard";
 import { useAuth } from "../context/AuthContext";
 import { canModule, hasPerm } from "../lib/permissions";
-import type { InvoiceRow, SubscriptionSummary } from "../lib/subscription";
+import type { SubscriptionSummary } from "../lib/subscription";
 import { publicApi, type PublicPricingPlan } from "../api/public";
 import { formatMoney } from "../lib/money";
 import { useToast } from "../context/ToastContext";
+
+interface TenantPayment {
+  id: string;
+  amount_cents: number;
+  currency: string;
+  status: string;
+  description: string | null;
+  receipt_url: string | null;
+  ls_invoice_id: string | null;
+  paid_at: string | null;
+  created_at: string;
+}
 
 interface TenantInfo {
   id: string;
@@ -37,7 +48,6 @@ interface Company {
 
 interface BillingSummaryResponse {
   subscription: SubscriptionSummary | null;
-  invoices: InvoiceRow[];
   active_users: number;
   max_users: number | null;
   customer_portal_url?: string | null;
@@ -58,6 +68,8 @@ export default function AccountPage() {
   const [editingCompany, setEditingCompany] = useState<Company | null>(null);
   const [editCompanyForm, setEditCompanyForm] = useState({ name: "", tax_id: "" });
   const [editCompanySaving, setEditCompanySaving] = useState(false);
+  const [payments, setPayments] = useState<TenantPayment[]>([]);
+  const [paymentsLoading, setPaymentsLoading] = useState(false);
 
   // Plan change
   const [plans, setPlans] = useState<PublicPricingPlan[]>([]);
@@ -66,23 +78,31 @@ export default function AccountPage() {
   const [selectedCycle, setSelectedCycle] = useState<"monthly" | "annual">("monthly");
   const [planChanging, setPlanChanging] = useState(false);
 
+  // Discount code
+  const [discountCode, setDiscountCode] = useState("");
+  const [discountApplying, setDiscountApplying] = useState(false);
+
   const canTenant = user && canModule(user.permissions, "read", "tenant");
   const canWriteTenant = user && canModule(user.permissions, "write", "tenant");
   const canBilling = user && hasPerm(user.permissions, "tenant.billing");
 
   const load = useCallback(async () => {
     setBillingLoading(true);
+    setPaymentsLoading(true);
     try {
-      const [tenantData, companiesData, summaryData] = await Promise.all([
+      const [tenantData, companiesData, summaryData, paymentsData] = await Promise.all([
         api.get<TenantInfo>("/tenants/current"),
         api.get<Company[]>("/tenants/current/companies"),
         api.get<BillingSummaryResponse>("/tenants/current/billing-summary"),
+        api.get<TenantPayment[]>("/tenants/current/payments").catch(() => [] as TenantPayment[]),
       ]);
       setTenant(tenantData);
       setCompanies(companiesData);
       setBillingSummary(summaryData);
+      setPayments(paymentsData);
     } finally {
       setBillingLoading(false);
+      setPaymentsLoading(false);
     }
   }, []);
 
@@ -250,8 +270,54 @@ export default function AccountPage() {
               Portal de cliente (Lemon Squeezy)
             </a>
             <p className="muted small" style={{ marginTop: "0.4rem" }}>
-              Actualiza tu método de pago, descarga facturas y gestiona tu suscripción.
+              Actualiza tu método de pago y gestiona tu suscripción directamente en Lemon Squeezy.
             </p>
+          </div>
+        )}
+
+        {canBilling && (
+          <div style={{ marginTop: "1.25rem", paddingTop: "1rem", borderTop: "1px solid var(--color-border, #e2e8f0)" }}>
+            <p className="muted small" style={{ marginBottom: "0.5rem" }}>
+              ¿Tienes un código de descuento? Introdúcelo aquí para aplicarlo a tu suscripción.
+            </p>
+            <form
+              style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}
+              onSubmit={async (e) => {
+                e.preventDefault();
+                const code = discountCode.trim().toUpperCase();
+                if (!code) return;
+                setDiscountApplying(true);
+                try {
+                  const res = await api.post<{ ok: boolean; message: string }>(
+                    "/tenants/current/apply-discount",
+                    { discount_code: code }
+                  );
+                  notify(res.message, "success");
+                  setDiscountCode("");
+                  load();
+                } catch (err) {
+                  notify(String(err).replace(/^Error:\s*/i, ""), "error");
+                } finally {
+                  setDiscountApplying(false);
+                }
+              }}
+            >
+              <input
+                value={discountCode}
+                onChange={(e) => setDiscountCode(e.target.value.toUpperCase())}
+                placeholder="CÓDIGO DESCUENTO"
+                maxLength={50}
+                style={{ width: 180, fontFamily: "monospace", textTransform: "uppercase" }}
+                disabled={discountApplying}
+              />
+              <button
+                type="submit"
+                className="btn btn-sm btn-primary"
+                disabled={discountApplying || !discountCode.trim()}
+              >
+                {discountApplying ? "Aplicando…" : "Aplicar"}
+              </button>
+            </form>
           </div>
         )}
       </section>
@@ -461,20 +527,81 @@ export default function AccountPage() {
         </form>
       )}
 
-      <section className="card settings-section">
-        <h3>Histórico de facturas</h3>
-        <InvoiceHistoryTable
-          invoices={billingSummary?.invoices ?? []}
-          loading={billingLoading}
-          onDownload={async (id, filename) => {
-            try {
-              await api.download(`/tenants/current/invoices/${id}/pdf`, filename);
-            } catch (err) {
-              notify(String(err).replace(/^Error:\s*/i, ""), "error");
-            }
-          }}
-        />
-      </section>
+      {canBilling && (
+        <section className="card settings-section">
+          <h3>Histórico de cobros</h3>
+          {paymentsLoading ? (
+            <p className="muted small">Cargando…</p>
+          ) : payments.length === 0 ? (
+            <p className="muted small">Sin cobros registrados.</p>
+          ) : (
+            <table className="data-table" style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.9rem" }}>
+              <thead>
+                <tr>
+                  <th style={{ textAlign: "left", padding: "0.4rem 0.6rem" }}>Fecha</th>
+                  <th style={{ textAlign: "left", padding: "0.4rem 0.6rem" }}>Concepto</th>
+                  <th style={{ textAlign: "right", padding: "0.4rem 0.6rem" }}>Importe</th>
+                  <th style={{ textAlign: "left", padding: "0.4rem 0.6rem" }}>Estado</th>
+                  <th style={{ textAlign: "center", padding: "0.4rem 0.6rem" }}>Factura LS</th>
+                </tr>
+              </thead>
+              <tbody>
+                {payments.map((p) => (
+                  <tr key={p.id} style={{ borderTop: "1px solid var(--color-border, #e2e8f0)" }}>
+                    <td style={{ padding: "0.4rem 0.6rem", whiteSpace: "nowrap" }}>
+                      {new Date(p.paid_at ?? p.created_at).toLocaleDateString("es-ES")}
+                    </td>
+                    <td style={{ padding: "0.4rem 0.6rem" }}>{p.description ?? "—"}</td>
+                    <td style={{ padding: "0.4rem 0.6rem", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                      {formatMoney(p.amount_cents, p.currency)}
+                    </td>
+                    <td style={{ padding: "0.4rem 0.6rem" }}>
+                      <span className={`badge ${p.status === "Cobrado" ? "badge--ok" : p.status === "Fallido" ? "badge--danger" : p.status === "Reembolsado" ? "badge--warning" : ""}`}>
+                        {p.status}
+                      </span>
+                    </td>
+                    <td style={{ padding: "0.4rem 0.6rem", textAlign: "center" }}>
+                      {p.receipt_url ? (
+                        <div style={{ display: "flex", gap: 6, alignItems: "center", justifyContent: "center" }}>
+                          <a
+                            href={p.receipt_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title="Abrir factura en Lemon Squeezy"
+                            style={{ color: "var(--color-primary, #27ae60)", display: "flex", alignItems: "center" }}
+                          >
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                              <polyline points="15 3 21 3 21 9"/>
+                              <line x1="10" y1="14" x2="21" y2="3"/>
+                            </svg>
+                          </a>
+                          <button
+                            type="button"
+                            title="Copiar enlace"
+                            style={{ background: "none", border: "none", cursor: "pointer", padding: 0, color: "var(--color-muted, #888)", display: "flex", alignItems: "center" }}
+                            onClick={() => navigator.clipboard.writeText(p.receipt_url!).then(() => notify("Enlace copiado", "success"))}
+                          >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                            </svg>
+                          </button>
+                          {p.ls_invoice_id && (
+                            <span className="mono" style={{ fontSize: "0.72rem", color: "var(--color-muted, #888)" }}>{p.ls_invoice_id}</span>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="muted small">—</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </section>
+      )}
 
       <section className="card settings-section">
         <h3>Empresas de la cuenta</h3>

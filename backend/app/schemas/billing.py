@@ -165,6 +165,7 @@ class InvoiceRead(BaseModel):
     invoice_number: str | None
     invoice_pdf_url: str | None
     invoice_url: str | None
+    ls_receipt_url: str | None = None
     paid_at: datetime | None
     created_at: datetime
 
@@ -175,7 +176,6 @@ class TenantAccountBillingRead(BaseModel):
     """Resumen de facturación para el panel del cliente (solo lectura)."""
 
     subscription: SubscriptionSummaryRead | None
-    invoices: list[InvoiceRead]
     active_users: int = 0
     max_users: int | None = None
     customer_portal_url: str | None = None

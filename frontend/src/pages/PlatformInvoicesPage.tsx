@@ -25,6 +25,7 @@ interface Invoice {
   stripe_payment_id: string | null;
   ls_payment_id: string | null;
   ls_invoice_ref: string | null;
+  ls_receipt_url: string | null;
   credit_note_for_id: string | null;
   created_at: string;
 }
@@ -175,6 +176,11 @@ export default function PlatformInvoicesPage() {
         await api.post(`/platform/invoices/${row.id}/credit-note`, {});
         notify("Factura rectificativa creada", "success");
         load();
+      } else if (action === "ls-refund") {
+        if (!confirm(`¿Emitir abono de ${row.number}?\n\nSe realizará el reembolso monetario en Lemon Squeezy y se generará la factura rectificativa en Alcurro.`)) return;
+        const res = await api.post<{ credit_note_number: string }>(`/platform/ls/refund/${row.ls_payment_id}`, {});
+        notify(`Abono ${res.credit_note_number} generado correctamente`, "success");
+        load();
       } else if (action === "cancel") {
         if (!confirm(`¿Anular la factura ${row.number}?`)) return;
         await api.patch(`/platform/invoices/${row.id}/status`, { status: "cancelled" });
@@ -194,11 +200,13 @@ export default function PlatformInvoicesPage() {
         title: "Número",
         field: "number",
         headerFilter: "input",
-        width: 200,
+        width: 220,
         formatter: (cell) => {
           const r = cell.getRow().getData() as TableRow;
           let badges = "";
-          if (r.ls_invoice_ref) {
+          if (r.ls_receipt_url) {
+            badges += `<a href="${r.ls_receipt_url}" target="_blank" rel="noopener" class="badge badge--info" title="Ver factura en Lemon Squeezy">LS ${r.ls_invoice_ref ?? "factura"}</a> `;
+          } else if (r.ls_invoice_ref) {
             badges += `<span class="badge badge--info" title="Referencia LS: ${r.ls_invoice_ref}">LS ${r.ls_invoice_ref}</span> `;
           } else if (r.ls_payment_id) {
             badges += `<span class="badge badge--info" title="Vinculada a cobro LS">LS</span> `;
@@ -258,16 +266,19 @@ export default function PlatformInvoicesPage() {
       {
         title: "Acciones",
         field: "id",
-        width: 260,
+        width: 300,
         formatter: (cell) => {
           const r = cell.getRow().getData() as TableRow;
           const cancelled = r.status === "cancelled" || r.status === "credit_note";
+          const lsAbono = !cancelled && r.ls_payment_id
+            ? `<button class="btn btn-xs btn-warning" data-action="ls-refund" title="Reembolso en Lemon Squeezy + factura rectificativa">Abono LS</button>`
+            : (!cancelled ? `<button class="btn btn-xs btn-warning" data-action="credit" title="Factura rectificativa">Abono</button>` : "");
           return `
             <div class="table-actions">
               <button class="btn btn-xs" data-action="pdf" title="Descargar PDF">PDF</button>
               <button class="btn btn-xs" data-action="edit" title="Editar datos de factura">Editar</button>
               <button class="btn btn-xs" data-action="email" title="Enviar por email" ${cancelled ? "disabled" : ""}>Email</button>
-              ${!cancelled ? `<button class="btn btn-xs btn-warning" data-action="credit" title="Factura rectificativa">Abono</button>` : ""}
+              ${lsAbono}
               ${r.status !== "cancelled" && r.status !== "credit_note" ? `<button class="btn btn-xs btn-danger" data-action="cancel" title="Anular factura">Anular</button>` : ""}
             </div>
           `;
