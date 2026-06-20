@@ -18,7 +18,9 @@ from app.services.clock_incident_hook import (
     should_notify_whatsapp,
     whatsapp_message_for_incident,
 )
+from app.models.incident import Incident
 from app.services.incident_service import (
+    check_missing_clock_out,
     get_pending_justification_incidents,
     submit_employee_justification,
     add_note,
@@ -301,7 +303,7 @@ class WebhookService:
             address=addr,
         )
 
-    def _open_clock_with_project_flow(
+    async def _open_clock_with_project_flow(
         self,
         employee: Employee,
         *,
@@ -325,6 +327,14 @@ class WebhookService:
 
         if picker_text:
             direct = resolve_project_from_reply(self._session, employee.company_id, picker_text)
+            if not direct and not picker_text.strip().isdigit():
+                # Fallback IA: el texto puede contener errores ortográficos o falta de acentos
+                _projects = list_active_projects(self._session, employee.company_id)
+                _ai_idx = await self._ollama.match_project(
+                    picker_text, [p.name for p in _projects]
+                )
+                if _ai_idx is not None:
+                    direct = _projects[_ai_idx]
             if direct:
                 record = self._clock.open_clock(
                     employee_id=employee.id,
@@ -343,6 +353,14 @@ class WebhookService:
             project = resolve_project_from_reply(
                 self._session, employee.company_id, picker_text or ""
             )
+            if not project and picker_text and not picker_text.strip().isdigit():
+                # Fallback IA cuando el empleado ya vio el selector y responde con un nombre
+                _projects = list_active_projects(self._session, employee.company_id)
+                _ai_idx = await self._ollama.match_project(
+                    picker_text, [p.name for p in _projects]
+                )
+                if _ai_idx is not None:
+                    project = _projects[_ai_idx]
             if not project:
                 projects = list_active_projects(self._session, employee.company_id)
                 return (
@@ -435,6 +453,24 @@ class WebhookService:
         lng = pending.longitude
         address = (pending.pending_meta or {}).get("address")
         clear_pending(self._session, employee.id)
+        # La jornada puede haber superado el umbral de omisión mientras el empleado
+        # redactaba el resumen → bloquear el cierre y abrir incidencia (misma operativa
+        # que _clock_state_guard para fichar_salida).
+        if self._clock.is_open_clock_expired(employee.id):
+            self._create_expired_clock_incident(employee)
+            last = self._clock.get_open_clock(employee.id)
+            hora = _to_spain(last.entrada_at).strftime("%H:%M del %d/%m/%Y") if last else "?"
+            reply = (
+                f"⚠️ Tu jornada del {hora} lleva demasiadas horas abierta y no puede cerrarse.\n"
+                "Se ha abierto una incidencia para que RRHH la regularice.\n\n"
+                "Si quieres iniciar una *nueva jornada*, dímelo."
+            )
+            self._session.commit()
+            try:
+                await self._gowa.send_text(phone, reply)
+            except Exception:
+                pass
+            return {"ok": True, "action": "guard_expired_clock"}
         reply = self._close_clock(
             employee,
             work_summary=work_summary,
@@ -450,6 +486,14 @@ class WebhookService:
         except Exception:
             pass
         return {"ok": True, "action": "work_summary_saved"}
+
+    def _create_expired_clock_incident(self, employee: Employee) -> Incident | None:
+        """Abre la incidencia de omisión de salida (regla configurable del tenant).
+
+        Delega en `check_missing_clock_out`, que aplica el umbral `missing_clock_out_hours`
+        y la config de justificación/WhatsApp del tenant, y evita duplicados.
+        """
+        return check_missing_clock_out(self._session, self._tenant_id, employee)
 
     def _close_clock(
         self,
@@ -525,9 +569,12 @@ class WebhookService:
         # Si hay confirmación pendiente por ubicación, ejecutar directamente
         pending = get_pending(self._session, employee_id)
         is_open = self._is_open(employee_id)
+        # Fichaje caducado (>20 h): bloquear salida y tratar como nueva entrada
+        is_expired = is_open and self._clock.is_open_clock_expired(employee_id)
+        effective_open = is_open and not is_expired
         if pending and pending.pending_confirmation:
-            action = "fichar_salida" if is_open else "fichar_entrada"
-            clock_type = "salida" if is_open else "entrada"
+            action = "fichar_salida" if effective_open else "fichar_entrada"
+            clock_type = "salida" if effective_open else "entrada"
             if not can_whatsapp_location_clock(
                 self._session, employee, self._tenant_id, record_type=clock_type
             ):
@@ -539,7 +586,7 @@ class WebhookService:
                 except Exception:
                     pass
                 return {"ok": True, "action": "denied_location"}
-            if is_open:
+            if effective_open:
                 if self._settings.daily_summary_enabled:
                     reply = self._request_work_summary(
                         employee,
@@ -562,7 +609,10 @@ class WebhookService:
                     address=geo_address,
                 )
             else:
-                reply = self._open_clock_with_project_flow(
+                if is_expired:
+                    self._create_expired_clock_incident(employee)
+                    self._session.flush()
+                reply = await self._open_clock_with_project_flow(
                     employee,
                     latitude=lat,
                     longitude=lng,
@@ -582,8 +632,8 @@ class WebhookService:
                 pass
             return {"ok": True, "action": action}
 
-        action = "fichar_salida" if is_open else "fichar_entrada"
-        clock_type = "salida" if is_open else "entrada"
+        action = "fichar_salida" if effective_open else "fichar_entrada"
+        clock_type = "salida" if effective_open else "entrada"
         if not can_whatsapp_location_clock(
             self._session, employee, self._tenant_id, record_type=clock_type
         ):
@@ -594,7 +644,7 @@ class WebhookService:
                 pass
             return {"ok": True, "action": "denied_location"}
 
-        if is_open:
+        if effective_open:
             if self._settings.daily_summary_enabled:
                 reply = self._request_work_summary(
                     employee,
@@ -617,7 +667,10 @@ class WebhookService:
                 address=geo_address,
             )
         else:
-            reply = self._open_clock_with_project_flow(
+            if is_expired:
+                self._create_expired_clock_incident(employee)
+                self._session.flush()
+            reply = await self._open_clock_with_project_flow(
                 employee,
                 latitude=lat,
                 longitude=lng,
@@ -1150,6 +1203,72 @@ class WebhookService:
             pass
         return {"ok": True, "action": "incident_justified_whatsapp", "incident_id": str(inc.id)}
 
+    async def _clock_state_guard(
+        self,
+        employee: Employee,
+        phone: str,
+        intent_code: str,
+    ) -> dict | None:
+        """Valida que el fichaje pedido sea coherente con el estado real de la jornada.
+
+        Se ejecuta ANTES de decidir ask/confirm/execute, para no pedir confirmaciones
+        imposibles ni dejar que la IA improvise ofertas contradictorias. Devuelve un
+        resultado terminal (ya ha respondido) si hay incoherencia; None si puede continuar.
+        """
+        if intent_code not in ("fichar_entrada", "fichar_salida"):
+            return None
+
+        is_open = self._is_open(employee.id)
+        is_expired = is_open and self._clock.is_open_clock_expired(employee.id)
+
+        async def _respond(reply: str, action: str) -> dict:
+            append_message(
+                self._session,
+                tenant_id=self._tenant_id,
+                employee_id=employee.id,
+                role="assistant",
+                content=reply[:_REPLY_MAX],
+                intent_code=action,
+            )
+            self._session.commit()
+            try:
+                await self._gowa.send_text(phone, reply)
+            except Exception:
+                pass
+            return {"ok": True, "action": action}
+
+        # Jornada caducada (supera el umbral de omisión de salida) + intento de salida →
+        # bloquear y abrir incidencia para que RRHH la regularice.
+        if is_expired and intent_code == "fichar_salida":
+            self._create_expired_clock_incident(employee)
+            last = self._clock.get_open_clock(employee.id)
+            hora = _to_spain(last.entrada_at).strftime("%H:%M del %d/%m/%Y") if last else "?"
+            return await _respond(
+                f"⚠️ Tu jornada del {hora} lleva demasiadas horas abierta y no puede cerrarse.\n"
+                "Se ha abierto una incidencia para que RRHH la regularice.\n\n"
+                "Si quieres iniciar una *nueva jornada*, dímelo.",
+                "guard_expired_clock",
+            )
+
+        # Entrada cuando ya hay jornada abierta (no caducada)
+        if intent_code == "fichar_entrada" and is_open and not is_expired:
+            last = self._clock.get_open_clock(employee.id)
+            hora = _to_spain(last.entrada_at).strftime("%H:%M") if last else "?"
+            return await _respond(
+                f"Ya tienes una jornada abierta desde las *{hora}*.\n"
+                "Si quieres fichar la *salida*, dímelo.",
+                "guard_already_open",
+            )
+
+        # Salida sin ninguna jornada abierta
+        if intent_code == "fichar_salida" and not is_open:
+            return await _respond(
+                "No tienes ninguna jornada abierta. Si quieres fichar la *entrada*, dímelo.",
+                "guard_not_open",
+            )
+
+        return None
+
     async def _handle_stage(
         self,
         employee: Employee,
@@ -1186,6 +1305,17 @@ class WebhookService:
                 except Exception:
                     pass
                 return {"ok": True, "action": "denied"}
+
+        # Validación de estado de jornada — ANTES de ask/confirm/execute.
+        # Garantiza una respuesta determinista (no pedimos confirmar fichajes imposibles
+        # ni dejamos que la IA improvise ofertas que contradicen el estado real).
+        if intent_code in ("fichar_entrada", "fichar_salida"):
+            _pend = get_pending(self._session, employee.id)
+            if _pend and _pend.pending_confirmation:
+                clear_pending(self._session, employee.id)
+            guard_result = await self._clock_state_guard(employee, phone, intent_code)
+            if guard_result is not None:
+                return guard_result
 
         if stage == "ask":
             # Seguir preguntando: enviar el mensaje de Ollama y esperar
@@ -1281,45 +1411,16 @@ class WebhookService:
         if pending and pending.pending_confirmation:
             clear_pending(self._session, employee.id)
 
-        # Guard: detectar intent inconsistente con el estado real — solo informar, no ejecutar
-        is_open = self._is_open(employee.id)
-        if intent_code == "fichar_entrada" and is_open:
-            last = self._clock.get_open_clock(employee.id)
-            hora = _to_spain(last.entrada_at).strftime("%H:%M") if last else "?"
-            reply = (
-                f"Ya tienes una jornada abierta desde las *{hora}*.\n"
-                "Si quieres fichar la *salida*, dímelo."
-            )
-            append_message(
-                self._session,
-                tenant_id=self._tenant_id,
-                employee_id=employee.id,
-                role="assistant",
-                content=reply[:_REPLY_MAX],
-                intent_code="guard_already_open",
-            )
-            self._session.commit()
-            try:
-                await self._gowa.send_text(phone, reply)
-            except Exception:
-                pass
-            return {"ok": True, "action": "guard_already_open"}
-        elif intent_code == "fichar_salida" and not is_open:
-            reply = "No tienes ninguna jornada abierta. Si quieres fichar la *entrada*, dímelo."
-            append_message(
-                self._session,
-                tenant_id=self._tenant_id,
-                employee_id=employee.id,
-                role="assistant",
-                content=reply[:_REPLY_MAX],
-                intent_code="guard_not_open",
-            )
-            self._session.commit()
-            try:
-                await self._gowa.send_text(phone, reply)
-            except Exception:
-                pass
-            return {"ok": True, "action": "guard_not_open"}
+        # Los guards de coherencia (jornada ya abierta / sin abrir / caducada+salida) ya se
+        # aplicaron al inicio de _handle_stage. Aquí solo queda el caso no bloqueante:
+        # entrada con jornada caducada → crear incidencia antes de abrir la nueva jornada.
+        if (
+            intent_code == "fichar_entrada"
+            and self._is_open(employee.id)
+            and self._clock.is_open_clock_expired(employee.id)
+        ):
+            self._create_expired_clock_incident(employee)
+            self._session.flush()
 
         # Si require_geolocation y es un fichaje de texto → pedir ubicación primero
         if (
@@ -1501,7 +1602,7 @@ class WebhookService:
                 reply = self._close_clock(employee, whatsapp_message_id=message_id)
         else:
             _pending_address = (pending.pending_meta or {}).get("address")
-            reply = self._open_clock_with_project_flow(
+            reply = await self._open_clock_with_project_flow(
                 employee,
                 latitude=pending.latitude,
                 longitude=pending.longitude,
@@ -1807,7 +1908,7 @@ class WebhookService:
     ) -> str:
         match intent.intent:
             case "fichar_entrada":
-                return self._open_clock_with_project_flow(
+                return await self._open_clock_with_project_flow(
                     employee,
                     whatsapp_message_id=message_id,
                     picker_text=raw_text,

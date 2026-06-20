@@ -3652,6 +3652,30 @@ body.sidebar-scroll-lock {
   color: var(--text-muted, #6b7280);
 }
 
+.report-journal-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 20px;
+  padding: 28px;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 10px;
+  background: var(--surface, #fff);
+}
+
+.report-journal-info h3 {
+  margin: 0 0 10px;
+  font-size: 17px;
+  color: var(--text, #111827);
+}
+
+.report-journal-info p {
+  margin: 0 0 8px;
+  max-width: 720px;
+  line-height: 1.55;
+  color: var(--text-muted, #4b5563);
+}
+
 /* ── Chronological table ── */
 .report-chrono-wrap {
   overflow-x: auto;

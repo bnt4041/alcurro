@@ -47,6 +47,25 @@ class ClockService:
             .order_by(ClockIn.entrada_at.desc())  # type: ignore[attr-defined]
         ).first()
 
+    def is_open_clock_expired(self, employee_id: UUID) -> bool:
+        """True si el fichaje abierto supera el umbral de omisión de salida del tenant.
+
+        Usa la regla configurable `missing_clock_out_hours` (omisión de salida). Si la
+        regla está desactivada, no se considera caducado y se permite cerrar con normalidad.
+        """
+        if not self._tenant_id:
+            return False
+        record = self.get_open_clock(employee_id)
+        if not record:
+            return False
+        from app.services.incident_service import get_or_create_rules
+
+        rules = get_or_create_rules(self._session, self._tenant_id)
+        if not rules.missing_clock_out_enabled:
+            return False
+        elapsed = (datetime.utcnow() - record.entrada_at).total_seconds() / 3600
+        return elapsed >= rules.missing_clock_out_hours
+
     def get_last_clock(self, employee_id: UUID) -> ClockIn | None:
         """Último registro de jornada (abierto o cerrado)."""
         return self._session.exec(

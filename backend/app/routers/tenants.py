@@ -30,7 +30,6 @@ from app.services.gowa_client import get_shared_whatsapp_session
 from app.services.lemon_squeezy_service import (
     get_ls_variant_id,
     ls_configured,
-    patch_ls_subscription_price,
     patch_ls_subscription_variant,
     update_ls_customer_name,
 )
@@ -539,28 +538,18 @@ def apply_tenant_discount(
     session.add(sub)
     session.flush()
 
-    # Actualizar precio en Lemon Squeezy (LS no acepta precio 0 en suscripciones)
-    ls_note: str | None = None
-    if ls_configured() and sub.ls_subscription_id:
-        if new_amount == 0:
-            ls_note = "Descuento del 100%: la suscripción en Lemon Squeezy no se modifica (LS no admite precio 0). Los próximos cobros deberán cancelarse manualmente desde el portal de LS."
-        else:
-            try:
-                patch_ls_subscription_price(sub.ls_subscription_id, new_amount)
-            except Exception as exc:
-                import logging
-                logging.getLogger(__name__).error(
-                    "Error aplicando descuento en LS sub %s: %s", sub.ls_subscription_id, exc
-                )
-                ls_note = "Descuento guardado localmente, pero no se pudo actualizar en Lemon Squeezy."
-
     session.commit()
+
+    # LS no permite cambiar el precio de una suscripción existente via API.
+    # El descuento queda registrado en Alcurro; para aplicarlo en LS hay que
+    # gestionarlo desde el panel de Lemon Squeezy (cancelar y crear nueva
+    # suscripción con el código de descuento, o ajustar desde el portal de LS).
     if new_amount == 0:
-        msg = f"Descuento «{discount.name}» aplicado — cuenta gratuita."
+        msg = f"Descuento «{discount.name}» aplicado — cuenta gratuita en Alcurro."
     else:
-        msg = f"Descuento «{discount.name}» aplicado. Nuevo importe: {new_amount / 100:.2f} {sub.currency}."
-    if ls_note:
-        msg += f" Nota: {ls_note}"
+        msg = f"Descuento «{discount.name}» aplicado. Nuevo importe en Alcurro: {new_amount / 100:.2f} {sub.currency}."
+    if sub.ls_subscription_id:
+        msg += " Para que aplique en Lemon Squeezy, gestiona el descuento desde el panel de LS."
     return ApplyDiscountResponse(
         ok=True,
         message=msg,

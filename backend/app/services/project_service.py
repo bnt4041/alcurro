@@ -2,12 +2,20 @@
 
 from __future__ import annotations
 
+import unicodedata
+from difflib import SequenceMatcher
 from uuid import UUID
 
 from sqlmodel import Session, select
 
 from app.models.project import Project
 from app.models.tenant import Company
+
+
+def _normalize(text: str) -> str:
+    """Minúsculas sin acentos para comparación tolerante."""
+    nfkd = unicodedata.normalize("NFKD", text.lower())
+    return "".join(c for c in nfkd if not unicodedata.combining(c))
 
 
 def list_active_projects(session: Session, company_id: UUID) -> list[Project]:
@@ -64,17 +72,34 @@ def resolve_project_from_reply(
     projects = list_active_projects(session, company_id)
     if not projects:
         return None
+    # Por número
     if raw.isdigit():
         idx = int(raw) - 1
         if 0 <= idx < len(projects):
             return projects[idx]
     lower = raw.lower()
+    # Exacto por código o nombre
     for p in projects:
         if lower == p.code.lower() or lower == p.name.lower():
             return p
+    # Substring exacto
     for p in projects:
         if lower in p.name.lower():
             return p
+    # Fuzzy con normalización de acentos (umbral 0.72)
+    norm_query = _normalize(raw)
+    best: Project | None = None
+    best_score = 0.0
+    for p in projects:
+        score = max(
+            SequenceMatcher(None, norm_query, _normalize(p.name)).ratio(),
+            SequenceMatcher(None, norm_query, _normalize(p.code)).ratio(),
+        )
+        if score > best_score:
+            best_score = score
+            best = p
+    if best_score >= 0.72:
+        return best
     return None
 
 

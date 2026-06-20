@@ -108,7 +108,8 @@ _INTENT_PATTERNS: list[tuple[re.Pattern, str, str, float, str | None]] = [
             r"salida|fin\s+de\s+jornada|"
             r"salgo|terminar\s+(de\s+)?trabajar|"
             r"he\s+terminado|he\s+acabado|"
-            r"voy\s+a\s+salir"
+            r"voy\s+a\s+salir|"
+            r"c(?:i[eé]|e)rr\w*"
             r")\b", re.IGNORECASE
         ),
         "fichar_salida", "confirm", 0.85, "¿Quieres fichar la salida ahora?",

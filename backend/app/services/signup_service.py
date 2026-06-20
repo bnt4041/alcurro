@@ -16,7 +16,6 @@ from app.services.org_service import clone_groups_for_tenant, ensure_group_templ
 from app.services.pricing_service import (
     get_active_discount_by_code,
     sync_subscription_pricing,
-    calculate_subscription_amount,
 )
 from app.services.legal_service import seed_default_legal_documents
 from app.services.rbac_service import assign_role_default_group, ensure_system_groups
@@ -128,8 +127,9 @@ def initiate_signup(session: Session, data: PublicSignupRequest) -> PublicSignup
         return resp
 
     # Con LS: guardar PendingSignup y redirigir a checkout
+    # Usamos discount_code (no custom_price_cents) para que LS aplique el descuento
+    # automáticamente en el checkout Y en todos los renewals posteriores.
     discount = get_active_discount_by_code(session, data.discount_code, plan.id)
-    discounted_cents = calculate_subscription_amount(plan, cycle, discount)
 
     pending = PendingSignup(
         data_json=data.model_dump_json(),
@@ -150,7 +150,7 @@ def initiate_signup(session: Session, data: PublicSignupRequest) -> PublicSignup
             variant_id=variant_id,
             customer_email=data.billing_email,
             success_url=success_url,
-            custom_price_cents=discounted_cents if discount else None,
+            discount_code=discount.code if discount else None,
             custom_data={"pending_signup_id": str(pending.id)},
         )
     except Exception as exc:

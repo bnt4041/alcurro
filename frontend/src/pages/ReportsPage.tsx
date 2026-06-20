@@ -650,8 +650,10 @@ const EMPTY_FILTERS: Filters = {
   department_ids: [],
 };
 
+type ReportTab = "chronological" | "summary" | "journal";
+
 export default function ReportsPage() {
-  const [tab, setTab] = useState<"chronological" | "summary">("chronological");
+  const [tab, setTab] = useState<ReportTab>("chronological");
   const [dateFrom, setDateFrom] = useState(firstDayOfMonth());
   const [dateTo, setDateTo] = useState(todayStr());
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
@@ -710,9 +712,24 @@ export default function ReportsPage() {
   }, [buildQuery]);
 
   const handleExportPDF = async () => {
+    if (tab === "journal") return;
     setExporting(true);
     try { await exportPDF(tab, chronoData, summaryData, dateFrom, dateTo, branding); }
     finally { setExporting(false); }
+  };
+
+  const handleJournalPDF = async () => {
+    setExporting(true);
+    try {
+      await api.download(
+        `/reports/journal-pdf?${buildQuery()}`,
+        `registro-jornada_${dateFrom}_${dateTo}.pdf`,
+      );
+    } catch {
+      setError("No se pudo generar el registro de jornada.");
+    } finally {
+      setExporting(false);
+    }
   };
 
   const activeFilterCount = Object.values(filters).reduce((n, arr) => n + arr.length, 0);
@@ -772,8 +789,11 @@ export default function ReportsPage() {
           <button type="button" className={tab === "summary" ? "tab active" : "tab"} onClick={() => setTab("summary")}>
             Resumen
           </button>
+          <button type="button" className={tab === "journal" ? "tab active" : "tab"} onClick={() => setTab("journal")}>
+            Registro de jornada
+          </button>
         </div>
-        {loaded && (
+        {loaded && tab !== "journal" && (
           <div className="report-export-btns">
             <button type="button" className="btn btn-sm" onClick={() => exportExcel(tab, chronoData, summaryData, dateFrom, dateTo)}>
               Exportar Excel
@@ -793,6 +813,26 @@ export default function ReportsPage() {
 
       {loaded && tab === "chronological" && <ChronologicalTable rows={chronoData} />}
       {loaded && tab === "summary" && <SummaryTable rows={summaryData} days={chronoData} />}
+      {loaded && tab === "journal" && (
+        <div className="report-journal-panel">
+          <div className="report-journal-info">
+            <h3>Registro Diario de Jornada</h3>
+            <p>
+              Documento oficial según el <strong>Real Decreto-ley 8/2019, de 8 de marzo</strong>.
+              Se genera un PDF con un registro por trabajador y mes para el rango y los filtros
+              seleccionados, con hora de entrada, hora de salida, total de horas y líneas de firma
+              para la empresa y el trabajador.
+            </p>
+            <p className="report-hint">
+              Solo se incluyen los trabajadores con fichajes en el periodo. Ajusta los filtros de
+              arriba para limitar el documento (por empleado, centro, etc.).
+            </p>
+          </div>
+          <button type="button" className="btn btn-primary" onClick={handleJournalPDF} disabled={exporting}>
+            {exporting ? "Generando…" : "Descargar registro (PDF)"}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

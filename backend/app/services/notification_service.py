@@ -278,6 +278,29 @@ def notify_leave_request_created(
             actor_name=employee.full_name,
         )
 
+    # WhatsApp al supervisor
+    if (
+        supervisor
+        and supervisor.phone
+        and _pref_enabled(session, supervisor.id, "leave_request", "whatsapp")
+    ):
+        wa_msg = (
+            f"📋 *Nueva solicitud de permiso*{type_label}\n\n"
+            f"{employee.full_name} ha solicitado un permiso:\n"
+            f"• Desde: {start_date}\n"
+            f"• Hasta: {end_date}\n"
+            f"• Días: {days:.1f}{reason_label}\n\n"
+            "Accede al panel de Alcurro para aprobar o rechazar la solicitud."
+        )
+        try:
+            from app.services.gowa_service import GoWAService
+            GoWAService(session).send_text_sync(supervisor.phone, wa_msg)
+        except Exception as exc:
+            logger.warning(
+                "notify_leave_request_created WhatsApp al supervisor falló (%s): %s",
+                supervisor.id, exc,
+            )
+
     # Recoger destinatarios email: supervisor + admins del mismo tenant con email
     from app.services.mail_service import MailService
     mail = MailService(session)

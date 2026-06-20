@@ -400,3 +400,71 @@ class OllamaService:
         else:
             parsed["message"] = ""
         return parsed
+
+    async def match_project(self, text: str, project_names: list[str]) -> int | None:
+        """
+        Dado el texto libre del empleado y la lista de nombres de proyecto,
+        devuelve el índice 0-based del proyecto que mejor encaja, o None.
+        Fallback IA para cuando la coincidencia rápida (fuzzy) no basta.
+        """
+        if not project_names:
+            return None
+        enumerated = "\n".join(f"{i + 1}. {n}" for i, n in enumerate(project_names))
+        system = (
+            "Eres un asistente que identifica proyectos de una empresa. "
+            "Responde ÚNICAMENTE con el número del proyecto al que se refiere el empleado "
+            "(1, 2, 3…) o 0 si no se refiere a ninguno. Sin texto adicional."
+        )
+        user_msg = f"Proyectos disponibles:\n{enumerated}\n\nEl empleado escribió: \"{text}\""
+        cfg = get_settings()
+        try:
+            if cfg.deepseek_api_key:
+                raw = await self._match_raw_openai(system, user_msg, cfg)
+            else:
+                raw = await self._match_raw_ollama(system, user_msg)
+            num = int(raw.strip().split()[0])
+            if 1 <= num <= len(project_names):
+                return num - 1
+        except Exception as exc:
+            logger.debug("match_project fallback IA falló: %s", exc)
+        return None
+
+    async def _match_raw_ollama(self, system: str, user_msg: str) -> str:
+        payload = {
+            "model": self._model,
+            "stream": False,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user_msg},
+            ],
+            "options": {"temperature": 0.1, "top_p": 0.9, "num_predict": 10},
+        }
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(f"{self._base_url}/api/chat", json=payload)
+            response.raise_for_status()
+            return response.json().get("message", {}).get("content", "").strip()
+
+    async def _match_raw_openai(self, system: str, user_msg: str, cfg) -> str:
+        payload = {
+            "model": cfg.deepseek_model,
+            "stream": False,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user_msg},
+            ],
+            "temperature": 0.1,
+            "top_p": 0.9,
+            "max_tokens": 10,
+        }
+        headers = {
+            "Authorization": f"Bearer {cfg.deepseek_api_key}",
+            "Content-Type": "application/json",
+        }
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                f"{cfg.deepseek_base_url.rstrip('/')}/v1/chat/completions",
+                json=payload,
+                headers=headers,
+            )
+            response.raise_for_status()
+            return response.json()["choices"][0]["message"]["content"].strip()

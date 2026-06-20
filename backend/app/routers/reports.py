@@ -1,7 +1,9 @@
 from datetime import date
+from io import BytesIO
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
@@ -12,6 +14,10 @@ from app.database import get_session
 from app.models.models import Employee
 from app.models.organization import Department, WorkCenter
 from app.models.tenant import Company
+from app.services.clock_journal_pdf_service import (
+    JournalEmployeeMeta,
+    generate_journal_pdf,
+)
 from app.services.reports_service import (
     DayReportRow,
     EmployeeSummaryRow,
@@ -211,3 +217,99 @@ def summary_report(
         department_ids=department_ids,
     )
     return build_summary_report(session, ids, date_from, date_to)
+
+
+def _build_employee_meta(
+    session: Session, employee_ids: list[UUID]
+) -> dict[str, JournalEmployeeMeta]:
+    """Resuelve nombre, DNI, empresa y centro/departamento por empleado."""
+    if not employee_ids:
+        return {}
+
+    employees = session.exec(
+        select(Employee).where(Employee.id.in_(employee_ids))  # type: ignore[attr-defined]
+    ).all()
+
+    company_ids = {e.company_id for e in employees}
+    company_names = {
+        c.id: c.name
+        for c in session.exec(
+            select(Company).where(Company.id.in_(company_ids))  # type: ignore[attr-defined]
+        ).all()
+    }
+
+    dept_ids = {e.department_id for e in employees if e.department_id}
+    departments = {
+        d.id: d
+        for d in session.exec(
+            select(Department).where(Department.id.in_(dept_ids))  # type: ignore[attr-defined]
+        ).all()
+    }
+    wc_ids = {d.work_center_id for d in departments.values() if d.work_center_id}
+    wc_names = {
+        wc.id: wc.name
+        for wc in session.exec(
+            select(WorkCenter).where(WorkCenter.id.in_(wc_ids))  # type: ignore[attr-defined]
+        ).all()
+    }
+
+    meta: dict[str, JournalEmployeeMeta] = {}
+    for e in employees:
+        dept = departments.get(e.department_id) if e.department_id else None
+        parts = []
+        if dept and dept.work_center_id:
+            wc = wc_names.get(dept.work_center_id)
+            if wc:
+                parts.append(wc)
+        if dept:
+            parts.append(dept.name)
+        meta[str(e.id)] = JournalEmployeeMeta(
+            full_name=e.full_name,
+            id_document=e.id_document,
+            company_name=company_names.get(e.company_id, "—"),
+            center_dept=" · ".join(parts) if parts else "—",
+        )
+    return meta
+
+
+@router.get("/journal-pdf")
+def journal_pdf_report(
+    date_from: date,
+    date_to: date,
+    employee_ids: list[UUID] = Query(default=[]),
+    supervisor_ids: list[UUID] = Query(default=[]),
+    company_ids: list[UUID] = Query(default=[]),
+    work_center_ids: list[UUID] = Query(default=[]),
+    department_ids: list[UUID] = Query(default=[]),
+    ctx: OrgContext = Depends(get_org_context),
+    session: Session = Depends(get_session),
+    user: Employee = Depends(get_current_user),
+    _: object = Depends(require_permission(Permission.READ, "clock_ins")),
+) -> StreamingResponse:
+    """Registro Diario de Jornada (RD-ley 8/2019) en PDF, un bloque por trabajador y mes."""
+    ids = _scope_ids(ctx, session, user)
+    ids = _apply_filters(
+        session, ids,
+        employee_ids=employee_ids,
+        supervisor_ids=supervisor_ids,
+        company_ids=company_ids,
+        work_center_ids=work_center_ids,
+        department_ids=department_ids,
+    )
+    rows = build_chronological_report(session, ids, date_from, date_to)
+    emp_meta = _build_employee_meta(session, ids)
+    branding_color = getattr(ctx.tenant, "primary_color", None)
+
+    pdf_bytes = generate_journal_pdf(
+        rows=rows,
+        emp_meta=emp_meta,
+        date_from=date_from,
+        date_to=date_to,
+        branding_color=branding_color,
+    )
+    filename = f"registro-jornada_{date_from.isoformat()}_{date_to.isoformat()}.pdf"
+    return StreamingResponse(
+        BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

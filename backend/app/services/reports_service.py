@@ -15,8 +15,13 @@ def _to_spain(dt: datetime) -> datetime:
     return dt.astimezone(_SPAIN_TZ)
 
 
+def _as_utc(dt: datetime) -> datetime:
+    """Normaliza a UTC-aware (los datetime naive se asumen UTC)."""
+    return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt.astimezone(timezone.utc)
+
+
 def _minutes_between(a: datetime, b: datetime) -> int:
-    return max(0, int((b - a).total_seconds() // 60))
+    return max(0, int((_as_utc(b) - _as_utc(a)).total_seconds() // 60))
 
 
 def fmt_duration(minutes: int) -> str:

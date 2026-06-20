@@ -141,13 +141,14 @@ def create_checkout(
     customer_email: str,
     success_url: str,
     *,
-    custom_price_cents: int | None = None,
+    discount_code: str | None = None,
     custom_data: dict | None = None,
 ) -> str | None:
     """Crea un checkout de Lemon Squeezy y devuelve la URL.
 
-    custom_price_cents sobreescribe el precio de la variante (útil para descuentos).
-    custom_data se añade al campo 'custom' del checkout para identificar al tenant/signup.
+    discount_code se pasa dentro de checkout_data: LS lo aplica automáticamente
+    en el checkout Y lo hereda en todos los renewals de la suscripción.
+    custom_data se añade al campo 'custom' para identificar al tenant/signup.
     """
     if not ls_configured():
         return None
@@ -162,17 +163,19 @@ def create_checkout(
     if custom_data:
         data_custom.update(custom_data)
 
+    checkout_data: dict = {
+        "email": customer_email,
+        "custom": data_custom,
+    }
+    if discount_code:
+        checkout_data["discount_code"] = discount_code.upper()
+
     attrs: dict = {
-        "checkout_data": {
-            "email": customer_email,
-            "custom": data_custom,
-        },
+        "checkout_data": checkout_data,
         "product_options": {
             "redirect_url": success_url,
         },
     }
-    if custom_price_cents is not None:
-        attrs["custom_price"] = custom_price_cents
 
     payload = {
         "data": {
@@ -348,19 +351,6 @@ def _on_subscription_created(session: Session, meta: dict, data: dict) -> None:
                             sub.current_period_start = date.today()
                         session.add(sub)
 
-                        if sub.discount_id and sub.pricing_plan_id:
-                            from app.models.billing import PricingPlan
-                            plan = session.get(PricingPlan, sub.pricing_plan_id)
-                            discount = get_active_discount(session, sub.discount_id, sub.pricing_plan_id)
-                            if plan and discount:
-                                discounted = calculate_subscription_amount(plan, sub.billing_cycle, discount)
-                                try:
-                                    _patch_ls_subscription_price(ls_sub_id, discounted)
-                                except Exception:
-                                    logging.getLogger(__name__).warning(
-                                        "No se pudo aplicar precio de descuento a LS sub %s", ls_sub_id
-                                    )
-
                     # Portal URL y customer id
                     tenant_obj = session.get(Tenant, resp.tenant_id)
                     if tenant_obj:
@@ -393,20 +383,6 @@ def _on_subscription_created(session: Session, meta: dict, data: dict) -> None:
             sub.current_period_end = period_end
             sub.current_period_start = date.today()
         session.add(sub)
-
-        if sub.discount_id and sub.pricing_plan_id:
-            from app.models.billing import PricingPlan
-            plan = session.get(PricingPlan, sub.pricing_plan_id)
-            discount = get_active_discount(session, sub.discount_id, sub.pricing_plan_id)
-            if plan and discount:
-                discounted = calculate_subscription_amount(plan, sub.billing_cycle, discount)
-                try:
-                    _patch_ls_subscription_price(ls_sub_id, discounted)
-                except Exception:
-                    import logging as _log
-                    _log.getLogger(__name__).warning(
-                        "No se pudo aplicar precio de descuento a LS sub %s", ls_sub_id
-                    )
 
     portal_url = (attrs.get("urls") or {}).get("customer_portal")
     if tenant:
