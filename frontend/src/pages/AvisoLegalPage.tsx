@@ -76,6 +76,7 @@ export default function AvisoLegalPage() {
         </p>
 
         <div className="legal-static__footer-links">
+          <Link to="/condiciones">Condiciones del Servicio</Link>
           <Link to="/privacidad">Política de Privacidad</Link>
           <Link to="/cookies">Política de Cookies</Link>
         </div>

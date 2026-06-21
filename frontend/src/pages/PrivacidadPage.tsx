@@ -93,6 +93,7 @@ export default function PrivacidadPage() {
 
         <div className="legal-static__footer-links">
           <Link to="/aviso-legal">Aviso Legal</Link>
+          <Link to="/condiciones">Condiciones del Servicio</Link>
           <Link to="/cookies">Política de Cookies</Link>
         </div>
       </div>

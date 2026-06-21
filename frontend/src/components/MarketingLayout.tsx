@@ -152,6 +152,7 @@ export default function MarketingLayout() {
             <div className="landing-footer__col">
               <p className="landing-footer__col-title">Legal</p>
               <Link to="/aviso-legal">Aviso legal</Link>
+              <Link to="/condiciones">Condiciones del servicio</Link>
               <Link to="/privacidad">Privacidad</Link>
               <Link to="/cookies">Cookies</Link>
             </div>

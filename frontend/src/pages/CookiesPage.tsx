@@ -91,6 +91,7 @@ export default function CookiesPage() {
 
         <div className="legal-static__footer-links">
           <Link to="/aviso-legal">Aviso Legal</Link>
+          <Link to="/condiciones">Condiciones del Servicio</Link>
           <Link to="/privacidad">Política de Privacidad</Link>
         </div>
       </div>

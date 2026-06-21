@@ -15,6 +15,7 @@ import LegalPage from "./pages/LegalPage";
 import AvisoLegalPage from "./pages/AvisoLegalPage";
 import PrivacidadPage from "./pages/PrivacidadPage";
 import CookiesPage from "./pages/CookiesPage";
+import CondicionesPage from "./pages/CondicionesPage";
 import ContactoPage from "./pages/ContactoPage";
 import EmployeesPage from "./pages/EmployeesPage";
 import GroupsPage from "./pages/GroupsPage";
@@ -61,6 +62,7 @@ export default function App() {
               <Route path="aviso-legal" element={<AvisoLegalPage />} />
               <Route path="privacidad" element={<PrivacidadPage />} />
               <Route path="cookies" element={<CookiesPage />} />
+              <Route path="condiciones" element={<CondicionesPage />} />
               <Route path="contacto" element={<ContactoPage />} />
             </Route>
 
