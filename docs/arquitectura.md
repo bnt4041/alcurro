@@ -15,7 +15,7 @@
           ┌────────────────┼────────────────┐
           ▼                ▼                ▼
    ┌─────────────┐  ┌─────────────┐  ┌──────────────┐
-   │   BROWSER   │  │  WHATSAPP   │  │ LEMON SQUEEZY│
+   │   BROWSER   │  │  WHATSAPP   │  │    PADDLE    │
    │  React SPA  │  │  (empleado) │  │  (pagos)     │
    └──────┬──────┘  └──────┬──────┘  └──────┬───────┘
           │                │                 │
@@ -154,7 +154,7 @@ GET  /api/legal/public/token/{token}              ← legal por WhatsApp
 POST /api/legal/public/token/{token}/accept/{doc}
 POST /api/webhook/whatsapp/{slug}                 ← webhook goWA
 POST /api/webhooks/stripe                         ← webhook Stripe
-POST /api/webhooks/lemon-squeezy                  ← webhook Lemon Squeezy
+POST /api/webhooks/paddle                         ← webhook Paddle
                     └─────────────────────────────────────────────────────────┘
 
                     ┌── CON AUTH (JWT) ────────────────────────────────────────┐
@@ -190,8 +190,8 @@ GET/POST/PATCH/DELETE /api/platform/ai/…
 GET/PUT/POST          /api/platform/whatsapp/…
 GET/PUT/POST          /api/platform/mail/…
 GET/POST              /api/platform/stripe/…
-POST                  /api/platform/ls/sync-plan/{plan_id}
-GET                   /api/platform/ls/payments
+POST                  /api/platform/paddle/sync-plan/{plan_id}
+GET                   /api/platform/paddle/payments
 POST                  /api/platform/purge/{tenant_id}
                     └─────────────────────────────────────────────────────────┘
 ```
@@ -273,9 +273,9 @@ services/
 │   ├── billing_read.py ──────────── get_tenant_billing()
 │   ├── stripe_service.py ────────── create_payment_intent(), sync_subscription()
 │   ├── stripe_simulation.py ─────── simulate_payment()
-│   ├── lemon_squeezy_service.py ─── sync_plan_to_ls(), create_checkout()
+│   ├── paddle_service.py ────────── sync_plan_to_paddle(), handle_webhook_event()
 │   │                                handle_webhook_event(), verify_webhook_signature()
-│   ├── invoice_service.py ───────── generate_invoice_for_ls_payment()
+│   ├── invoice_service.py ───────── generate_invoice_for_paddle_payment()
 │   └── pricing_service.py ───────── calculate_tenant_price()
 │
 ├── RBAC & ACCESO
@@ -583,11 +583,11 @@ EVALUACIÓN (core/permissions.py)
 │  tenants ──┬── companies ──┬── work_centers ──┬── departments           │
 │            │               │                  └── employees              │
 │            │               └── employees                                 │
-│            ├── pricing_plans (ls_product_id, ls_variant_id_monthly/annual)│
+│            ├── pricing_plans (paddle_product_id, paddle_price_id_*)      │
 │            ├── subscriptions (ls_subscription_id, payment_failure_count) │
 │            ├── billing_methods                                           │
 │            ├── stripe_payments       (pagos vía Stripe)                  │
-│            └── lemon_squeezy_payments (pagos vía Lemon Squeezy)         │
+│            └── paddle_payments (pagos vía Paddle)                       │
 │                                                                          │
 │  (tenants también tiene: ls_customer_id, ls_customer_portal_url)        │
 │                                                                          │
@@ -670,7 +670,7 @@ EVALUACIÓN (core/permissions.py)
 | IA local | Ollama | llama3.2 |
 | WhatsApp | goWA multidevice | latest |
 | Pagos (alternativo) | Stripe | 11 |
-| Pagos (principal) | Lemon Squeezy | v1 API |
+| Pagos (principal) | Paddle | Billing API v2 |
 | Proxy/SSL | Traefik | v2.11 |
 | Contenedores | Docker Compose | — |
 | Frontend server | Nginx | alpine |
@@ -788,7 +788,7 @@ curl http://localhost:8000/health
 | `docs/legal.md` | Sistema de textos legales y aceptación |
 | `docs/correo-smtp.md` | Configuración de correo SMTP |
 | `docs/stripe.md` | Stripe: claves, webhook, productos, checkout, producción |
-| `docs/lemon-squeezy.md` | Lemon Squeezy: configuración, webhook, sincronización de planes |
+| `docs/paddle.md` | Paddle: configuración, checkout overlay, webhook, sincronización de planes |
 | `docs/api.md` | Referencia de endpoints REST |
 | `docs/AI_WHATSAPP.md` | IA, automatización WhatsApp e incidencias por WA |
 | `scripts/backup.sh` | Backup PostgreSQL + uploads (manual o cron) |

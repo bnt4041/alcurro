@@ -14,7 +14,7 @@
 | WhatsApp | goWA (multi-device REST API) |
 | PDFs | reportlab · pypdf · Pillow |
 | IA | Ollama (local, llama3.2 por defecto) |
-| Pagos | Stripe (modo simulación por defecto) |
+| Pagos | Paddle (Billing API v2, principal) · Stripe (modo simulación) |
 | Correo | SMTP (`smtplib`) |
 | Runtime frontend | Bun (`/root/.bun/bin/bun run build`) — **no `npm`** |
 | Infraestructura | Docker Compose + Traefik (producción) |

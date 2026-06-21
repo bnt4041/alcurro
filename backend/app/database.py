@@ -7,7 +7,7 @@ from app.models.settings import SystemSettings  # noqa: F401
 from app.models.billing import (  # noqa: F401
     BillingMethod,
     Discount,
-    LemonSqueezyPayment,
+    PaddlePayment,
     PendingSignup,
     PricingPlan,
     StripePayment,

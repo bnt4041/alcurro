@@ -265,7 +265,7 @@ export default function PlatformSettingsPage() {
                 <strong>Enviar factura automáticamente por email</strong>
                 <br />
                 <span className="muted small">
-                  Al recibir un pago de Lemon Squeezy, se genera la factura y se envía por email al cliente.
+                  Al recibir un pago de Paddle, se genera la factura y se envía por email al cliente.
                   Requiere SMTP configurado y que el cliente tenga email de facturación.
                 </span>
               </span>

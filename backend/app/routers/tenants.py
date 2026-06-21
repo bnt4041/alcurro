@@ -11,7 +11,7 @@ from app.config import get_settings
 from app.core.permissions import Permission, require_permission
 from app.core.tenant_context import TenantContext, get_tenant_context
 from app.database import get_session
-from app.models.billing import BillingCycle, LemonSqueezyPayment, LsPaymentStatus, PricingPlan, Subscription
+from app.models.billing import BillingCycle, PaddlePayment, PaddlePaymentStatus, PricingPlan, Subscription
 from app.models.tenant import Company, Tenant
 from app.schemas.billing import TenantAccountBillingRead
 from app.schemas.tenant import (
@@ -27,11 +27,11 @@ from app.schemas.tenant import (
 )
 from app.services.billing_read import tenant_account_billing
 from app.services.gowa_client import get_shared_whatsapp_session
-from app.services.lemon_squeezy_service import (
-    get_ls_variant_id,
-    ls_configured,
-    patch_ls_subscription_variant,
-    update_ls_customer_name,
+from app.services.paddle_service import (
+    get_paddle_price_id,
+    paddle_configured,
+    patch_paddle_subscription_variant,
+    update_paddle_customer_name,
 )
 from app.services.pricing_service import (
     calculate_subscription_amount,
@@ -163,7 +163,7 @@ def update_current_billing(
     session.commit()
     session.refresh(tenant)
     if new_legal_name and new_legal_name != ctx.tenant.legal_name:
-        update_ls_customer_name(tenant, new_legal_name)
+        update_paddle_customer_name(tenant, new_legal_name)
     return tenant
 
 
@@ -257,7 +257,7 @@ class TenantPaymentRead(BaseModel):
     status: str
     description: str | None
     receipt_url: str | None
-    ls_invoice_id: str | None
+    paddle_transaction_id: str | None
     paid_at: str | None
     created_at: str
 
@@ -269,16 +269,16 @@ def list_tenant_payments(
     _: object = Depends(require_permission(Permission.READ, "tenant")),
 ) -> list[TenantPaymentRead]:
     rows = session.exec(
-        select(LemonSqueezyPayment)
-        .where(LemonSqueezyPayment.tenant_id == ctx.tenant.id)
-        .order_by(LemonSqueezyPayment.created_at.desc())  # type: ignore[attr-defined]
+        select(PaddlePayment)
+        .where(PaddlePayment.tenant_id == ctx.tenant.id)
+        .order_by(PaddlePayment.created_at.desc())  # type: ignore[attr-defined]
         .limit(200)
     ).all()
     status_map = {
-        LsPaymentStatus.PAID: "Cobrado",
-        LsPaymentStatus.PENDING: "Pendiente",
-        LsPaymentStatus.FAILED: "Fallido",
-        LsPaymentStatus.REFUNDED: "Reembolsado",
+        PaddlePaymentStatus.PAID: "Cobrado",
+        PaddlePaymentStatus.PENDING: "Pendiente",
+        PaddlePaymentStatus.FAILED: "Fallido",
+        PaddlePaymentStatus.REFUNDED: "Reembolsado",
     }
     return [
         TenantPaymentRead(
@@ -288,12 +288,33 @@ def list_tenant_payments(
             status=status_map.get(r.status, r.status),
             description=r.description,
             receipt_url=r.receipt_url,
-            ls_invoice_id=r.ls_invoice_id,
+            paddle_transaction_id=r.paddle_transaction_id,
             paid_at=r.paid_at.isoformat() if r.paid_at else None,
             created_at=r.created_at.isoformat(),
         )
         for r in rows
     ]
+
+
+@router.get("/current/payments/{payment_id}/invoice-url")
+def get_payment_invoice_url(
+    payment_id: UUID,
+    ctx: TenantContext = Depends(get_tenant_context),
+    session: Session = Depends(get_session),
+    _: object = Depends(require_permission(Permission.READ, "tenant")),
+) -> dict[str, str]:
+    """Devuelve una URL fresca a la factura PDF de Paddle (las URLs caducan ~1h)."""
+    from app.services.paddle_service import get_transaction_invoice_url
+
+    payment = session.get(PaddlePayment, payment_id)
+    if not payment or payment.tenant_id != ctx.tenant.id:
+        raise HTTPException(status_code=404, detail="Cobro no encontrado")
+    if not payment.paddle_transaction_id:
+        raise HTTPException(status_code=404, detail="Este cobro no tiene factura de Paddle asociada")
+    url = get_transaction_invoice_url(payment.paddle_transaction_id)
+    if not url:
+        raise HTTPException(status_code=404, detail="La factura aún no está disponible. Inténtalo en unos minutos.")
+    return {"url": url}
 
 
 @router.get("/current/whatsapp/status", response_model=TenantWhatsAppStatusRead)
@@ -453,23 +474,23 @@ def request_plan_change(
         session.add(sub)
         session.flush()
 
-        # Sincronizar con Lemon Squeezy
+        # Sincronizar con Paddle
         ls_error: str | None = None
-        if ls_configured() and sub.ls_subscription_id:
-            variant_id = get_ls_variant_id(new_plan, data.billing_cycle)
-            if variant_id:
+        if paddle_configured() and sub.paddle_subscription_id:
+            price_id = get_paddle_price_id(new_plan, data.billing_cycle)
+            if price_id:
                 try:
-                    patch_ls_subscription_variant(
-                        sub.ls_subscription_id,
-                        variant_id,
+                    patch_paddle_subscription_variant(
+                        sub.paddle_subscription_id,
+                        price_id,
                         invoice_immediately=is_upgrade,
                     )
                 except Exception as exc:
                     import logging
                     logging.getLogger(__name__).error(
-                        "Error actualizando variante en LS sub %s: %s", sub.ls_subscription_id, exc
+                        "Error actualizando precio en Paddle sub %s: %s", sub.paddle_subscription_id, exc
                     )
-                    ls_error = "El cambio se ha guardado, pero no se pudo actualizar en Lemon Squeezy."
+                    ls_error = "El cambio se ha guardado, pero no se pudo actualizar en Paddle."
 
         session.commit()
 
@@ -540,16 +561,16 @@ def apply_tenant_discount(
 
     session.commit()
 
-    # LS no permite cambiar el precio de una suscripción existente via API.
-    # El descuento queda registrado en Alcurro; para aplicarlo en LS hay que
-    # gestionarlo desde el panel de Lemon Squeezy (cancelar y crear nueva
-    # suscripción con el código de descuento, o ajustar desde el portal de LS).
+    # Aplicar el descuento también en Paddle (se hereda en los próximos renewals).
     if new_amount == 0:
         msg = f"Descuento «{discount.name}» aplicado — cuenta gratuita en Alcurro."
     else:
         msg = f"Descuento «{discount.name}» aplicado. Nuevo importe en Alcurro: {new_amount / 100:.2f} {sub.currency}."
-    if sub.ls_subscription_id:
-        msg += " Para que aplique en Lemon Squeezy, gestiona el descuento desde el panel de LS."
+    if sub.paddle_subscription_id:
+        from app.services.paddle_service import apply_paddle_discount_to_subscription
+        ok = apply_paddle_discount_to_subscription(sub.paddle_subscription_id, discount.code)
+        if not ok:
+            msg += " Aviso: no se pudo aplicar el descuento en Paddle automáticamente."
     return ApplyDiscountResponse(
         ok=True,
         message=msg,

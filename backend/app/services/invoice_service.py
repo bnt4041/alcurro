@@ -11,7 +11,7 @@ from sqlmodel import Session, select
 
 from app.models.invoice import Invoice, InvoiceStatus
 from app.models.platform_settings import PLATFORM_SETTINGS_ID, PlatformSettings
-from app.models.billing import LemonSqueezyPayment, StripePayment
+from app.models.billing import PaddlePayment, StripePayment
 from app.models.tenant import Tenant
 
 UPLOAD_DIR = Path("/app/uploads/invoices")
@@ -137,16 +137,16 @@ def generate_invoice_for_payment(
     return invoice
 
 
-def generate_invoice_for_ls_payment(
+def generate_invoice_for_paddle_payment(
     session: Session,
-    payment: LemonSqueezyPayment,
+    payment: PaddlePayment,
     *,
     concept: str | None = None,
     vat_rate: int | None = None,
 ) -> Invoice | None:
-    """Genera una factura interna a partir de un LemonSqueezyPayment. Idempotente."""
+    """Genera una factura interna a partir de un PaddlePayment. Idempotente."""
     existing = session.exec(
-        select(Invoice).where(Invoice.ls_payment_id == payment.id)
+        select(Invoice).where(Invoice.paddle_payment_id == payment.id)
     ).first()
     if existing:
         return existing
@@ -178,7 +178,7 @@ def generate_invoice_for_ls_payment(
         currency=payment.currency,
         issue_date=date.today(),
         status=InvoiceStatus.PAID,
-        ls_payment_id=payment.id,
+        paddle_payment_id=payment.id,
         **_snapshot_tenant(tenant),
     )
     session.add(invoice)
@@ -240,7 +240,7 @@ def create_credit_note(
     session: Session,
     invoice_id: UUID,
     *,
-    ls_payment_id: UUID | None = None,
+    paddle_payment_id: UUID | None = None,
 ) -> Invoice:
     """Genera una factura rectificativa (abono) para una factura existente."""
     original = session.get(Invoice, invoice_id)
@@ -269,7 +269,7 @@ def create_credit_note(
         issue_date=date.today(),
         status=InvoiceStatus.CREDIT_NOTE,
         credit_note_for_id=original.id,
-        ls_payment_id=ls_payment_id,
+        paddle_payment_id=paddle_payment_id,
         recipient_legal_name=original.recipient_legal_name,
         recipient_tax_id=original.recipient_tax_id,
         recipient_address=original.recipient_address,

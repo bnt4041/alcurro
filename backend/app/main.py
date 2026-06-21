@@ -219,18 +219,11 @@ def _run_startup_migrations() -> None:
         print(f"migrate_incidents_v5: {exc}")
 
     try:
-        from scripts.migrate_lemon_squeezy_v1 import run as migrate_lemon_squeezy_v1
+        from scripts.migrate_paddle_v1 import run as migrate_paddle_v1
 
-        migrate_lemon_squeezy_v1()
+        migrate_paddle_v1()
     except Exception as exc:
-        print(f"migrate_lemon_squeezy_v1: {exc}")
-
-    try:
-        from scripts.migrate_lemon_squeezy_v2 import run as migrate_lemon_squeezy_v2
-
-        migrate_lemon_squeezy_v2()
-    except Exception as exc:
-        print(f"migrate_lemon_squeezy_v2: {exc}")
+        print(f"migrate_paddle_v1: {exc}")
 
 
 async def _reminder_scheduler() -> None:

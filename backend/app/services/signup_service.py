@@ -21,10 +21,9 @@ from app.services.legal_service import seed_default_legal_documents
 from app.services.rbac_service import assign_role_default_group, ensure_system_groups
 from app.services.slug import resolve_tenant_slug
 from app.config import get_settings
-from app.services.lemon_squeezy_service import (
-    create_checkout as create_ls_checkout,
-    get_ls_variant_id,
-    ls_configured,
+from app.services.paddle_service import (
+    get_paddle_price_id,
+    paddle_configured,
 )
 
 _log = logging.getLogger(__name__)
@@ -108,7 +107,8 @@ def register_tenant(session: Session, data: PublicSignupRequest) -> PublicSignup
 
 
 def initiate_signup(session: Session, data: PublicSignupRequest) -> PublicSignupResponse:
-    """Punto de entrada público. Si LS está configurado, crea PendingSignup; si no, crea el tenant."""
+    """Punto de entrada público. Si Paddle está configurado, crea PendingSignup y
+    devuelve los parámetros para abrir el overlay de checkout; si no, crea el tenant."""
     plan = session.get(PricingPlan, data.pricing_plan_id)
     if not plan or not plan.is_active:
         raise ValueError("Tarifa no válida")
@@ -118,17 +118,17 @@ def initiate_signup(session: Session, data: PublicSignupRequest) -> PublicSignup
         if hasattr(data.billing_cycle, "value")
         else str(data.billing_cycle)
     )
-    variant_id = get_ls_variant_id(plan, cycle)
+    price_id = get_paddle_price_id(plan, cycle)
 
-    if not ls_configured() or not variant_id:
-        # Sin LS: crear cuenta inmediatamente
+    if not paddle_configured() or not price_id:
+        # Sin Paddle: crear cuenta inmediatamente
         resp = register_tenant(session, data)
         session.commit()
         return resp
 
-    # Con LS: guardar PendingSignup y redirigir a checkout
-    # Usamos discount_code (no custom_price_cents) para que LS aplique el descuento
-    # automáticamente en el checkout Y en todos los renewals posteriores.
+    # Con Paddle: guardar PendingSignup y devolver parámetros del overlay.
+    # El código de descuento se pasa al overlay para que Paddle lo aplique en el
+    # checkout y lo herede en los renewals posteriores.
     discount = get_active_discount_by_code(session, data.discount_code, plan.id)
 
     pending = PendingSignup(
@@ -142,26 +142,15 @@ def initiate_signup(session: Session, data: PublicSignupRequest) -> PublicSignup
     base = settings.public_app_url.rstrip("/")
     success_url = f"{base}/registro/ok?pending={pending.id}"
 
-    try:
-        checkout_url = create_ls_checkout(
-            session,
-            tenant=None,
-            subscription=None,
-            variant_id=variant_id,
-            customer_email=data.billing_email,
-            success_url=success_url,
-            discount_code=discount.code if discount else None,
-            custom_data={"pending_signup_id": str(pending.id)},
-        )
-    except Exception as exc:
-        _log.error("LS checkout error: %s", exc, exc_info=True)
-        session.rollback()
-        raise ValueError("No se pudo crear el checkout de pago. Inténtalo de nuevo.") from exc
-
     session.commit()
 
     return PublicSignupResponse(
         pending_signup_id=pending.id,
-        checkout_url=checkout_url,
         company_name=data.company_name.strip(),
+        paddle_price_id=price_id,
+        paddle_client_token=settings.paddle_client_token,
+        paddle_env=settings.paddle_env,
+        paddle_discount_code=discount.code if discount else None,
+        customer_email=data.billing_email,
+        success_url=success_url,
     )

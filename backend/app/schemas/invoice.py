@@ -23,9 +23,9 @@ class InvoiceListItem(BaseModel):
     pdf_url: str | None
     email_sent_at: datetime | None
     stripe_payment_id: UUID | None
-    ls_payment_id: UUID | None
-    ls_invoice_ref: str | None = None
-    ls_receipt_url: str | None = None
+    paddle_payment_id: UUID | None
+    paddle_invoice_ref: str | None = None
+    paddle_receipt_url: str | None = None
     credit_note_for_id: UUID | None
     created_at: datetime
 

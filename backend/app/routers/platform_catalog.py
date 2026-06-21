@@ -19,7 +19,7 @@ from app.schemas.pricing import (
     PricingPlanRead,
     PricingPlanUpdate,
 )
-from app.services.lemon_squeezy_service import sync_discount_to_ls
+from app.services.paddle_service import sync_discount_to_paddle
 from app.services.pricing_service import (
     calculate_subscription_amount,
     get_active_discount,
@@ -117,9 +117,9 @@ def create_discount(
     session.add(row)
     session.commit()
     session.refresh(row)
-    ls_id = sync_discount_to_ls(row)
-    if ls_id and ls_id != row.ls_discount_id:
-        row.ls_discount_id = ls_id
+    paddle_id = sync_discount_to_paddle(row)
+    if paddle_id and paddle_id != row.paddle_discount_id:
+        row.paddle_discount_id = paddle_id
         session.add(row)
         session.commit()
         session.refresh(row)
@@ -149,9 +149,9 @@ def update_discount(
     session.add(row)
     session.commit()
     session.refresh(row)
-    ls_id = sync_discount_to_ls(row)
-    if ls_id and ls_id != row.ls_discount_id:
-        row.ls_discount_id = ls_id
+    paddle_id = sync_discount_to_paddle(row)
+    if paddle_id and paddle_id != row.paddle_discount_id:
+        row.paddle_discount_id = paddle_id
         session.add(row)
         session.commit()
         session.refresh(row)

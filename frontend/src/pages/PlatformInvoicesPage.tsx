@@ -23,9 +23,9 @@ interface Invoice {
   pdf_url: string | null;
   email_sent_at: string | null;
   stripe_payment_id: string | null;
-  ls_payment_id: string | null;
-  ls_invoice_ref: string | null;
-  ls_receipt_url: string | null;
+  paddle_payment_id: string | null;
+  paddle_invoice_ref: string | null;
+  paddle_receipt_url: string | null;
   credit_note_for_id: string | null;
   created_at: string;
 }
@@ -176,9 +176,9 @@ export default function PlatformInvoicesPage() {
         await api.post(`/platform/invoices/${row.id}/credit-note`, {});
         notify("Factura rectificativa creada", "success");
         load();
-      } else if (action === "ls-refund") {
-        if (!confirm(`¿Emitir abono de ${row.number}?\n\nSe realizará el reembolso monetario en Lemon Squeezy y se generará la factura rectificativa en Alcurro.`)) return;
-        const res = await api.post<{ credit_note_number: string }>(`/platform/ls/refund/${row.ls_payment_id}`, {});
+      } else if (action === "paddle-refund") {
+        if (!confirm(`¿Emitir abono de ${row.number}?\n\nSe realizará el reembolso monetario en Paddle y se generará la factura rectificativa en Alcurro.`)) return;
+        const res = await api.post<{ credit_note_number: string }>(`/platform/paddle/refund/${row.paddle_payment_id}`, {});
         notify(`Abono ${res.credit_note_number} generado correctamente`, "success");
         load();
       } else if (action === "cancel") {
@@ -204,12 +204,12 @@ export default function PlatformInvoicesPage() {
         formatter: (cell) => {
           const r = cell.getRow().getData() as TableRow;
           let badges = "";
-          if (r.ls_receipt_url) {
-            badges += `<a href="${r.ls_receipt_url}" target="_blank" rel="noopener" class="badge badge--info" title="Ver factura en Lemon Squeezy">LS ${r.ls_invoice_ref ?? "factura"}</a> `;
-          } else if (r.ls_invoice_ref) {
-            badges += `<span class="badge badge--info" title="Referencia LS: ${r.ls_invoice_ref}">LS ${r.ls_invoice_ref}</span> `;
-          } else if (r.ls_payment_id) {
-            badges += `<span class="badge badge--info" title="Vinculada a cobro LS">LS</span> `;
+          if (r.paddle_receipt_url) {
+            badges += `<a href="${r.paddle_receipt_url}" target="_blank" rel="noopener" class="badge badge--info" title="Ver factura en Paddle">Paddle ${r.paddle_invoice_ref ?? "factura"}</a> `;
+          } else if (r.paddle_invoice_ref) {
+            badges += `<span class="badge badge--info" title="Referencia Paddle: ${r.paddle_invoice_ref}">Paddle ${r.paddle_invoice_ref}</span> `;
+          } else if (r.paddle_payment_id) {
+            badges += `<span class="badge badge--info" title="Vinculada a cobro Paddle">Paddle</span> `;
           }
           if (r.credit_note_for_id) badges += `<span class="badge badge--warning" title="Rectificativa">ABONO</span> `;
           return `${badges}<span class="mono small">${r.number}</span>`;
@@ -270,8 +270,8 @@ export default function PlatformInvoicesPage() {
         formatter: (cell) => {
           const r = cell.getRow().getData() as TableRow;
           const cancelled = r.status === "cancelled" || r.status === "credit_note";
-          const lsAbono = !cancelled && r.ls_payment_id
-            ? `<button class="btn btn-xs btn-warning" data-action="ls-refund" title="Reembolso en Lemon Squeezy + factura rectificativa">Abono LS</button>`
+          const lsAbono = !cancelled && r.paddle_payment_id
+            ? `<button class="btn btn-xs btn-warning" data-action="paddle-refund" title="Reembolso en Paddle + factura rectificativa">Abono Paddle</button>`
             : (!cancelled ? `<button class="btn btn-xs btn-warning" data-action="credit" title="Factura rectificativa">Abono</button>` : "");
           return `
             <div class="table-actions">

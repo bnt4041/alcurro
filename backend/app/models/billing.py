@@ -54,9 +54,9 @@ class PricingPlan(SQLModel, table=True):
     stripe_product_id: str | None = Field(default=None, max_length=120)
     stripe_price_monthly_id: str | None = Field(default=None, max_length=120)
     stripe_price_annual_id: str | None = Field(default=None, max_length=120)
-    ls_product_id: str | None = Field(default=None, max_length=80)
-    ls_variant_id_monthly: str | None = Field(default=None, max_length=80)
-    ls_variant_id_annual: str | None = Field(default=None, max_length=80)
+    paddle_product_id: str | None = Field(default=None, max_length=80)
+    paddle_price_id_monthly: str | None = Field(default=None, max_length=80)
+    paddle_price_id_annual: str | None = Field(default=None, max_length=80)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -83,7 +83,7 @@ class Discount(SQLModel, table=True):
         description="Null = aplica a todas las tarifas",
     )
     is_active: bool = Field(default=True)
-    ls_discount_id: str | None = Field(default=None, max_length=80)
+    paddle_discount_id: str | None = Field(default=None, max_length=80)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -128,7 +128,7 @@ class Subscription(SQLModel, table=True):
     current_period_end: date | None = Field(default=None)
     stripe_subscription_id: str | None = Field(default=None, max_length=120, index=True)
     stripe_checkout_session_id: str | None = Field(default=None, max_length=120)
-    ls_subscription_id: str | None = Field(default=None, max_length=80, index=True)
+    paddle_subscription_id: str | None = Field(default=None, max_length=80, index=True)
     payment_failure_count: int = Field(default=0, ge=0)
     last_payment_failure_at: datetime | None = Field(default=None)
     pending_plan_id: UUID | None = Field(default=None, foreign_key="pricing_plans.id")
@@ -166,27 +166,27 @@ class StripePayment(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
-class LsPaymentStatus(StrEnum):
+class PaddlePaymentStatus(StrEnum):
     PENDING = "pending"
     PAID = "paid"
     FAILED = "failed"
     REFUNDED = "refunded"
 
 
-class LemonSqueezyPayment(SQLModel, table=True):
-    """Registro de cobros recibidos vía Lemon Squeezy."""
+class PaddlePayment(SQLModel, table=True):
+    """Registro de cobros recibidos vía Paddle."""
 
-    __tablename__ = "ls_payments"
+    __tablename__ = "paddle_payments"
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     tenant_id: UUID | None = Field(default=None, foreign_key="tenants.id", index=True)
     subscription_id: UUID | None = Field(default=None, foreign_key="subscriptions.id")
-    ls_order_id: str | None = Field(default=None, max_length=80, index=True)
-    ls_subscription_id: str | None = Field(default=None, max_length=80, index=True)
-    ls_invoice_id: str | None = Field(default=None, max_length=80, index=True)
+    paddle_invoice_id: str | None = Field(default=None, max_length=80, index=True)
+    paddle_subscription_id: str | None = Field(default=None, max_length=80, index=True)
+    paddle_transaction_id: str | None = Field(default=None, max_length=80, index=True)
     amount_cents: int = Field(default=0, ge=0)
     currency: str = Field(default="EUR", max_length=3)
-    status: LsPaymentStatus = Field(default=LsPaymentStatus.PENDING)
+    status: PaddlePaymentStatus = Field(default=PaddlePaymentStatus.PENDING)
     description: str | None = Field(default=None, max_length=500)
     invoice_number: str | None = Field(default=None, max_length=50)
     receipt_url: str | None = Field(default=None)
@@ -201,14 +201,14 @@ class PendingSignupStatus(StrEnum):
 
 
 class PendingSignup(SQLModel, table=True):
-    """Registro temporal de alta pendiente de confirmación de pago LS."""
+    """Registro temporal de alta pendiente de confirmación de pago."""
 
     __tablename__ = "pending_signups"
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     data_json: str = Field(description="JSON serializado del formulario de alta")
     tenant_id: UUID | None = Field(default=None, foreign_key="tenants.id", nullable=True)
-    ls_subscription_id: str | None = Field(default=None, max_length=80, index=True)
+    paddle_subscription_id: str | None = Field(default=None, max_length=80, index=True)
     status: PendingSignupStatus = Field(default=PendingSignupStatus.PENDING)
     error_message: str | None = Field(default=None, max_length=500)
     created_at: datetime = Field(default_factory=datetime.utcnow)

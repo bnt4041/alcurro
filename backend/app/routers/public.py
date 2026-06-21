@@ -7,12 +7,12 @@ from sqlmodel import Session, select
 from app.database import get_session
 from app.models.billing import PendingSignup, PendingSignupStatus, PricingPlan
 from app.schemas.public import (
-    PublicLsConfig,
+    PublicPaddleConfig,
     PublicPricingPlanRead,
     PublicSignupRequest,
     PublicSignupResponse,
 )
-from app.services.lemon_squeezy_service import ls_configured
+from app.services.paddle_service import paddle_configured
 from app.services.signup_service import initiate_signup
 from app.services.password_reset_service import (
     request_password_reset,
@@ -83,12 +83,13 @@ def public_discount_preview(
     )
 
 
-@router.get("/ls-config", response_model=PublicLsConfig)
-def public_ls_config() -> PublicLsConfig:
+@router.get("/paddle-config", response_model=PublicPaddleConfig)
+def public_paddle_config() -> PublicPaddleConfig:
     settings = get_settings()
-    return PublicLsConfig(
-        enabled=ls_configured(),
-        store_id=settings.lemon_squeezy_store_id or None,
+    return PublicPaddleConfig(
+        enabled=paddle_configured(),
+        client_token=settings.paddle_client_token or None,
+        env=settings.paddle_env,
     )
 
 

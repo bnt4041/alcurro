@@ -30,9 +30,9 @@ from app.services.pricing_service import (
     get_active_discount,
     sync_subscription_pricing,
 )
-from app.services.lemon_squeezy_service import (
-    apply_ls_discount_to_subscription,
-    update_ls_subscription_variant,
+from app.services.paddle_service import (
+    apply_paddle_discount_to_subscription,
+    update_paddle_subscription_variant,
 )
 from app.services.org_service import seed_company_organization
 
@@ -265,11 +265,11 @@ def update_subscription(
     if ls_sync_plan and ls_sync_cycle:
         tenant = session.get(Tenant, tenant_id)
         if tenant:
-            update_ls_subscription_variant(session, tenant, sub, ls_sync_plan, ls_sync_cycle)
+            update_paddle_subscription_variant(session, tenant, sub, ls_sync_plan, ls_sync_cycle)
 
-    if ls_apply_discount_code is not False and sub.ls_subscription_id:
-        apply_ls_discount_to_subscription(
-            sub.ls_subscription_id,
+    if ls_apply_discount_code is not False and sub.paddle_subscription_id:
+        apply_paddle_discount_to_subscription(
+            sub.paddle_subscription_id,
             ls_apply_discount_code if ls_apply_discount_code else None,
         )
 

@@ -40,9 +40,10 @@ class PublicSignupRequest(BaseModel):
     accept_terms: bool = Field(description="Debe aceptar términos")
 
 
-class PublicLsConfig(BaseModel):
+class PublicPaddleConfig(BaseModel):
     enabled: bool
-    store_id: str | None
+    client_token: str | None
+    env: str
 
 
 class PublicSignupResponse(BaseModel):
@@ -52,3 +53,10 @@ class PublicSignupResponse(BaseModel):
     checkout_url: str | None = None
     admin_login_hint: str | None = None
     pending_signup_id: UUID | None = None
+    # Parámetros para el overlay de Paddle.js (cuando hay que pagar)
+    paddle_price_id: str | None = None
+    paddle_client_token: str | None = None
+    paddle_env: str | None = None
+    paddle_discount_code: str | None = None
+    customer_email: str | None = None
+    success_url: str | None = None

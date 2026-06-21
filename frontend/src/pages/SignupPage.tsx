@@ -12,6 +12,7 @@ import {
   suggestAccountCode,
 } from "../lib/slug";
 import { formatMoney } from "../lib/money";
+import { openPaddleCheckout } from "../lib/paddle";
 
 const emptyForm = () => ({
   company_name: "",
@@ -138,8 +139,18 @@ export default function SignupPage() {
     setLoading(true);
     try {
       const res = await publicApi.signup(body);
-      if (res.checkout_url) {
-        window.location.href = res.checkout_url;
+      if (res.paddle_price_id && res.paddle_client_token) {
+        await openPaddleCheckout({
+          clientToken: res.paddle_client_token,
+          env: res.paddle_env ?? "sandbox",
+          priceId: res.paddle_price_id,
+          customData: res.pending_signup_id
+            ? { pending_signup_id: res.pending_signup_id }
+            : undefined,
+          customerEmail: res.customer_email ?? undefined,
+          discountCode: res.paddle_discount_code,
+          successUrl: res.success_url,
+        });
         return;
       }
       navigate("/registro/ok", {

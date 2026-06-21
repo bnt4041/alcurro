@@ -17,7 +17,7 @@ interface TenantPayment {
   status: string;
   description: string | null;
   receipt_url: string | null;
-  ls_invoice_id: string | null;
+  paddle_transaction_id: string | null;
   paid_at: string | null;
   created_at: string;
 }
@@ -267,10 +267,10 @@ export default function AccountPage() {
               rel="noopener noreferrer"
               className="btn btn-secondary btn-sm"
             >
-              Portal de cliente (Lemon Squeezy)
+              Portal de cliente (Paddle)
             </a>
             <p className="muted small" style={{ marginTop: "0.4rem" }}>
-              Actualiza tu método de pago y gestiona tu suscripción directamente en Lemon Squeezy.
+              Actualiza tu método de pago y gestiona tu suscripción directamente en Paddle.
             </p>
           </div>
         )}
@@ -542,7 +542,7 @@ export default function AccountPage() {
                   <th style={{ textAlign: "left", padding: "0.4rem 0.6rem" }}>Concepto</th>
                   <th style={{ textAlign: "right", padding: "0.4rem 0.6rem" }}>Importe</th>
                   <th style={{ textAlign: "left", padding: "0.4rem 0.6rem" }}>Estado</th>
-                  <th style={{ textAlign: "center", padding: "0.4rem 0.6rem" }}>Factura LS</th>
+                  <th style={{ textAlign: "center", padding: "0.4rem 0.6rem" }}>Factura</th>
                 </tr>
               </thead>
               <tbody>
@@ -561,36 +561,29 @@ export default function AccountPage() {
                       </span>
                     </td>
                     <td style={{ padding: "0.4rem 0.6rem", textAlign: "center" }}>
-                      {p.receipt_url ? (
-                        <div style={{ display: "flex", gap: 6, alignItems: "center", justifyContent: "center" }}>
-                          <a
-                            href={p.receipt_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            title="Abrir factura en Lemon Squeezy"
-                            style={{ color: "var(--color-primary, #27ae60)", display: "flex", alignItems: "center" }}
-                          >
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
-                              <polyline points="15 3 21 3 21 9"/>
-                              <line x1="10" y1="14" x2="21" y2="3"/>
-                            </svg>
-                          </a>
-                          <button
-                            type="button"
-                            title="Copiar enlace"
-                            style={{ background: "none", border: "none", cursor: "pointer", padding: 0, color: "var(--color-muted, #888)", display: "flex", alignItems: "center" }}
-                            onClick={() => navigator.clipboard.writeText(p.receipt_url!).then(() => notify("Enlace copiado", "success"))}
-                          >
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-                              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-                            </svg>
-                          </button>
-                          {p.ls_invoice_id && (
-                            <span className="mono" style={{ fontSize: "0.72rem", color: "var(--color-muted, #888)" }}>{p.ls_invoice_id}</span>
-                          )}
-                        </div>
+                      {p.paddle_transaction_id ? (
+                        <button
+                          type="button"
+                          className="btn btn-xs"
+                          title="Ver / descargar factura PDF"
+                          style={{ display: "inline-flex", gap: 4, alignItems: "center" }}
+                          onClick={async () => {
+                            try {
+                              const res = await api.get<{ url: string }>(
+                                `/tenants/current/payments/${p.id}/invoice-url`
+                              );
+                              window.open(res.url, "_blank", "noopener");
+                            } catch (err) {
+                              notify(String(err).replace(/^Error:\s*/i, ""), "error");
+                            }
+                          }}
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                            <polyline points="14 2 14 8 20 8"/>
+                          </svg>
+                          PDF
+                        </button>
                       ) : (
                         <span className="muted small">—</span>
                       )}

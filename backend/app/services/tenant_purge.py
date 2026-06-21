@@ -15,7 +15,7 @@ from fastapi import HTTPException
 from sqlmodel import Session, col, delete, select
 
 from app.models.ai import AiWhatsappMessage, AiUsageRecord
-from app.models.billing import BillingMethod, LemonSqueezyPayment, StripePayment, Subscription
+from app.models.billing import BillingMethod, PaddlePayment, PendingSignup, StripePayment, Subscription
 from app.models.invoice import Invoice
 from app.models.clock_settings import (
     ClockSettings,
@@ -292,8 +292,9 @@ def purge_accounts(session: Session, tenant_id: UUID) -> None:
             session.exec(delete(Project).where(Project.company_id == cid))
 
     # 3. Facturación y pagos (antes de companies por FK subscriptions.company_id)
+    session.exec(delete(PendingSignup).where(PendingSignup.tenant_id == tenant_id))
     session.exec(delete(Invoice).where(Invoice.tenant_id == tenant_id))
-    session.exec(delete(LemonSqueezyPayment).where(LemonSqueezyPayment.tenant_id == tenant_id))
+    session.exec(delete(PaddlePayment).where(PaddlePayment.tenant_id == tenant_id))
     session.exec(delete(StripePayment).where(StripePayment.tenant_id == tenant_id))
     session.exec(delete(Subscription).where(Subscription.tenant_id == tenant_id))
     session.exec(delete(BillingMethod).where(BillingMethod.tenant_id == tenant_id))

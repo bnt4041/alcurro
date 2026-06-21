@@ -21,13 +21,21 @@ class Settings(BaseSettings):
     jwt_expire_hours: int = 12
     docker_network: str = "hrm-net"
     platform_setup_key: str = "hrm-platform-setup"
-    lemon_squeezy_api_key: str = ""
-    lemon_squeezy_store_id: str = ""
-    lemon_squeezy_webhook_secret: str = ""
+    paddle_env: str = "sandbox"  # "sandbox" | "production"
+    paddle_api_key: str = ""
+    paddle_client_token: str = ""
+    paddle_webhook_secret: str = ""
     public_app_url: str = "http://localhost:5174"
     deepseek_api_key: str = ""
     deepseek_model: str = "deepseek-chat"
     deepseek_base_url: str = "https://api.deepseek.com"
+
+    @property
+    def paddle_api_base(self) -> str:
+        """Base de la API de Paddle Billing según el entorno configurado."""
+        if self.paddle_env.strip().lower() == "production":
+            return "https://api.paddle.com"
+        return "https://sandbox-api.paddle.com"
 
 
 @lru_cache

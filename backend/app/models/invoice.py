@@ -52,8 +52,8 @@ class Invoice(SQLModel, table=True):
     stripe_payment_id: UUID | None = Field(
         default=None, foreign_key="stripe_payments.id", index=True
     )
-    ls_payment_id: UUID | None = Field(
-        default=None, foreign_key="ls_payments.id", index=True
+    paddle_payment_id: UUID | None = Field(
+        default=None, foreign_key="paddle_payments.id", index=True
     )
     credit_note_for_id: UUID | None = Field(
         default=None, foreign_key="invoices.id"

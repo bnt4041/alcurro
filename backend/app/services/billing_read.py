@@ -61,5 +61,5 @@ def tenant_account_billing(session: Session, tenant_id: UUID) -> dict:
         "subscription": subscription_to_summary(sub, company),
         "active_users": active_users,
         "max_users": max_users,
-        "customer_portal_url": tenant.ls_customer_portal_url if tenant else None,
+        "customer_portal_url": tenant.paddle_customer_portal_url if tenant else None,
     }

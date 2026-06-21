@@ -70,6 +70,13 @@ export interface PublicSignupResponse {
   checkout_url: string | null;
   admin_login_hint: string | null;
   pending_signup_id: string | null;
+  // Parámetros para el overlay de Paddle.js (cuando hay que pagar)
+  paddle_price_id: string | null;
+  paddle_client_token: string | null;
+  paddle_env: string | null;
+  paddle_discount_code: string | null;
+  customer_email: string | null;
+  success_url: string | null;
 }
 
 export interface PendingSignupStatus {

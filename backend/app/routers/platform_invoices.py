@@ -10,7 +10,7 @@ from sqlmodel import Session, select
 
 from app.core.platform_deps import get_platform_user
 from app.database import get_session
-from app.models.billing import LemonSqueezyPayment, StripePayment
+from app.models.billing import PaddlePayment, StripePayment
 from app.models.invoice import Invoice, InvoiceStatus
 from app.models.rbac import PlatformUser
 from app.models.tenant import Tenant
@@ -31,19 +31,19 @@ def _enrich(session: Session, invoice: Invoice) -> InvoiceListItem:
     if invoice.tenant_id:
         t = session.get(Tenant, invoice.tenant_id)
         tenant_name = t.name if t else None
-    ls_invoice_ref: str | None = None
-    ls_receipt_url: str | None = None
-    if invoice.ls_payment_id:
-        lsp = session.get(LemonSqueezyPayment, invoice.ls_payment_id)
-        if lsp:
-            if lsp.ls_invoice_id:
-                ls_invoice_ref = lsp.ls_invoice_id
-            if lsp.receipt_url:
-                ls_receipt_url = lsp.receipt_url
+    paddle_invoice_ref: str | None = None
+    paddle_receipt_url: str | None = None
+    if invoice.paddle_payment_id:
+        pp = session.get(PaddlePayment, invoice.paddle_payment_id)
+        if pp:
+            if pp.paddle_transaction_id:
+                paddle_invoice_ref = pp.paddle_transaction_id
+            if pp.receipt_url:
+                paddle_receipt_url = pp.receipt_url
     data = InvoiceListItem.model_validate(invoice)
     data.tenant_name = tenant_name
-    data.ls_invoice_ref = ls_invoice_ref
-    data.ls_receipt_url = ls_receipt_url
+    data.paddle_invoice_ref = paddle_invoice_ref
+    data.paddle_receipt_url = paddle_receipt_url
     return data
 
 

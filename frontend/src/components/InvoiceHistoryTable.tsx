@@ -59,13 +59,13 @@ export default function InvoiceHistoryTable({ invoices, loading, onDownload, cus
         minWidth: 150,
       },
       {
-        title: "Factura LS",
-        field: "ls_receipt_url",
+        title: "Factura Paddle",
+        field: "paddle_receipt_url",
         width: 110,
         formatter: (cell) => {
           const url = cell.getValue() as string | null;
           if (!url) return `<span class="muted small">—</span>`;
-          return `<a href="${url}" target="_blank" rel="noopener" class="btn btn-xs" title="Ver factura en Lemon Squeezy">Ver PDF</a>`;
+          return `<a href="${url}" target="_blank" rel="noopener" class="btn btn-xs" title="Ver factura en Paddle">Ver PDF</a>`;
         },
       },
       {
@@ -101,10 +101,10 @@ export default function InvoiceHistoryTable({ invoices, loading, onDownload, cus
         width: 130,
         formatter: (cell) => {
           const r = cell.getRow().getData() as InvoiceTableRow;
-          if (r.status !== "succeeded" || !r.ls_receipt_url) return `<span class="muted small">—</span>`;
+          if (r.status !== "succeeded" || !r.paddle_receipt_url) return `<span class="muted small">—</span>`;
           const portal = customerPortalUrl || "";
           if (portal) {
-            return `<a href="${portal}" target="_blank" rel="noopener" class="btn btn-xs btn-warning" title="Gestiona el abono desde el portal de Lemon Squeezy">Solicitar abono</a>`;
+            return `<a href="${portal}" target="_blank" rel="noopener" class="btn btn-xs btn-warning" title="Gestiona el abono desde el portal de Paddle">Solicitar abono</a>`;
           }
           return `<span class="muted small" title="Contacta con soporte para solicitar un abono">—</span>`;
         },

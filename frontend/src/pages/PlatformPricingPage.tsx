@@ -18,9 +18,9 @@ interface PricingPlan {
   currency: string;
   is_active: boolean;
   sort_order: number;
-  ls_product_id: string | null;
-  ls_variant_id_monthly: string | null;
-  ls_variant_id_annual: string | null;
+  paddle_product_id: string | null;
+  paddle_price_id_monthly: string | null;
+  paddle_price_id_annual: string | null;
 }
 
 type PlanTableRow = PricingPlan & {
@@ -38,8 +38,8 @@ const empty = () => ({
   max_active_users: "3",
   sort_order: "0",
   is_active: true,
-  ls_variant_id_monthly: "",
-  ls_variant_id_annual: "",
+  paddle_price_id_monthly: "",
+  paddle_price_id_annual: "",
 });
 
 export default function PlatformPricingPage() {
@@ -48,9 +48,31 @@ export default function PlatformPricingPage() {
   const [form, setForm] = useState(empty());
   const [editingId, setEditingId] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
+  const [syncing, setSyncing] = useState(false);
 
   const load = () =>
     api.get<PricingPlan[]>("/platform/pricing-plans").then(setPlans);
+
+  const syncPaddle = async (planId: string) => {
+    setSyncing(true);
+    try {
+      const res = await api.post<{
+        paddle_price_id_monthly: string | null;
+        paddle_price_id_annual: string | null;
+      }>(`/platform/paddle/sync-plan/${planId}`, {});
+      setForm((f) => ({
+        ...f,
+        paddle_price_id_monthly: res.paddle_price_id_monthly ?? f.paddle_price_id_monthly,
+        paddle_price_id_annual: res.paddle_price_id_annual ?? f.paddle_price_id_annual,
+      }));
+      toast.success("Plan sincronizado con Paddle");
+      load();
+    } catch (err) {
+      toast.error(String(err).replace(/^Error:\s*/i, ""));
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   useEffect(() => {
     load();
@@ -73,8 +95,8 @@ export default function PlatformPricingPage() {
       max_active_users: String(p.max_active_users),
       sort_order: String(p.sort_order),
       is_active: p.is_active,
-      ls_variant_id_monthly: p.ls_variant_id_monthly ?? "",
-      ls_variant_id_annual: p.ls_variant_id_annual ?? "",
+      paddle_price_id_monthly: p.paddle_price_id_monthly ?? "",
+      paddle_price_id_annual: p.paddle_price_id_annual ?? "",
     });
     setOpen(true);
   };
@@ -102,8 +124,8 @@ export default function PlatformPricingPage() {
       max_active_users: parseInt(form.max_active_users, 10) || 1,
       sort_order: parseInt(form.sort_order, 10) || 0,
       is_active: form.is_active,
-      ls_variant_id_monthly: form.ls_variant_id_monthly.trim() || null,
-      ls_variant_id_annual: form.ls_variant_id_annual.trim() || null,
+      paddle_price_id_monthly: form.paddle_price_id_monthly.trim() || null,
+      paddle_price_id_annual: form.paddle_price_id_annual.trim() || null,
     };
     try {
       if (editingId) {
@@ -323,34 +345,45 @@ export default function PlatformPricingPage() {
 
           <div className="form-span-2">
             <p className="muted small" style={{ margin: "0.5rem 0 0.75rem" }}>
-              <strong>Lemon Squeezy</strong> — Crea el producto y sus variantes en el dashboard de LS
-              y pega aquí los IDs numéricos de cada variante.
+              <strong>Paddle</strong> — Pulsa «Sync Paddle» para crear automáticamente el
+              producto y los precios mensual/anual, o pega aquí los Price IDs (<code>pri_…</code>)
+              si ya los creaste en el dashboard de Paddle.
             </p>
+            {editingId && (
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                disabled={syncing}
+                onClick={() => syncPaddle(editingId)}
+              >
+                {syncing ? "Sincronizando…" : "Sync Paddle"}
+              </button>
+            )}
           </div>
           <label>
-            Variant ID mensual (LS)
+            Price ID mensual (Paddle)
             <input
-              value={form.ls_variant_id_monthly}
-              placeholder="p. ej. 123456"
+              value={form.paddle_price_id_monthly}
+              placeholder="p. ej. pri_01h…"
               onChange={(e) =>
-                setForm({ ...form, ls_variant_id_monthly: e.target.value })
+                setForm({ ...form, paddle_price_id_monthly: e.target.value })
               }
             />
             <span className="field-hint muted small">
-              ID de la variante mensual en Lemon Squeezy
+              ID del precio mensual en Paddle
             </span>
           </label>
           <label>
-            Variant ID anual (LS)
+            Price ID anual (Paddle)
             <input
-              value={form.ls_variant_id_annual}
-              placeholder="p. ej. 123457"
+              value={form.paddle_price_id_annual}
+              placeholder="p. ej. pri_01h…"
               onChange={(e) =>
-                setForm({ ...form, ls_variant_id_annual: e.target.value })
+                setForm({ ...form, paddle_price_id_annual: e.target.value })
               }
             />
             <span className="field-hint muted small">
-              ID de la variante anual en Lemon Squeezy
+              ID del precio anual en Paddle
             </span>
           </label>
 

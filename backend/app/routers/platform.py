@@ -45,7 +45,7 @@ from app.services.org_service import (
 from app.services.slug import resolve_tenant_slug, resolve_tenant_slug_update
 from app.services.tenant_delete import delete_tenant_permanent
 from app.services.tenant_purge import PURGE_CATEGORIES, purge_tenant_data
-from app.services.lemon_squeezy_service import cancel_ls_subscription, update_ls_customer_name
+from app.services.paddle_service import cancel_paddle_subscription, update_paddle_customer_name
 from app.models.billing import Subscription
 
 router = APIRouter(prefix="/platform", tags=["platform"])
@@ -476,14 +476,14 @@ def update_tenant_platform(
 
     new_legal_name = payload.get("legal_name")
     if new_legal_name and new_legal_name != old_legal_name:
-        update_ls_customer_name(tenant, new_legal_name)
+        update_paddle_customer_name(tenant, new_legal_name)
 
     if payload.get("is_active") is False:
         sub = session.exec(
             select(Subscription).where(Subscription.tenant_id == tenant_id)
         ).first()
-        if sub and sub.ls_subscription_id:
-            cancel_ls_subscription(sub.ls_subscription_id)
+        if sub and sub.paddle_subscription_id:
+            cancel_paddle_subscription(sub.paddle_subscription_id)
 
     return tenant
 
@@ -499,12 +499,12 @@ def delete_tenant_platform(
     if not tenant:
         raise HTTPException(status_code=404, detail="Cuenta no encontrada")
 
-    # Cancelar suscripción en LS antes de desactivar/eliminar
+    # Cancelar suscripción en Paddle antes de desactivar/eliminar
     sub = session.exec(
         select(Subscription).where(Subscription.tenant_id == tenant_id)
     ).first()
-    if sub and sub.ls_subscription_id:
-        cancel_ls_subscription(sub.ls_subscription_id)
+    if sub and sub.paddle_subscription_id:
+        cancel_paddle_subscription(sub.paddle_subscription_id)
 
     try:
         if permanent:
