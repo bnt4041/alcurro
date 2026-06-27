@@ -73,10 +73,46 @@ DEFAULT_ACTIONS: list[tuple[str, str, str, str, int]] = [
         "soporte",
         11,
     ),
+    (
+        "vacaciones_pendientes",
+        "Vacaciones pendientes de aprobar",
+        "Lista las solicitudes de vacaciones pendientes de aprobación del equipo",
+        "vacaciones",
+        12,
+    ),
+    (
+        "aprobar_vacaciones",
+        "Aprobar/rechazar vacaciones",
+        "Aprueba o rechaza solicitudes de vacaciones pendientes del equipo",
+        "vacaciones",
+        13,
+    ),
+    (
+        "incidencias_abiertas",
+        "Incidencias abiertas",
+        "Muestra las incidencias abiertas del equipo",
+        "incidencias",
+        14,
+    ),
+    (
+        "incidencias_sin_gestionar",
+        "Incidencias sin gestionar",
+        "Muestra las incidencias del equipo aún sin gestionar",
+        "incidencias",
+        15,
+    ),
 ]
 
 # Acciones de soporte: solo para administradores de cuenta
 SUPPORT_ACTIONS: set[str] = {"crear_ticket", "consultar_tickets"}
+
+# Acciones de gestión de equipo: solo responsables y administradores
+MANAGER_ACTIONS: set[str] = {
+    "vacaciones_pendientes",
+    "aprobar_vacaciones",
+    "incidencias_abiertas",
+    "incidencias_sin_gestionar",
+}
 
 # Perfil -> códigos habilitados por defecto
 DEFAULT_PROFILE_MATRIX: dict[str, set[str]] = {

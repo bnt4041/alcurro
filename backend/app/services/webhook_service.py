@@ -3,7 +3,13 @@ from uuid import UUID
 
 from sqlmodel import Session
 
-from app.models.models import BreakType, Employee
+from app.models.models import (
+    BreakType,
+    Employee,
+    LeaveRequest,
+    LeaveStatus,
+    LeaveType,
+)
 from app.models.tenant import Tenant
 from app.schemas.ollama import OllamaIntentResponse
 from app.schemas.whatsapp import GoWAMessage, GoWAWebhookPayload
@@ -63,6 +69,7 @@ from app.services.whatsapp_nlu import (
     is_affirmative_reply,
     is_cancel_or_new_intent,
     is_negative_reply,
+    normalize_whatsapp_text,
 )
 from app.services.whatsapp_permission_service import (
     ACTION_LABELS,
@@ -1102,6 +1109,13 @@ class WebhookService:
                 employee, phone, text, message_id, pending
             )
 
+        # 2b. Pendiente de aprobación de vacaciones (responsable eligió de una lista)
+        pending = get_pending(self._session, employee.id)
+        if pending and (pending.pending_meta or {}).get("awaiting_leave_approval"):
+            return await self._handle_leave_approval_response(
+                employee, phone, text, pending
+            )
+
         # 3. Pendiente de confirmación sí/no
         if pending and pending.pending_confirmation:
             return await self._handle_confirmation_response(
@@ -2071,6 +2085,15 @@ class WebhookService:
             case "consultar_saldo_vacaciones":
                 return self._leave.get_balance_message(employee)
 
+            case "vacaciones_pendientes" | "aprobar_vacaciones":
+                return self._list_pending_leaves_for_approval(employee)
+
+            case "incidencias_abiertas":
+                return self._list_team_incidents(employee, unmanaged_only=False)
+
+            case "incidencias_sin_gestionar":
+                return self._list_team_incidents(employee, unmanaged_only=True)
+
             case "confirmar_documento":
                 return self._leave.acknowledge_document(employee.id, raw_text)
 
@@ -2194,6 +2217,262 @@ class WebhookService:
             "¿Quieres adjuntar algún documento o foto? "
             "Envíalo ahora por WhatsApp o escribe _listo_ para terminar."
         )
+
+    # ── Gestión de equipo por WhatsApp (responsables) ────────────────────────
+    def _wa_manager_scope(self, manager: Employee, module: str) -> list[UUID]:
+        """IDs de empleados que el responsable puede gestionar por WhatsApp.
+
+        Si el responsable no tiene grupo de permisos asignado (solo matriz IA),
+        el alcance es toda su empresa — coherente con `is_whatsapp_action_allowed`,
+        que también trata «sin permisos» como «autorizado por matriz».
+        """
+        from app.core.permissions import get_employee_permissions
+        from app.services.org_service import employee_ids_in_scope
+        from app.services.scope_service import read_scope_employee_ids
+
+        if not get_employee_permissions(self._session, manager, self._tenant_id):
+            return employee_ids_in_scope(
+                self._session, self._tenant_id, company_id=manager.company_id
+            )
+        return read_scope_employee_ids(
+            self._session,
+            manager,
+            self._tenant_id,
+            module,
+            company_id=manager.company_id,
+        )
+
+    def _pending_leaves(self, manager: Employee) -> list[LeaveRequest]:
+        from sqlmodel import select
+
+        ids = self._wa_manager_scope(manager, "leave")
+        if not ids:
+            return []
+        return list(
+            self._session.exec(
+                select(LeaveRequest)
+                .where(
+                    LeaveRequest.employee_id.in_(ids),  # type: ignore[attr-defined]
+                    LeaveRequest.status == LeaveStatus.PENDING,
+                )
+                .order_by(LeaveRequest.start_date)  # type: ignore[attr-defined]
+            ).all()
+        )
+
+    def _list_pending_leaves_for_approval(self, manager: Employee) -> str:
+        """Lista las vacaciones pendientes y deja el estado para aprobar/rechazar."""
+        leaves = self._pending_leaves(manager)
+        if not leaves:
+            clear_pending(self._session, manager.id)
+            return "✅ No tienes solicitudes de vacaciones pendientes de aprobar."
+
+        lines = [f"📋 *Vacaciones pendientes de aprobar* ({len(leaves)}):", ""]
+        leave_ids: list[str] = []
+        for i, lv in enumerate(leaves, start=1):
+            leave_ids.append(str(lv.id))
+            emp = self._session.get(Employee, lv.employee_id)
+            name = emp.full_name if emp else "—"
+            lt = (
+                self._session.get(LeaveType, lv.leave_type_id)
+                if lv.leave_type_id
+                else None
+            )
+            tname = f" · {lt.name}" if lt else ""
+            lines.append(
+                f"*{i}.* {name} — {_fmt_short_date(lv.start_date)} a "
+                f"{_fmt_short_date(lv.end_date)} ({lv.days_requested:g} días){tname}"
+            )
+        lines += [
+            "",
+            "Responde *aprobar N* o *rechazar N* (p. ej. _aprobar 1_), "
+            "o *aprobar todas*.",
+            "Escribe *cancelar* para salir.",
+        ]
+        set_pending(
+            self._session,
+            employee_id=manager.id,
+            record_type="leave_approval",
+            pending_confirmation=False,
+            pending_intent="aprobar_vacaciones",
+            pending_meta={"awaiting_leave_approval": True, "leave_ids": leave_ids},
+        )
+        return "\n".join(lines)
+
+    def _apply_leave_decision(
+        self, manager: Employee, lv: LeaveRequest, approve: bool
+    ) -> None:
+        from datetime import datetime
+
+        lv.status = LeaveStatus.APPROVED if approve else LeaveStatus.REJECTED
+        lv.reviewed_at = datetime.utcnow()
+        lv.supervisor_id = manager.id
+        verb = "Aprobada" if approve else "Rechazada"
+        lv.review_notes = f"{verb} por {manager.full_name} (WhatsApp)"
+        self._session.add(lv)
+
+    def _notify_leave_reviewed(self, lv: LeaveRequest, approve: bool) -> None:
+        from app.services.notification_service import notify_leave_request_reviewed
+
+        emp = self._session.get(Employee, lv.employee_id)
+        if not emp:
+            return
+        lt = (
+            self._session.get(LeaveType, lv.leave_type_id)
+            if lv.leave_type_id
+            else None
+        )
+        notify_leave_request_reviewed(
+            self._session,
+            tenant_id=self._tenant_id,
+            employee=emp,
+            new_status=lv.status.value,
+            start_date=str(lv.start_date),
+            end_date=str(lv.end_date),
+            days=lv.days_requested,
+            leave_type_name=lt.name if lt else None,
+            review_notes=lv.review_notes,
+        )
+
+    async def _handle_leave_approval_response(
+        self, manager: Employee, phone: str, text: str, pending
+    ) -> dict:
+        """Procesa «aprobar N» / «rechazar N» / «aprobar todas» del responsable."""
+        meta = pending.pending_meta or {}
+        leave_ids: list[str] = list(meta.get("leave_ids") or [])
+        t = normalize_whatsapp_text(text)
+
+        if is_negative_reply(text) or t.strip() in ("cancelar", "cancela", "salir", "nada"):
+            clear_pending(self._session, manager.id)
+            self._session.commit()
+            await self._safe_send(phone, "De acuerdo, no he cambiado nada. 👍")
+            return {"ok": True, "action": "leave_approval_cancelled"}
+
+        approve: bool | None = None
+        if _re.search(r"\b(rechaz|deneg|denieg)\w*", t):
+            approve = False
+        elif _re.search(r"\b(aprob|acept|confirm|ok|vale|si)\w*", t):
+            approve = True
+
+        all_match = bool(_re.search(r"\btodas?\b", t))
+        idxs = [int(n) for n in _re.findall(r"\d+", t)]
+
+        # Sin verbo pero con selección → en este contexto se asume aprobar.
+        if approve is None and (idxs or all_match):
+            approve = True
+
+        if approve is None:
+            await self._safe_send(
+                phone,
+                "Dime *aprobar N* o *rechazar N* (p. ej. _aprobar 1_), "
+                "*aprobar todas*, o *cancelar*.",
+            )
+            return {"ok": True, "action": "leave_approval_reminder"}
+
+        if all_match:
+            targets = list(leave_ids)
+        else:
+            targets = [leave_ids[i - 1] for i in idxs if 1 <= i <= len(leave_ids)]
+        if not targets:
+            await self._safe_send(
+                phone,
+                f"No reconozco esa selección. Hay {len(leave_ids)} solicitudes; "
+                "responde por ejemplo _aprobar 1_.",
+            )
+            return {"ok": True, "action": "leave_approval_bad_index"}
+
+        scope = set(self._wa_manager_scope(manager, "leave"))
+        done: list[LeaveRequest] = []
+        for lid in targets:
+            try:
+                lv = self._session.get(LeaveRequest, UUID(lid))
+            except (ValueError, TypeError):
+                lv = None
+            if not lv or lv.status != LeaveStatus.PENDING:
+                continue
+            if lv.employee_id not in scope:
+                continue
+            self._apply_leave_decision(manager, lv, approve)
+            done.append(lv)
+
+        verb = "aprobado" if approve else "rechazado"
+        header = (
+            f"✅ He {verb} {len(done)} solicitud(es)."
+            if done
+            else "No he podido procesar esa selección (puede que ya estuvieran gestionadas)."
+        )
+        # Recalcular pendientes restantes y refrescar estado.
+        remaining_msg = self._list_pending_leaves_for_approval(manager)
+        self._session.commit()
+        for lv in done:
+            try:
+                self._notify_leave_reviewed(lv, approve)
+            except Exception:
+                pass
+        await self._safe_send(phone, header + "\n\n" + remaining_msg)
+        return {"ok": True, "action": "leave_approved" if approve else "leave_rejected"}
+
+    def _list_team_incidents(self, manager: Employee, *, unmanaged_only: bool) -> str:
+        """Lista incidencias del equipo: abiertas o sin gestionar."""
+        from sqlmodel import select
+
+        ids = self._wa_manager_scope(manager, "clock_ins")
+        title = "sin gestionar" if unmanaged_only else "abiertas"
+        if not ids:
+            return f"No tienes incidencias {title} visibles para gestionar."
+        stmt = select(Incident).where(
+            Incident.tenant_id == self._tenant_id,
+            Incident.employee_id.in_(ids),  # type: ignore[attr-defined]
+        )
+        if unmanaged_only:
+            stmt = stmt.where(
+                Incident.managed == False,  # noqa: E712
+                Incident.status != "dismissed",
+            )
+        else:
+            stmt = stmt.where(
+                Incident.status.in_(["open", "pending_justification"])  # type: ignore[attr-defined]
+            )
+        rows = list(
+            self._session.exec(
+                stmt.order_by(Incident.created_at.desc())  # type: ignore[attr-defined]
+            ).all()
+        )
+        if not rows:
+            return f"✅ No hay incidencias {title}."
+
+        lines = [f"⚠️ *Incidencias {title}* ({len(rows)}):", ""]
+        for inc in rows[:20]:
+            emp = self._session.get(Employee, inc.employee_id)
+            name = emp.full_name if emp else "—"
+            d = inc.incident_date or inc.created_at.date()
+            status_lbl = _INCIDENT_STATUS_LABELS.get(inc.status, inc.status)
+            lines.append(
+                f"• *{name}* — {inc.title} ({_fmt_short_date(d)}) · _{status_lbl}_"
+            )
+        if len(rows) > 20:
+            lines.append(f"\n… y {len(rows) - 20} más. Gestiónalas desde el panel.")
+        return "\n".join(lines)
+
+    async def _safe_send(self, phone: str, text: str) -> None:
+        try:
+            await self._gowa.send_text(phone, text)
+        except Exception:
+            pass
+
+
+_INCIDENT_STATUS_LABELS: dict[str, str] = {
+    "pending_justification": "pendiente de justificación",
+    "open": "abierta",
+    "resolved": "resuelta",
+    "dismissed": "descartada",
+}
+
+
+def _fmt_short_date(value) -> str:
+    try:
+        return value.strftime("%d/%m/%Y")
+    except Exception:
+        return str(value)
 
 
 def _parse_date_flex(raw: str):

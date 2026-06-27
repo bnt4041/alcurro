@@ -52,6 +52,44 @@ _INTENT_PATTERNS: list[tuple[re.Pattern, str, str, float, str | None]] = [
         "confirmar_documento", "execute", 0.7, None,
     ),
 
+    # --- Gestión de equipo (responsables) — execute directo ---
+    (
+        re.compile(
+            r"\b("
+            r"(vacaciones|solicitudes)\s+(pendientes|por\s+aprobar|sin\s+aprobar|para\s+aprobar|a\s+aprobar)|"
+            r"pendientes\s+de\s+aprobar|"
+            r"(que|cuantas)\s+(vacaciones|solicitudes)\s+.*\baprobar\b"
+            r")\b", re.IGNORECASE
+        ),
+        "vacaciones_pendientes", "execute", 0.9, None,
+    ),
+    (
+        re.compile(
+            r"\b("
+            r"(aprobar|aprueba|apruebo|rechazar|rechaza|rechazo|denegar|deniega|gestionar|revisar)\s+"
+            r"(las\s+|unas\s+|esas\s+|estas\s+|la\s+|esa\s+)?(vacaciones|solicitud(es)?)"
+            r")\b", re.IGNORECASE
+        ),
+        "aprobar_vacaciones", "execute", 0.9, None,
+    ),
+    (
+        re.compile(
+            r"\b("
+            r"incidencias?\s+(sin\s+gestionar|no\s+gestionadas?|por\s+gestionar|sin\s+revisar|pendientes\s+de\s+gestion)"
+            r")\b", re.IGNORECASE
+        ),
+        "incidencias_sin_gestionar", "execute", 0.9, None,
+    ),
+    (
+        re.compile(
+            r"\b("
+            r"incidencias?\s+(abiertas?|activas?|en\s+curso|sin\s+resolver|del?\s+equipo|del?\s+personal)|"
+            r"(ver|muestra|mostrar|listar?|dame|consultar?|ensename|ens[eé]name)\s+(las\s+)?incidencias"
+            r")\b", re.IGNORECASE
+        ),
+        "incidencias_abiertas", "execute", 0.85, None,
+    ),
+
     # --- Fichajes (requieren confirmación) ---
     (
         re.compile(

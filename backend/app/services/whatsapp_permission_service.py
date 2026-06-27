@@ -31,6 +31,11 @@ ACTION_RBAC_ANY: dict[str, tuple[str, ...]] = {
     ),
     "resumen_dia": ("clock_ins.read_own", "clock_ins.read"),
     "reportar_incidencia": ("clock_ins.create_own", "clock_ins.write"),
+    # Gestión de equipo (responsables)
+    "vacaciones_pendientes": ("leave.approve", "leave.read", "leave.write"),
+    "aprobar_vacaciones": ("leave.approve", "leave.write"),
+    "incidencias_abiertas": ("clock_ins.read", "clock_ins.write"),
+    "incidencias_sin_gestionar": ("clock_ins.read", "clock_ins.write"),
 }
 
 ACTION_LABELS: dict[str, str] = {
@@ -46,6 +51,10 @@ ACTION_LABELS: dict[str, str] = {
     "reportar_incidencia": "Reportar incidencia de fichaje",
     "crear_ticket": "Crear ticket de soporte",
     "consultar_tickets": "Consultar tickets de soporte",
+    "vacaciones_pendientes": "Vacaciones pendientes de aprobar",
+    "aprobar_vacaciones": "Aprobar / rechazar vacaciones",
+    "incidencias_abiertas": "Ver incidencias abiertas",
+    "incidencias_sin_gestionar": "Ver incidencias sin gestionar",
     "desconocido": "Sin acción (ayuda)",
 }
 

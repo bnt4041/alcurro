@@ -311,6 +311,8 @@ class OllamaService:
     # Intenciones de solo lectura → stage="execute"  
     _EXECUTE_INTENTS = frozenset({
         "consultar_saldo_vacaciones", "resumen_dia", "confirmar_documento",
+        "vacaciones_pendientes", "aprobar_vacaciones",
+        "incidencias_abiertas", "incidencias_sin_gestionar",
     })
 
     @staticmethod
