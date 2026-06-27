@@ -163,7 +163,12 @@ def pending_inbound_codes(session: Session, employee_id: UUID) -> list[str]:
 
 
 def build_welcome_message(
-    session: Session, employee: Employee, tenant_name: str
+    session: Session,
+    employee: Employee,
+    tenant_name: str,
+    *,
+    legal_link: str | None = None,
+    legal_titles: list[str] | None = None,
 ) -> str:
     company = session.get(Company, employee.company_id)
     if not company:
@@ -208,6 +213,22 @@ def build_welcome_message(
                 )
                 for code in signatures:
                     lines.append(f"  • {inbound_name(session, code)}")
+    if legal_link:
+        lines.extend(
+            [
+                "",
+                "📋 Antes de empezar, acepta las condiciones generales requeridas:",
+            ]
+        )
+        for title in legal_titles or []:
+            lines.append(f"  • {title}")
+        lines.extend(
+            [
+                "",
+                "Pulsa en el siguiente enlace para firmarlas (válido 5 minutos):",
+                legal_link,
+            ]
+        )
     return "\n".join(lines)
 
 

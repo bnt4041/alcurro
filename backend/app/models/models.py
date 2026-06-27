@@ -5,7 +5,7 @@ from enum import StrEnum
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import Column, JSON, UniqueConstraint
+from sqlalchemy import Column, Index, JSON, UniqueConstraint
 from sqlalchemy.dialects.postgresql import ENUM as PgENUM
 from sqlalchemy.types import TypeDecorator
 from sqlmodel import Field, Relationship, SQLModel
@@ -214,6 +214,11 @@ class ClockIn(SQLModel, table=True):
     """
 
     __tablename__ = "clock_ins"
+    __table_args__ = (
+        # Detección de ubicaciones reenviadas: búsqueda por coords exactas.
+        Index("ix_clock_ins_lat_lng", "latitude", "longitude"),
+        Index("ix_clock_ins_lat_lng_out", "latitude_out", "longitude_out"),
+    )
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     employee_id: UUID = Field(foreign_key="employees.id", index=True)

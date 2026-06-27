@@ -60,6 +60,7 @@ class JournalEmployeeMeta:
     full_name: str
     id_document: str | None = None
     company_name: str = "—"
+    company_cif: str | None = None
     center_dept: str = "—"
 
 
@@ -114,7 +115,9 @@ def _build_block(
         [_info_block("Trabajador:", meta.full_name, accent),
          _info_block("Centro/Dept:", meta.center_dept, accent)],
         [_info_block("Empresa:", meta.company_name, accent),
-         _info_block("Periodo:", period_label, accent)],
+         _info_block("CIF:", meta.company_cif or "—", accent)],
+        [_info_block("Periodo:", period_label, accent),
+         _info_block("", "", accent)],
     ]
     if meta.id_document:
         info_data.append(

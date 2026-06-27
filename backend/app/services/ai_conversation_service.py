@@ -36,19 +36,6 @@ from app.services.whatsapp_permission_service import (
 )
 
 MAX_HISTORY_MESSAGES = 5
-
-_PHRASE_MAP: list[tuple[str, str]] = [
-    ("fichar_entrada",        "ficho, fichar, quiero fichar, voy a fichar, llego, entro a trabajar, he llegado, empiezo, comienzo, entrada, ya estoy, a trabajar, a currar, vamos a currar, curro, currando"),
-    ("fichar_salida",         "me voy, termino, acabo, salida, me marcho, salgo, finalizo, me piro, fin de jornada, hasta mañana"),
-    ("inicio_parada",         "descanso, pausa, café, a comer, paro un rato, me desconecto, voy a almorzar"),
-    ("fin_parada",            "vuelvo, ya estoy, regreso, sigo, retomo, continuo, termino descanso, de vuelta"),
-    ("solicitar_vacaciones",  "quiero pedir vacaciones, solicito vacaciones, pedir días libres, vacaciones del, días de vacaciones"),
-    ("solicitar_permiso",     "voy al médico, ir al médico, tengo médico, tengo cita, cita médica, cita con el médico, ir al hospital, hospital, dentista, ir al dentista, permiso médico, día personal, asuntos propios, necesito un día, pedir permiso, ausencia, tengo que ir al médico, tengo que ir al hospital"),
-    ("consultar_saldo_vacaciones", "cuántas vacaciones me quedan, cuántos días me quedan, saldo de vacaciones, días disponibles, mis vacaciones, cuántos días de permiso tengo, saldo de permisos"),
-    ("resumen_dia",           "resumen, cómo voy, qué he hecho hoy, mi día, horas de hoy"),
-    ("confirmar_documento",   "confirmo, recibido, de acuerdo, acepto el documento, lo he visto"),
-    ("reportar_incidencia",   "tuve un problema, no pude fichar, reportar incidencia, problema con el fichaje, ayer no pude, perdí el móvil, error en el fichaje"),
-]
 MAX_MESSAGE_AGE_DAYS = 7
 MAX_CONTENT_LEN = 2000
 
@@ -117,10 +104,7 @@ def build_employee_clock_context(
                 f"- Jornada ABIERTA desde {_to_spain(last.entrada_at).strftime('%Y-%m-%d %H:%M')} (sin salida)."
             )
             lines.append(
-                "- Mensajes de marcharse («me voy», «termino», «salida», «ficho salida») → fichar SALIDA."
-            )
-            lines.append(
-                "- OJO: solicitudes de vacaciones, permisos, médico, consultas, etc. NO son fichajes aunque haya jornada abierta."
+                "- «me voy», «ficho», «termino», «me piro», «a currar» sin más contexto → fichar SALIDA."
             )
         else:
             lines.append(
@@ -128,11 +112,13 @@ def build_employee_clock_context(
                 f"salida {_to_spain(last.salida_at).strftime('%H:%M')}."
             )
             lines.append(
-                "- Mensajes de llegar/empezar («ficho», «llego», «empiezo», «entro») → fichar ENTRADA."
+                "- Sin jornada abierta: «ficho», «llego», «empiezo», «a currar» → fichar ENTRADA."
             )
     else:
-        lines.append("- Sin fichajes previos. Mensajes de llegar/empezar → fichar ENTRADA.")
-    lines.append("- Regla universal: vacaciones/permiso/médico/incidencia/consultas → sus propios intents, NUNCA fichar.")
+        lines.append("- No hay fichajes previos registrados para este empleado.")
+        lines.append(
+            "- Mensajes como «ficho ahora», «llego», «empiezo» suelen ser fichar ENTRADA."
+        )
 
     if pending:
         rt = pending.record_type or "entrada"
@@ -142,69 +128,6 @@ def build_employee_clock_context(
         )
 
     return "\n".join(lines)
-
-
-def build_leave_types_context(session: Session, tenant_id: UUID) -> str:
-    """Lista de tipos de permiso activos para el tenant."""
-    from app.models.models import LeaveType
-    types = session.exec(
-        select(LeaveType).where(
-            LeaveType.tenant_id == tenant_id,
-            LeaveType.is_active == True,  # noqa: E712
-        ).order_by(LeaveType.sort_order)  # type: ignore[attr-defined]
-    ).all()
-    if not types:
-        return "- Sin tipos configurados."
-    lines = []
-    for lt in types:
-        if lt.has_own_balance:
-            tag = f"saldo propio por empleado (días por defecto: {lt.default_days or 0})"
-        elif lt.deducts_balance:
-            tag = "descuenta días de vacaciones del empleado"
-        else:
-            tag = "no descuenta vacaciones (ausencia sin coste de saldo)"
-        lines.append(f"  - \"{lt.name}\" → {tag}")
-    return "\n".join(lines)
-
-
-def build_employee_leave_balances_context(
-    session: Session,
-    employee_id: UUID,
-    tenant_id: UUID,
-) -> str:
-    """Saldos de permiso del empleado para contexto de la IA."""
-    from app.models.models import EmployeeLeaveBalance, LeaveRequest, LeaveStatus, LeaveType
-    from sqlalchemy import func
-
-    types = session.exec(
-        select(LeaveType).where(
-            LeaveType.tenant_id == tenant_id,
-            LeaveType.is_active == True,  # noqa: E712
-        ).order_by(LeaveType.sort_order)  # type: ignore[attr-defined]
-    ).all()
-    if not types:
-        return "- Sin tipos de permiso configurados."
-
-    lines = []
-    for lt in types:
-        if lt.has_own_balance:
-            bal = session.exec(
-                select(EmployeeLeaveBalance).where(
-                    EmployeeLeaveBalance.employee_id == employee_id,
-                    EmployeeLeaveBalance.leave_type_id == lt.id,
-                )
-            ).first()
-            total = float(bal.total_days) if bal else float(lt.default_days or 0)
-            used_val = session.exec(
-                select(func.coalesce(func.sum(LeaveRequest.days_requested), 0.0)).where(
-                    LeaveRequest.employee_id == employee_id,
-                    LeaveRequest.leave_type_id == lt.id,
-                    LeaveRequest.status.in_([LeaveStatus.PENDING, LeaveStatus.APPROVED]),  # type: ignore[attr-defined]
-                )
-            ).one()
-            remaining = total - float(used_val)
-            lines.append(f"  - {lt.name}: {remaining:.1f} días disponibles (de {total:.1f} asignados)")
-    return "\n".join(lines) if lines else "- No hay tipos con saldo propio configurados."
 
 
 def build_employee_break_context(
@@ -298,11 +221,9 @@ def _build_actions_catalog(
         "inicio_parada":        {"c":"inicio_parada","n":"Iniciar parada","d":"Pausa/descanso","cat":"paradas","cf":True, "p":{},"cq":"¿Quieres iniciar una pausa ahora?","tr":["descanso","pausa","cafe","a comer","paro un rato","desconecto"]},
         "fin_parada":           {"c":"fin_parada","n":"Finalizar parada","d":"Reanudar jornada","cat":"paradas","cf":True, "p":{},"cq":"¿Quieres finalizar la pausa y reanudar?","tr":["vuelvo","regreso","sigo","retomo","termino descanso","continuo"]},
         "solicitar_vacaciones": {"c":"solicitar_vacaciones","n":"Solicitar vacaciones","d":"Crear solicitud de vacaciones","cat":"vacaciones","cf":True, "p":{"fecha_inicio":"YYYY-MM-DD","fecha_fin":"YYYY-MM-DD"},"cq":"¿Confirmas las vacaciones del {fecha_inicio} al {fecha_fin}?","tr":["quiero pedir vacaciones","solicito vacaciones","pedir dias libres","vacaciones del","dias libres del"]},
-        "solicitar_permiso":    {"c":"solicitar_permiso","n":"Solicitar permiso","d":"Solicitar permiso o ausencia (médico, personal…)","cat":"vacaciones","cf":True, "p":{"fecha":"YYYY-MM-DD","motivo":"string"},"cq":"¿Confirmas el permiso por {motivo} el {fecha}?","tr":["voy al médico","tengo cita","permiso médico","día personal","asuntos propios","necesito un día","ausencia"]},
         "consultar_saldo_vacaciones": {"c":"consultar_saldo_vacaciones","n":"Consultar saldo","d":"Días disponibles","cat":"vacaciones","cf":False,"p":{},"cq":None,"tr":["cuantas vacaciones me quedan","cuantos dias me quedan","dias de vacaciones","saldo de vacaciones","cuantas vacaciones tengo","dias disponibles","balance de vacaciones","saldo"]},
         "confirmar_documento":  {"c":"confirmar_documento","n":"Confirmar documento","d":"Acuse de recibo","cat":"documentos","cf":False,"p":{},"cq":None,"tr":["confirmo","recibido","de acuerdo","acepto el documento"]},
         "resumen_dia":          {"c":"resumen_dia","n":"Resumen del día","d":"Fichajes y paradas de hoy","cat":"fichajes","cf":False,"p":{},"cq":None,"tr":["resumen","como voy","que he hecho hoy","mi dia","resumen del dia"]},
-        "reportar_incidencia":  {"c":"reportar_incidencia","n":"Reportar incidencia","d":"Registrar un problema o incidencia de fichaje","cat":"fichajes","cf":True,"p":{"title":"string","description":"string"},"cq":"¿Quieres que registre esta incidencia?","tr":["tuve un problema","no pude fichar","reportar incidencia","registrar incidencia","perdí el móvil","tuve un inconveniente"]},
     }
 
     catalog: list[dict] = []
@@ -340,103 +261,70 @@ def build_system_prompt(
 
     clock_ctx = build_employee_clock_context(session, tenant_id, employee.id)
     break_ctx = build_employee_break_context(session, employee.id)
-    leave_types_ctx = build_leave_types_context(session, tenant_id)
-    leave_balances_ctx = build_employee_leave_balances_context(session, employee.id, tenant_id)
 
     today_str = _now_spain().strftime("%Y-%m-%d")
     current_year = _now_spain().year
 
-    employee_first = employee.full_name.split()[0] if employee.full_name else employee.full_name
-
+    # Prompt ultra-compacto para modelos pequeños (1.5B-7B)
     lines = [
-        f"Eres *Curro*, el asistente de RRHH por WhatsApp de {tenant.name}.",
-        f"Estás hablando con {employee.full_name} (llámale {employee_first} cuando sea natural).",
-        "Tu tono: cercano, directo y en español coloquial. Usa 'tú'. Sé breve.",
+        "Eres Curro, asistente de RRHH por WhatsApp. Clasifica mensajes en JSON.",
         "",
-        "══ FORMATO DE RESPUESTA ══",
-        "Responde SIEMPRE con JSON válido y sin ningún texto fuera del JSON:",
-        '{"stage":"ask|confirm|execute","intent":"CODIGO","confidence":0.95,"message":"texto natural al usuario","entities":{}}',
+        "RESPONDE SOLO:",
+        '{"stage":"ask|confirm|execute","intent":"CODIGO","confidence":0.9,"message":"texto","entities":{}}',
         "",
-        "══ CAMPO message — LO QUE TÚ DICES AL USUARIO ══",
-        "• stage=ask     → tu pregunta o mensaje de ayuda. Usa el nombre si es natural.",
-        f'  Ej: "¡Hola {employee_first}! ¿En qué puedo ayudarte? Puedo registrar tu fichaje, paradas, vacaciones y más."',
-        "• stage=confirm → pregunta de confirmación sí/no. Clara y corta.",
-        '  Ej: "¿Quieres fichar la entrada ahora?" / "¿Empezamos la pausa?"',
-        "• stage=execute → SIEMPRE vacío \"\". El sistema genera la respuesta automáticamente.",
-        "⚠ NUNCA copies ni repitas el mensaje del usuario en el campo message.",
-        "⚠ NUNCA pongas en message el nombre del intent ni texto técnico.",
+        "STAGE:",
+        "ask = no entiendes o necesitas más info",
+        "confirm = entendiste, confirmas con pregunta sí/no",
+        "execute = es consulta o usuario confirmó con sí/ok/vale/dale",
         "",
-        "══ INTENTS DISPONIBLES ══",
-        "Códigos válidos: " + intent_list,
+        "INTENTS: " + intent_list,
         "",
-        "══ MAPA DE INTENCIONES ══",
+        "MAPA FRASE -> INTENT:",
+    ]
+
+    # Mapa compacto de frases clave
+    _PHRASE_MAP = [
+        ("fichar_entrada", "ficho, fichar, quiero fichar, voy a fichar, llego, empiezo, comienzo, entrada, ya estoy, a trabajar, a currar, voy a currar, quiero currar, curro, empezar a currar"),
+        ("fichar_salida", "me voy, termino, acabo, salida, me marcho, salgo, finalizo, me piro"),
+        ("inicio_parada", "descanso, pausa, cafe, a comer, paro un rato, desconecto"),
+        ("fin_parada", "vuelvo, regreso, sigo, retomo, continuo, termino descanso"),
+        ("solicitar_vacaciones", "quiero pedir vacaciones, solicito vacaciones, pedir dias, vacaciones del"),
+        ("consultar_saldo_vacaciones", "cuantas vacaciones me quedan, cuantos dias me quedan, saldo, dias disponibles, cuantas vacaciones tengo"),
+        ("resumen_dia", "resumen, como voy, que he hecho hoy, mi dia"),
+        ("confirmar_documento", "confirmo, recibido, de acuerdo, acepto"),
     ]
     for code, phrases in _PHRASE_MAP:
         if code in allowed_effective:
-            lines.append(f"  {code}: {phrases}")
+            lines.append(f"- {code}: {phrases}")
 
     lines.extend([
         "",
-        "══ TIPOS DE PERMISO DISPONIBLES ══",
-        "El empleado puede solicitar estos tipos de permiso (usa el nombre EXACTO en leave_type_name):",
-        leave_types_ctx,
-        "• Cuando el usuario mencione un tipo por nombre (ej: 'días acumulados', 'asuntos propios', 'baja'), identifícalo.",
-        "• Si no especifica el tipo y hay varios, pregunta: '¿Qué tipo de permiso necesitas?' y lista las opciones.",
-        "• Para solicitar_permiso sin tipo claro → stage=ask para preguntar el tipo.",
-        "• Para solicitar_vacaciones → usa siempre leave_type_name='Vacaciones'.",
+        "CONFIRMACIÓN:",
+        "- fichar/paradas/vacaciones NUEVAS: stage=confirm (pregunta sí/no)",
+        "- consultar_saldo/resumen_dia/confirmar_documento: stage=execute (directo)",
+        "- usuario dice sí/ok/vale/dale/confirmo/adelante: stage=execute",
+        "- usuario dice no/cancelar: stage=ask",
         "",
-        "══ SALDO DE PERMISOS DEL EMPLEADO ══",
-        leave_balances_ctx,
+        "HISTORIAL:",
+        "- Si TU último mensaje preguntaba algo y el usuario responde a eso -> CONTINUACIÓN",
+        "- Si el usuario cambia de tema o saluda -> CONVERSACIÓN NUEVA -> intent=desconocido",
+        "- Saludo SOLO (solo 'hola', 'buenas', 'hey'): intent=desconocido, stage=ask",
+        "- Saludo + acción ('hola quiero fichar', 'hola voy a currar'): usa el intent de la acción, ignora el saludo",
         "",
-        "══ EXTRACCIÓN DE ENTIDADES ══",
-        "Extrae entities SOLO cuando el usuario ya proporcionó la información:",
-        f"  solicitar_vacaciones  → {{\"fecha_inicio\":\"YYYY-MM-DD\", \"fecha_fin\":\"YYYY-MM-DD\", \"leave_type_name\":\"Vacaciones\"}}  (año base: {current_year})",
-        f"  solicitar_permiso     → {{\"fecha\":\"YYYY-MM-DD\", \"motivo\":\"texto libre\", \"leave_type_name\":\"nombre exacto del tipo\"}}",
-        f"  reportar_incidencia   → {{\"title\":\"resumen breve\", \"description\":\"detalles del problema\", \"fecha_incidencia\":\"YYYY-MM-DD de CUÁNDO ocurrió el problema, null si es hoy ({today_str})\"}}",
-        "  resto de intents      → {}",
-        "Si no tienes las fechas/datos necesarios → stage=ask y pídelos.",
-        "Si no tienes el tipo de permiso y hay varios disponibles → stage=ask y lista las opciones.",
+        "VOCABULARIO COLOQUIAL:",
+        "- fichar / quiero fichar / voy a fichar → fichar_entrada o fichar_salida según contexto (jornada abierta=salida, cerrada=entrada)",
+        "- currar/curro/currando = trabajar → fichar_entrada o fichar_salida según contexto",
+        "- pirarse/piro/pirarme = marcharse → fichar_salida",
+        "- chupar el dedo/no hacer nada = no aplica → desconocido",
+        "- si el mensaje no encaja perfectamente en el mapa, usa tu comprensión del español para decidir",
         "",
-        "══ FLUJO DE DECISIÓN ══",
-        "1. ¿Es saludo puro ('hola', 'buenas', 'hey')? → intent=desconocido, stage=ask, saluda y ofrece ayuda.",
-        "2. ¿Saludo + acción ('hola quiero fichar')? → usa el intent de la acción, ignora el saludo.",
-        "3. ¿Entiendo la intención? → NO: stage=ask, pide aclaración de forma amable.",
-        "4. ¿Es acción que requiere confirmación (fichar/parada/vacaciones/permiso/incidencia)? → stage=confirm.",
-        "5. ¿El usuario responde sí/ok/vale/sip/claro/dale/venga/anda/por supuesto/adelante? → stage=execute.",
-        "6. ¿Es consulta directa (saldo, resumen, confirmar documento)? → stage=execute sin pasar por confirm.",
-        "7. ¿El usuario dice no/cancelar/mejor no? → stage=ask, cancela amablemente.",
-        "8. ¿Agradecimiento o cierre (gracias, perfecto, genial, listo, qué bien, super, guay)? → intent=desconocido, stage=ask,",
-        f'   message breve y cálido, ej: "¡De nada, {employee_first}! Si necesitas algo más, aquí estoy 😊"',
+        f"AÑO: {current_year} | HOY: {today_str}",
+        f"EMPLEADO: {employee.full_name} | EMPRESA: {tenant.name}",
         "",
-        "══ USO DEL HISTORIAL ══",
-        "• Si TU último mensaje era una pregunta de confirmación y el usuario responde → es CONTINUACIÓN de esa acción.",
-        "• Si TU último mensaje confirmó una acción completada y el usuario dice gracias/ok → cierre, intent=desconocido.",
-        "• Si el usuario cambia de tema claramente → NUEVA intención, clasifica desde cero.",
-        "• Usa el contexto de los últimos mensajes para evitar pedir información que ya se dio.",
-        "",
-        "══ VOCABULARIO COLOQUIAL ══",
-        "• fichar/currar/currando → fichar_entrada o fichar_salida según si la jornada está abierta o cerrada.",
-        "• 'pirarse/piro/pirarme/me largo' → fichar_salida.",
-        "• 'entro a trabajar / vamos con ello / a darle' → fichar_entrada si jornada cerrada.",
-        "• 'vamos con el trabajo' con jornada YA ABIERTA → no es un nuevo fichaje, es desconocido.",
-        "• «el lunes tengo médico», «mañana voy al hospital», «tengo cita el martes» → SIEMPRE solicitar_permiso, NUNCA fichar_salida aunque la jornada esté abierta.",
-        "• Acepta variantes con tildes, mayúsculas, emojis o erratas ('fichar', 'ficahr', 'ficar').",
-        "",
-        f"HOY: {today_str} | EMPLEADO: {employee.full_name} | EMPRESA: {tenant.name}",
-        "",
-        "══ ESTADO ACTUAL DEL EMPLEADO ══",
         "FICHAJE:",
         clock_ctx,
         "PARADAS:",
         break_ctx,
-    ])
-
-    lines.extend([
-        "VOCABULARIO COLOQUIAL ADICIONAL PARA PERMISOS:",
-        "• «días acumulados», «horas acumuladas» → solicitar_permiso con leave_type_name=nombre exacto del tipo",
-        "• «asuntos propios», «personal» → solicitar_permiso",
-        "• «baja», «enfermedad» → solicitar_permiso con leave_type_name='Baja'",
-        "• «vacaciones», «días libres», «días de vacaciones» → solicitar_vacaciones",
     ])
 
     if nlu_hint:

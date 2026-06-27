@@ -83,6 +83,22 @@ def public_discount_preview(
     )
 
 
+class PublicSiteConfig(BaseModel):
+    whatsapp_number: str | None = None
+
+
+@router.get("/site-config", response_model=PublicSiteConfig)
+def public_site_config(
+    session: Session = Depends(get_session),
+) -> PublicSiteConfig:
+    from app.services.settings_service import SettingsService
+
+    settings = SettingsService(session).get_or_create()
+    number = (getattr(settings, "whatsapp_public_number", None) or "").strip()
+    digits = "".join(c for c in number if c.isdigit())
+    return PublicSiteConfig(whatsapp_number=digits or None)
+
+
 @router.get("/paddle-config", response_model=PublicPaddleConfig)
 def public_paddle_config() -> PublicPaddleConfig:
     settings = get_settings()

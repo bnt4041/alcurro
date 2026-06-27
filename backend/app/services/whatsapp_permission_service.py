@@ -44,6 +44,8 @@ ACTION_LABELS: dict[str, str] = {
     "confirmar_documento": "Confirmar documento / enviar archivo",
     "resumen_dia": "Resumen del día (fichajes y paradas)",
     "reportar_incidencia": "Reportar incidencia de fichaje",
+    "crear_ticket": "Crear ticket de soporte",
+    "consultar_tickets": "Consultar tickets de soporte",
     "desconocido": "Sin acción (ayuda)",
 }
 

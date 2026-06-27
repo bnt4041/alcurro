@@ -1772,3 +1772,40 @@ body.landing-nav-scroll-lock {
   .landing-footer__inner { flex-direction: row; justify-content: space-between; align-items: flex-start; text-align: left; }
   .landing-footer__cols { justify-content: flex-end; }
 }
+
+/* Botón flotante de WhatsApp (asistente comercial) */
+.wa-fab {
+  position: fixed;
+  right: clamp(16px, 4vw, 28px);
+  bottom: clamp(16px, 4vw, 28px);
+  z-index: 1200;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  background: #25d366;
+  color: #fff;
+  box-shadow: 0 8px 24px rgba(37, 211, 102, 0.45);
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+.wa-fab:hover {
+  transform: translateY(-2px) scale(1.05);
+  box-shadow: 0 12px 30px rgba(37, 211, 102, 0.55);
+  color: #fff;
+}
+.wa-fab:focus-visible {
+  outline: 3px solid rgba(37, 211, 102, 0.6);
+  outline-offset: 3px;
+}
+/* Cuando el banner de cookies está visible, el FAB sube para no solaparse.
+   En móvil el banner ocupa todo el ancho, así que se eleva más. */
+body.cookie-banner-open .wa-fab {
+  bottom: 9.5rem;
+}
+@media (min-width: 768px) {
+  body.cookie-banner-open .wa-fab {
+    bottom: 6rem;
+  }
+}

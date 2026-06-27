@@ -372,6 +372,9 @@ class SystemSettingsRead(BaseModel):
     ollama_base_url: str
     ollama_model: str
     company_name: str
+    whatsapp_public_number: str | None = None
+    platform_alert_phone: str | None = None
+    commercial_ai_enabled: bool = True
     updated_at: datetime
 
 
@@ -383,6 +386,9 @@ class SystemSettingsUpdate(BaseModel):
     ollama_base_url: str | None = None
     ollama_model: str | None = None
     company_name: str | None = None
+    whatsapp_public_number: str | None = None
+    platform_alert_phone: str | None = None
+    commercial_ai_enabled: bool | None = None
 
 
 class ConnectionTestResult(BaseModel):

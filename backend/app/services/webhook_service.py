@@ -118,6 +118,25 @@ _WORK_SUMMARY_REQUEST = (
     "_Si prefieres no añadir nada escribe *sin resumen*._"
 )
 
+_LIVE_LOCATION_REQUEST = (
+    "📍 Esta ubicación coincide *exactamente* con la de otro fichaje ya registrado.\n\n"
+    "Para confirmar dónde estás ahora mismo, por favor comparte tu *ubicación en "
+    "tiempo real*:\n"
+    "📎 *Adjuntar* → *Ubicación* → *Compartir ubicación en tiempo real*.\n\n"
+    "Será solo un momento para fijar tu posición correctamente. En cuanto la reciba "
+    "te aviso y podrás dejar de compartir — no hace falta que la mantengas. 🙂"
+)
+
+_LIVE_LOCATION_REMINDER = (
+    "🙏 Necesito tu *ubicación en tiempo real*, no una compartida normal.\n\n"
+    "📎 *Adjuntar* → *Ubicación* → *Compartir ubicación en tiempo real*.\n"
+    "En cuanto la reciba te aviso para que puedas dejar de compartir."
+)
+
+_LIVE_LOCATION_OK = (
+    "✅ Ubicación en tiempo real recibida. Ya puedes *dejar de compartir*, ¡gracias!"
+)
+
 from app.services.project_service import (
     format_project_picker_message,
     list_active_projects,
@@ -517,6 +536,49 @@ class WebhookService:
             return "No tengo registrada una entrada abierta para ti. ¿Quizás ya fichaste la salida?"
         return self._format_clock_reply("SALIDA", record)
 
+    def _mark_awaiting_live(self, employee_id: UUID, pending) -> None:
+        """Marca que esperamos una ubicación en tiempo real antes de fichar.
+
+        Conserva cualquier estado pendiente previo (confirmación, proyecto…) y
+        solo añade la marca. Si no había pendiente, crea uno mínimo.
+        """
+        if pending is not None:
+            meta = dict(pending.pending_meta or {})
+            meta["awaiting_live_location"] = True
+            pending.pending_meta = meta
+            self._session.add(pending)
+            self._session.flush()
+        else:
+            set_pending(
+                self._session,
+                employee_id=employee_id,
+                record_type="entrada",
+                pending_meta={"awaiting_live_location": True, "live_only": True},
+            )
+
+    def _clear_awaiting_live(self, employee_id: UUID, pending) -> None:
+        """Quita la marca de espera de ubicación en tiempo real.
+
+        Si el pendiente existía solo para esa espera, lo elimina por completo
+        para no interferir con el flujo normal de fichaje.
+        """
+        if pending is None:
+            return
+        meta = dict(pending.pending_meta or {})
+        live_only = meta.pop("live_only", False)
+        meta.pop("awaiting_live_location", None)
+        if (
+            live_only
+            and not pending.pending_confirmation
+            and not pending.pending_intent
+            and not meta
+        ):
+            clear_pending(self._session, employee_id)
+        else:
+            pending.pending_meta = meta or None
+            self._session.add(pending)
+            self._session.flush()
+
     async def _handle_location(
         self, employee_id: UUID, phone: str, message: GoWAMessage
     ) -> dict:
@@ -562,6 +624,41 @@ class WebhookService:
         employee = self._session.get(Employee, employee_id)
         if not employee:
             return {"ok": False, "error": "Empleado no encontrado"}
+
+        # ── Anti-reenvío de ubicación ────────────────────────────────────────
+        # Una ubicación ESTÁTICA que coincide al milímetro con un fichaje ya
+        # registrado (de este u otro empleado) pudo haberse reenviado. Pedimos
+        # ubicación EN TIEMPO REAL, que WhatsApp no permite reenviar. Solo se
+        # exige una vez: la marca `awaiting_live_location` se limpia al recibirla.
+        is_live = bool(getattr(loc, "is_live", False))
+        _pending_live = get_pending(self._session, employee_id)
+        awaiting_live = bool(
+            _pending_live
+            and (_pending_live.pending_meta or {}).get("awaiting_live_location")
+        )
+        if awaiting_live:
+            if not is_live:
+                # Insiste: ya se le pidió tiempo real y vuelve a mandar estática.
+                try:
+                    await self._gowa.send_text(phone, _LIVE_LOCATION_REMINDER)
+                except Exception:
+                    pass
+                return {"ok": True, "action": "await_live_location"}
+            # Llegó la ubicación en tiempo real → continúa el fichaje con ella.
+            self._clear_awaiting_live(employee_id, _pending_live)
+            try:
+                await self._gowa.send_text(phone, _LIVE_LOCATION_OK)
+            except Exception:
+                pass
+        elif not is_live and self._clock.location_exists(lat, lng):
+            self._mark_awaiting_live(employee_id, _pending_live)
+            self._session.commit()
+            try:
+                await self._gowa.send_text(phone, _LIVE_LOCATION_REQUEST)
+            except Exception:
+                pass
+            return {"ok": True, "action": "await_live_location"}
+        # ─────────────────────────────────────────────────────────────────────
 
         # Reverse geocoding (best-effort, non-blocking)
         geo_address = await reverse_geocode(lat, lng)

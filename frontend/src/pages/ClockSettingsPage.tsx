@@ -8,14 +8,15 @@ import type {
 } from "../api/types";
 import PageHeader from "../components/PageHeader";
 import { useAuth } from "../context/AuthContext";
+import { useToast } from "../context/ToastContext";
 import { canModule } from "../lib/permissions";
 
 export default function ClockSettingsPage() {
   const { user } = useAuth();
+  const { success, error } = useToast();
   const canWrite = user && canModule(user.permissions, "write", "clock_ins");
   const [form, setForm] = useState<ClockSettings | null>(null);
   const [saving, setSaving] = useState(false);
-  const [msg, setMsg] = useState("");
   const [reminderResult, setReminderResult] = useState<ClockReminderRunResult | null>(
     null
   );
@@ -72,13 +73,12 @@ export default function ClockSettingsPage() {
     e.preventDefault();
     if (!form || !canWrite) return;
     setSaving(true);
-    setMsg("");
     try {
       const updated = await api.put<ClockSettings>("/clock-settings", clockSettingsBody());
       setForm(updated);
-      setMsg("Configuración de fichajes guardada");
+      success("Configuración de fichajes guardada");
     } catch (err) {
-      setMsg(String(err));
+      error(String(err));
     } finally {
       setSaving(false);
     }
@@ -96,9 +96,11 @@ export default function ClockSettingsPage() {
         {}
       );
       setReminderResult(res);
-      setMsg(`Recordatorios enviados: ${res.sent + (res.sent_exit ?? 0)} (${res.skipped} omitidos)`);
+      success(
+        `Recordatorios enviados: ${res.sent + (res.sent_exit ?? 0)} (${res.skipped} omitidos)`
+      );
     } catch (err) {
-      setMsg(String(err));
+      error(String(err));
     } finally {
       setRunningReminders(false);
     }
@@ -122,9 +124,9 @@ export default function ClockSettingsPage() {
         missing_clock_out_require_justification: incidentRules.missing_clock_out_require_justification,
       });
       setIncidentRules(updated);
-      setMsg("Reglas de incidencias guardadas");
+      success("Reglas de incidencias guardadas");
     } catch (err) {
-      setMsg(String(err));
+      error(String(err));
     }
   };
 
@@ -143,13 +145,6 @@ export default function ClockSettingsPage() {
           </Link>
         }
       />
-      {msg && (
-        <div
-          className={`alert ${msg.includes("guardada") || msg.includes("enviados") ? "alert-ok" : "alert-error"}`}
-        >
-          {msg}
-        </div>
-      )}
 
       <form onSubmit={save} className="clock-settings-page">
         <div className="clock-settings-layout">

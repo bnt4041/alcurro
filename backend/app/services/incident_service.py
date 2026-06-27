@@ -226,8 +226,9 @@ def check_late_clock_in(
     expected = earliest_work_start(employee, on_date)
     if not expected:
         return None
-    scheduled = datetime.combine(on_date, expected)
-    late_minutes = int((clock.entrada_at - scheduled).total_seconds() // 60)
+    scheduled = datetime.combine(on_date, expected, tzinfo=_SPAIN_TZ)
+    entrada_utc = clock.entrada_at if clock.entrada_at.tzinfo else clock.entrada_at.replace(tzinfo=timezone.utc)
+    late_minutes = int((entrada_utc - scheduled.astimezone(timezone.utc)).total_seconds() // 60)
     if late_minutes <= rules.late_entrada_grace_minutes:
         return None
     existing = session.exec(
@@ -336,7 +337,7 @@ def check_missing_clock_out(
     rules = get_or_create_rules(session, tenant_id)
     if not rules.missing_clock_out_enabled:
         return None
-    now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+    now_utc = datetime.now(timezone.utc)
     cutoff = now_utc - timedelta(hours=rules.missing_clock_out_hours)
     open_clock = session.exec(
         select(ClockIn).where(
@@ -358,8 +359,9 @@ def check_missing_clock_out(
     ).first()
     if existing:
         return None
-    hours_open = int((now_utc - open_clock.entrada_at).total_seconds() // 3600)
-    entrada_local = _to_spain(open_clock.entrada_at.replace(tzinfo=timezone.utc))
+    entrada_utc = open_clock.entrada_at if open_clock.entrada_at.tzinfo else open_clock.entrada_at.replace(tzinfo=timezone.utc)
+    hours_open = int((now_utc - entrada_utc).total_seconds() // 3600)
+    entrada_local = _to_spain(entrada_utc)
     return create_incident(
         session,
         tenant_id=tenant_id,

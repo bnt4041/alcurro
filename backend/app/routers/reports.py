@@ -231,8 +231,8 @@ def _build_employee_meta(
     ).all()
 
     company_ids = {e.company_id for e in employees}
-    company_names = {
-        c.id: c.name
+    companies = {
+        c.id: c
         for c in session.exec(
             select(Company).where(Company.id.in_(company_ids))  # type: ignore[attr-defined]
         ).all()
@@ -263,10 +263,12 @@ def _build_employee_meta(
                 parts.append(wc)
         if dept:
             parts.append(dept.name)
+        company = companies.get(e.company_id)
         meta[str(e.id)] = JournalEmployeeMeta(
             full_name=e.full_name,
             id_document=e.id_document,
-            company_name=company_names.get(e.company_id, "—"),
+            company_name=company.name if company else "—",
+            company_cif=company.tax_id if company else None,
             center_dept=" · ".join(parts) if parts else "—",
         )
     return meta

@@ -30,6 +30,7 @@ from app.routers import (
     platform_mail,
     platform_ai,
     platform_policy,
+    platform_tickets,
     public,
     reports,
     settings,
@@ -38,6 +39,7 @@ from app.routers import (
     signatures_public,
     paddle_webhook,
     tenants,
+    tickets,
 )
 from app.schemas.tenant import TenantBrandingRead
 
@@ -57,6 +59,7 @@ api_router.include_router(platform_whatsapp.router)
 api_router.include_router(platform_mail.router)
 api_router.include_router(platform_ai.router)
 api_router.include_router(platform_policy.router)
+api_router.include_router(platform_tickets.router)
 api_router.include_router(legal.public_router)
 
 # Vista previa pública de documentos (imágenes) — sin autenticación
@@ -104,4 +107,5 @@ protected.include_router(groups.router)
 protected.include_router(organization.router)
 protected.include_router(projects.router)
 protected.include_router(reports.router)
+protected.include_router(tickets.router)
 api_router.include_router(protected)

@@ -52,50 +52,17 @@ _INTENT_PATTERNS: list[tuple[re.Pattern, str, str, float, str | None]] = [
         "confirmar_documento", "execute", 0.7, None,
     ),
 
-    # --- Permisos / ausencias (requiere confirmación / fechas) ---
-    # Evalúa ANTES que fichajes para que «voy al médico» no lo capture «me voy»
-    (
-        re.compile(
-            r"\b("
-            r"voy\s+al\s+(m[eé]dico|dentista|hospital|doctor|traumat[oó]logo|fisio|abogado|notario|banco|gestor)|"
-            r"tengo\s+(cita|consulta|una\s+cita|que\s+ir\s+al|m[eé]dico|dentista)|"
-            r"me\s+tengo\s+que\s+ir\s+al\s+(m[eé]dico|dentista)|"
-            r"permiso\s+(m[eé]dico|personal|por\s+asuntos|retribu[ií]do|no\s+retribu[ií]do)|"
-            r"solicitar\s+permiso|solicito\s+permiso|pedir\s+permiso|"
-            r"d[ií]a\s+personal|asuntos?\s+propios?|asunto\s+personal|"
-            r"ausencia|ausentarme|tengo\s+que\s+ausentarme|"
-            r"necesito\s+(un\s+)?permiso|necesito\s+(un\s+)?d[ií]a|"
-            r"no\s+(puedo|voy\s+a\s+poder)\s+(ir|asistir|trabajar|fichar)\s+(hoy|ma[nñ]ana|el\s+\w+)"
-            r")\b", re.IGNORECASE
-        ),
-        "solicitar_permiso", "ask", 0.75,
-        "¿Qué día y qué tipo de permiso necesitas? Por ejemplo: «médico el martes», «personal el viernes», «asuntos propios mañana»…",
-    ),
-    (
-        re.compile(
-            r"\b("
-            r"permiso|d[ií]a\s+libre"
-            r")\b", re.IGNORECASE
-        ),
-        "solicitar_permiso", "ask", 0.5, "¿Qué tipo de permiso necesitas y para qué día? Por ejemplo: «médico el martes», «personal el viernes», «asuntos propios mañana»…",
-    ),
-
     # --- Fichajes (requieren confirmación) ---
     (
         re.compile(
             r"\b("
             r"ficho\s*(ahora|ya)?|"
             r"fichar\s+entrada|fichar\s+ahora|"
-            r"quiero\s+fichar|voy\s+a\s+fichar|"
             r"llego|(estoy\s+)?llegando|"
-            r"entro\s+(a\s+)?(trabajar|currar)|"
-            r"he\s+(llegado|entrado)|"
             r"empiezo|comienzo|comenzar\s+(a\s+)?trabajar|"
             r"entrada|ya\s+estoy|en\s+el\s+trabajo|"
-            r"voy\s+a\s+(fichar|trabajar|empezar|currar)|"
-            r"quiero\s+(empezar|empiezo)\s+a\s+(trabajar|currar)|"
-            r"a\s+(trabajar|currar)|"
-            r"curro\b|currando"
+            r"voy\s+a\s+(fichar|trabajar|empezar)|"
+            r"a\s+trabajar"
             r")\b", re.IGNORECASE
         ),
         "fichar_entrada", "confirm", 0.85, "¿Quieres fichar la entrada ahora?",
@@ -108,8 +75,7 @@ _INTENT_PATTERNS: list[tuple[re.Pattern, str, str, float, str | None]] = [
             r"salida|fin\s+de\s+jornada|"
             r"salgo|terminar\s+(de\s+)?trabajar|"
             r"he\s+terminado|he\s+acabado|"
-            r"voy\s+a\s+salir|"
-            r"c(?:i[eé]|e)rr\w*"
+            r"voy\s+a\s+salir"
             r")\b", re.IGNORECASE
         ),
         "fichar_salida", "confirm", 0.85, "¿Quieres fichar la salida ahora?",
@@ -144,21 +110,6 @@ _INTENT_PATTERNS: list[tuple[re.Pattern, str, str, float, str | None]] = [
         "fin_parada", "confirm", 0.85, "¿Quieres finalizar la pausa y reanudar?",
     ),
 
-    # --- Permisos / ausencias (requiere confirmación) ---
-    (
-        re.compile(
-            r"\b("
-            r"tengo\s+(m[eé]dico|cita|consulta)|"
-            r"voy\s+al?\s+m[eé]dico|tengo\s+cita\s+m[eé]dica|"
-            r"permiso\s+m[eé]dico|d[ií]a\s+personal|asuntos?\s+propios?|"
-            r"pedir\s+permiso|solicitar\s+permiso|necesito\s+(un\s+)?permiso|"
-            r"ausencia|voy\s+a\s+faltar|tengo\s+que\s+faltar|"
-            r"cita\s+m[eé]dica|doctor|urgencias"
-            r")\b", re.IGNORECASE
-        ),
-        "solicitar_permiso", "confirm", 0.85, None,
-    ),
-
     # --- Vacaciones (requiere confirmación / fechas) ---
     (
         re.compile(
@@ -179,27 +130,6 @@ _INTENT_PATTERNS: list[tuple[re.Pattern, str, str, float, str | None]] = [
             r")\b", re.IGNORECASE
         ),
         "solicitar_vacaciones", "ask", 0.5, "¿Qué período de vacaciones deseas solicitar? Indícame las fechas.",
-    ),
-
-    # --- Reportar incidencia (ask → necesita detalles) ---
-    (
-        re.compile(
-            r"\b("
-            r"tuve\s+un\s+problema|no\s+pude\s+fichar|"
-            r"reportar\s+incidencia|registrar\s+incidencia|"
-            r"incidencia\s+(en|de)\s+(el\s+)?fichaje|"
-            r"problema\s+(con|de)\s+(el\s+)?fichaje|"
-            r"no\s+(pude|he\s+podido)\s+(fichar|registrar)|"
-            r"tuve\s+un\s+inconveniente|"
-            r"perd[ií]\s+(el\s+)?m[oó]vil|"
-            r"reportar\s+un\s+problema|"
-            r"notificar\s+incidencia|"
-            r"comunicar\s+incidencia|"
-            r"ayer\s+(tuve|no\s+pude|pas[oó]|hubo)\b"
-            r")\b", re.IGNORECASE
-        ),
-        "reportar_incidencia", "ask", 0.7,
-        "Cuéntame qué pasó para registrar la incidencia. Por ejemplo: «perdí el móvil», «no pude fichar por una avería», «llegué tarde por tráfico»…",
     ),
 ]
 
@@ -351,11 +281,9 @@ def build_confirmation_message(intent_code: str, employee_name: str) -> str:
         "inicio_parada": "iniciar una parada/descanso",
         "fin_parada": "finalizar la parada/descanso",
         "solicitar_vacaciones": "solicitar vacaciones",
-        "solicitar_permiso": "solicitar este permiso",
         "consultar_saldo_vacaciones": "consultar tu saldo de vacaciones",
         "confirmar_documento": "confirmar un documento",
         "resumen_dia": "ver el resumen del día",
-        "reportar_incidencia": "registrar esta incidencia",
     }
     action_label = labels.get(intent_code, intent_code.replace("_", " "))
     return (

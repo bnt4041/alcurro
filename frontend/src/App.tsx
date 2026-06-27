@@ -48,6 +48,8 @@ import ReportsPage from "./pages/ReportsPage";
 import SignaturesPage from "./pages/SignaturesPage";
 import LegalTokenPage from "./pages/LegalTokenPage";
 import DeveloperPage from "./pages/DeveloperPage";
+import SupportPage from "./pages/SupportPage";
+import PlatformTicketsPage from "./pages/PlatformTicketsPage";
 
 export default function App() {
   return (
@@ -91,6 +93,8 @@ export default function App() {
                 <Route path="whatsapp" element={<PlatformWhatsAppPage />} />
                 <Route path="mail" element={<PlatformMailPage />} />
                 <Route path="ia" element={<PlatformAIPage />} />
+                <Route path="tickets" element={<PlatformTicketsPage />} />
+                <Route path="tickets/:ticketId" element={<PlatformTicketsPage />} />
                 <Route path="politicas" element={<PlatformPolicyPage />} />
                 <Route path="purgar" element={<PlatformPurgePage />} />
               </Route>
@@ -116,6 +120,7 @@ export default function App() {
                 <Route path="legal" element={<LegalPage />} />
                 <Route path="grupos" element={<GroupsPage />} />
                 <Route path="cuenta" element={<AccountPage />} />
+                <Route path="soporte" element={<SupportPage />} />
                 <Route path="developer" element={<DeveloperPage />} />
                 <Route path="whatsapp" element={<Navigate to="/app" replace />} />
                 <Route path="configuracion" element={<Navigate to="/app/cuenta" replace />} />

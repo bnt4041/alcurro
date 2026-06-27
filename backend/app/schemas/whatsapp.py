@@ -21,7 +21,9 @@ def _extract_location_dict(data: dict[str, Any]) -> dict[str, Any] | None:
     if not isinstance(data, dict):
         return None
 
-    candidates: list[dict[str, Any]] = [data]
+    top_live = _looks_live(data)
+    candidates: list[tuple[dict[str, Any], bool]] = [(data, top_live)]
+    _live_keys = ("live_location", "liveLocationMessage")
     for key in (
         "location",
         "live_location",
@@ -32,16 +34,18 @@ def _extract_location_dict(data: dict[str, Any]) -> dict[str, Any] | None:
     ):
         nested = data.get(key)
         if isinstance(nested, dict):
-            candidates.append(nested)
+            candidates.append(
+                (nested, key in _live_keys or top_live or _looks_live(nested))
+            )
 
     # También buscar en valores que sean dict con coordenadas
     for v in data.values():
         if isinstance(v, dict) and any(
             k in v for k in ("latitude", "lat", "degreesLatitude", "longitude", "lng", "lon", "degreesLongitude")
         ):
-            candidates.append(v)
+            candidates.append((v, top_live or _looks_live(v)))
 
-    for block in candidates:
+    for block, block_live in candidates:
         lat = (
             block.get("latitude")
             or block.get("degreesLatitude")
@@ -64,10 +68,28 @@ def _extract_location_dict(data: dict[str, Any]) -> dict[str, Any] | None:
                         "longitude": lng_f,
                         "name": block.get("name"),
                         "address": block.get("address"),
+                        "is_live": bool(
+                            block_live
+                            or block.get("is_live")
+                            or data.get("is_live")
+                        ),
                     }
             except (TypeError, ValueError):
                 continue
     return None
+
+
+def _looks_live(data: dict[str, Any]) -> bool:
+    """Heurística: el bloque corresponde a una ubicación en tiempo real."""
+    t = str(
+        data.get("type") or data.get("message_type") or data.get("messageType") or ""
+    ).lower()
+    if "live" in t:
+        return True
+    return any(
+        isinstance(k, str) and "live" in k.lower() and "location" in k.lower()
+        for k in data
+    )
 
 
 class GoWALocation(BaseModel):
@@ -75,6 +97,7 @@ class GoWALocation(BaseModel):
     longitude: float
     name: str | None = None
     address: str | None = None
+    is_live: bool = False
 
     @model_validator(mode="before")
     @classmethod
@@ -180,6 +203,8 @@ class GoWAWebhookPayload(BaseModel):
         ):
             p = data.get("payload") if isinstance(data.get("payload"), dict) else data
             loc = _extract_location_dict(p or {})
+            if loc and data.get("event") in ("live_location", "liveLocationMessage"):
+                loc["is_live"] = True
             sender = (
                 p.get("from") if isinstance(p, dict) else None
             ) or data.get("sender") or data.get("phone")
@@ -197,6 +222,8 @@ class GoWAWebhookPayload(BaseModel):
             # intentamos con el payload completo
             if isinstance(p, dict):
                 loc2 = _extract_location_dict(p)
+                if loc2 and data.get("event") in ("live_location", "liveLocationMessage"):
+                    loc2["is_live"] = True
                 if loc2:
                     return {
                         "event": "message",

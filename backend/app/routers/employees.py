@@ -479,10 +479,40 @@ def create_employee(
     seed_inbound_documents(session, row.id, ctx.tenant.id)
     clock_cfg = get_or_create_settings(session, ctx.tenant.id)
     if clock_cfg.send_welcome_with_documents:
+        # Si hay condiciones generales activas pendientes, incluir el enlace de
+        # aceptación en el propio mensaje de bienvenida.
+        legal_link: str | None = None
+        legal_titles: list[str] = []
+        try:
+            from app.config import get_settings as _get_settings
+            from app.services.legal_service import (
+                create_whatsapp_token,
+                employee_legal_status,
+            )
+
+            items, all_ok = employee_legal_status(session, ctx.tenant.id, row.id)
+            if not all_ok:
+                token = create_whatsapp_token(
+                    session, employee_id=row.id, tenant_id=ctx.tenant.id
+                )
+                base = _get_settings().public_app_url.rstrip("/")
+                legal_link = f"{base}/legal/{token.token}"
+                legal_titles = [
+                    i.title for i in items if i.is_required and not i.accepted
+                ]
+        except Exception:
+            legal_link = None
+
         try:
             GoWAService(session).send_text_sync(
                 row.phone,
-                build_welcome_message(session, row, ctx.tenant.name),
+                build_welcome_message(
+                    session,
+                    row,
+                    ctx.tenant.name,
+                    legal_link=legal_link,
+                    legal_titles=legal_titles,
+                ),
             )
             mark_welcome_sent(session, row)
         except Exception:

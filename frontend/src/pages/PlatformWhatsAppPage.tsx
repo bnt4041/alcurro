@@ -70,6 +70,9 @@ export default function PlatformWhatsAppPage() {
         gowa_basic_auth: form.gowa_basic_auth,
         gowa_webhook_url: form.gowa_webhook_url,
         gowa_ui_url: form.gowa_ui_url,
+        whatsapp_public_number: form.whatsapp_public_number ?? null,
+        platform_alert_phone: form.platform_alert_phone ?? null,
+        commercial_ai_enabled: form.commercial_ai_enabled ?? true,
       });
       setForm(updated);
       setMsg("Configuración guardada");
@@ -242,6 +245,41 @@ export default function PlatformWhatsAppPage() {
             value={form.gowa_basic_auth}
             onChange={(e) => setForm({ ...form, gowa_basic_auth: e.target.value })}
           />
+        </label>
+        <h3 style={{ marginTop: "1.5rem" }}>Soporte y asistente comercial</h3>
+        <p className="muted small form-grid-full">
+          El número público se usa en el botón de WhatsApp del landing y como línea
+          comercial. El número de avisos recibe una notificación por cada ticket nuevo.
+        </p>
+        <label className="full">
+          Número público de WhatsApp (widget landing)
+          <input
+            placeholder="34600111222"
+            value={form.whatsapp_public_number ?? ""}
+            onChange={(e) =>
+              setForm({ ...form, whatsapp_public_number: e.target.value })
+            }
+          />
+        </label>
+        <label className="full">
+          WhatsApp para avisos de tickets
+          <input
+            placeholder="34600111222"
+            value={form.platform_alert_phone ?? ""}
+            onChange={(e) =>
+              setForm({ ...form, platform_alert_phone: e.target.value })
+            }
+          />
+        </label>
+        <label className="checkbox-row full">
+          <input
+            type="checkbox"
+            checked={form.commercial_ai_enabled ?? true}
+            onChange={(e) =>
+              setForm({ ...form, commercial_ai_enabled: e.target.checked })
+            }
+          />
+          Responder con IA comercial a números no registrados
         </label>
         <div className="form-actions full">
           <button type="submit" className="btn btn-primary" disabled={saving}>

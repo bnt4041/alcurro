@@ -1,6 +1,7 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import UUID
 
+from sqlalchemy import and_, or_
 from sqlmodel import Session, select
 
 from app.models.models import ClockIn, Employee
@@ -39,6 +40,27 @@ class ClockService:
                 return emp
         return None
 
+    def location_exists(self, latitude: float, longitude: float) -> bool:
+        """True si esas coordenadas EXACTAS ya constan en algún fichaje del tenant.
+
+        Comprueba tanto coordenadas de entrada como de salida, de cualquier
+        empleado. Sirve para detectar ubicaciones reenviadas (mismo lat/lng al
+        milímetro) y exigir entonces ubicación en tiempo real.
+        """
+        cond = or_(
+            and_(ClockIn.latitude == latitude, ClockIn.longitude == longitude),
+            and_(ClockIn.latitude_out == latitude, ClockIn.longitude_out == longitude),
+        )
+        stmt = (
+            select(ClockIn.id)
+            .join(Employee, Employee.id == ClockIn.employee_id)
+            .where(cond)
+        )
+        company_ids = self._company_ids()
+        if company_ids:
+            stmt = stmt.where(Employee.company_id.in_(company_ids))  # type: ignore[attr-defined]
+        return self._session.exec(stmt).first() is not None
+
     def get_open_clock(self, employee_id: UUID) -> ClockIn | None:
         """Jornada abierta: entrada sin salida."""
         return self._session.exec(
@@ -63,7 +85,8 @@ class ClockService:
         rules = get_or_create_rules(self._session, self._tenant_id)
         if not rules.missing_clock_out_enabled:
             return False
-        elapsed = (datetime.utcnow() - record.entrada_at).total_seconds() / 3600
+        entrada = record.entrada_at if record.entrada_at.tzinfo else record.entrada_at.replace(tzinfo=timezone.utc)
+        elapsed = (datetime.now(timezone.utc) - entrada).total_seconds() / 3600
         return elapsed >= rules.missing_clock_out_hours
 
     def get_last_clock(self, employee_id: UUID) -> ClockIn | None:

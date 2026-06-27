@@ -53,6 +53,8 @@ from app.models.developer import ApiKey, WebhookEndpoint, WebhookDelivery  # noq
 from app.models.password_reset import PasswordResetToken  # noqa: F401
 from app.models.platform_settings import PlatformSettings  # noqa: F401
 from app.models.invoice import Invoice  # noqa: F401
+from app.models.commercial import CommercialMessage  # noqa: F401
+from app.models.ticket import Ticket, TicketMessage  # noqa: F401
 
 settings = get_settings()
 engine = create_engine(settings.database_url, echo=False)

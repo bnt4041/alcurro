@@ -109,4 +109,6 @@ export const publicApi = {
     ),
   getPendingSignup: (id: string) =>
     publicRequest<PendingSignupStatus>(`/pending-signup/${id}`),
+  getSiteConfig: () =>
+    publicRequest<{ whatsapp_number: string | null }>("/site-config"),
 };

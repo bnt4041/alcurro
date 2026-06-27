@@ -301,22 +301,20 @@ async def _omission_incident_scheduler() -> None:
                         ).all()
 
                         for emp in employees:
-                            if not emp.phone:
-                                continue
                             for inc in [
                                 check_missing_clock_in(session, tenant.id, emp, today) if has_missing_in else None,
                                 check_missing_clock_out(session, tenant.id, emp) if has_missing_out else None,
                             ]:
                                 if inc is None:
                                     continue
-                                if not inc.whatsapp_notified_at or not inc.public_token:
-                                    continue
-                                msg = build_whatsapp_incident_message(session, inc)
-                                try:
-                                    gowa.send_text_sync(emp.phone, msg)
-                                    session.add(inc)
-                                except Exception as exc:
-                                    print(f"[omission] WA {emp.full_name}: {exc}")
+                                # Enviar WhatsApp solo si el empleado tiene teléfono y la incidencia está preparada
+                                if emp.phone and inc.whatsapp_notified_at and inc.public_token:
+                                    msg = build_whatsapp_incident_message(session, inc)
+                                    try:
+                                        gowa.send_text_sync(emp.phone, msg)
+                                        session.add(inc)
+                                    except Exception as exc:
+                                        print(f"[omission] WA {emp.full_name}: {exc}")
 
                         session.commit()
                     except Exception as exc:

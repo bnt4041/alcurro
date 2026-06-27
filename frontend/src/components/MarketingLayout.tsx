@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, Outlet, useLocation } from "react-router-dom";
 import BrandLogo from "./BrandLogo";
+import WhatsAppFab from "./WhatsAppFab";
 import { useHideOnScroll } from "../hooks/useHideOnScroll";
 import "../styles/landing.css";
 
@@ -9,6 +10,10 @@ function CookieBanner() {
   useEffect(() => {
     if (!localStorage.getItem("cookie_consent")) setVisible(true);
   }, []);
+  useEffect(() => {
+    document.body.classList.toggle("cookie-banner-open", visible);
+    return () => document.body.classList.remove("cookie-banner-open");
+  }, [visible]);
   const accept = () => {
     localStorage.setItem("cookie_consent", "accepted");
     setVisible(false);
@@ -161,6 +166,7 @@ export default function MarketingLayout() {
       </footer>
 
       <CookieBanner />
+      <WhatsAppFab />
     </div>
   );
 }

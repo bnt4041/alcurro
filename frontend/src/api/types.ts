@@ -387,6 +387,9 @@ export interface SystemSettings {
   ollama_base_url: string;
   ollama_model: string;
   company_name: string;
+  whatsapp_public_number?: string | null;
+  platform_alert_phone?: string | null;
+  commercial_ai_enabled?: boolean;
   updated_at: string;
 }
 

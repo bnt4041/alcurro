@@ -59,7 +59,24 @@ DEFAULT_ACTIONS: list[tuple[str, str, str, str, int]] = [
         "fichajes",
         9,
     ),
+    (
+        "crear_ticket",
+        "Crear ticket de soporte",
+        "Abre un ticket de soporte de producto a Alcurro (solo admin de cuenta)",
+        "soporte",
+        10,
+    ),
+    (
+        "consultar_tickets",
+        "Consultar tickets",
+        "Lista los tickets de soporte abiertos de la cuenta",
+        "soporte",
+        11,
+    ),
 ]
+
+# Acciones de soporte: solo para administradores de cuenta
+SUPPORT_ACTIONS: set[str] = {"crear_ticket", "consultar_tickets"}
 
 # Perfil -> códigos habilitados por defecto
 DEFAULT_PROFILE_MATRIX: dict[str, set[str]] = {
@@ -75,7 +92,7 @@ DEFAULT_PROFILE_MATRIX: dict[str, set[str]] = {
         "resumen_dia",
         "reportar_incidencia",
     },
-    "manager": {code for code, *_ in DEFAULT_ACTIONS},
+    "manager": {code for code, *_ in DEFAULT_ACTIONS} - SUPPORT_ACTIONS,
     "tenant_admin": {code for code, *_ in DEFAULT_ACTIONS},
     "labor_inspector": {"consultar_saldo_vacaciones"},
 }

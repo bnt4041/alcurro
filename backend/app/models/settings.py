@@ -24,4 +24,19 @@ class SystemSettings(SQLModel, table=True):
     smtp_use_tls: bool = Field(default=True)
     mail_from_address: str | None = Field(default=None, max_length=255)
     mail_from_name: str | None = Field(default="alcurro")
+    # Soporte / comercial
+    whatsapp_public_number: str | None = Field(
+        default=None,
+        max_length=40,
+        description="Número público de WhatsApp de Alcurro (widget landing + línea comercial)",
+    )
+    platform_alert_phone: str | None = Field(
+        default=None,
+        max_length=40,
+        description="WhatsApp al que se avisa de nuevos tickets de soporte",
+    )
+    commercial_ai_enabled: bool = Field(
+        default=True,
+        description="Responder con IA comercial a números no registrados",
+    )
     updated_at: datetime = Field(default_factory=datetime.utcnow)

@@ -26,6 +26,7 @@ const nav = [
   { to: "/app/legal", label: "Textos legales", module: "legal" as const },
   { to: "/app/grupos", label: "Grupos", module: "groups" as const },
   { to: "/app/cuenta", label: "Cuenta", module: "tenant" as const, write: true },
+  { to: "/app/soporte", label: "Soporte", module: "tenant" as const, write: true },
   { to: "/app/developer", label: "APIs y Webhooks", module: "tenant" as const, write: true },
 ];
 

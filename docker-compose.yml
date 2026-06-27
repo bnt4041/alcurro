@@ -74,6 +74,7 @@ services:
     volumes:
       - ./backend:/app
       - ./data/uploads:/app/uploads                # bind mount → documentos portables
+      - ./docs:/app/docs:ro                         # base de conocimiento para IA (kb_service)
       - /var/run/docker.sock:/var/run/docker.sock
     ports:
       - "8000:8000"
