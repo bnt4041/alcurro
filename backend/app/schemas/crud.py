@@ -24,6 +24,7 @@ class EmployeeCreate(BaseModel):
     job_title: str | None = None
     vacation_days_balance: float = 22.0
     is_active: bool = True
+    is_account_admin: bool = False
     password: str | None = None
     shift_configuration_id: UUID | None = None
     work_start_time: time | None = None
@@ -86,6 +87,7 @@ class EmployeeUpdate(BaseModel):
     job_title: str | None = None
     vacation_days_balance: float | None = None
     is_active: bool | None = None
+    is_account_admin: bool | None = None
     password: str | None = None
     shift_configuration_id: UUID | None = None
     work_start_time: time | None = None
@@ -112,6 +114,7 @@ class EmployeeRead(BaseModel):
     job_title: str | None = None
     vacation_days_balance: float
     is_active: bool
+    is_account_admin: bool = False
     avatar_delivery_id: UUID | None = None
     avatar_url: str | None = None
     shift_configuration_id: UUID | None = None

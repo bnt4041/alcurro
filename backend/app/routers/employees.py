@@ -456,12 +456,15 @@ def create_employee(
     _set_password(row, data.password)
     if over_limit:
         row.is_active = False
-    if not row.password_hash and row.role.value in (
-        "tenant_admin",
-        "admin",
-        "manager",
-        "supervisor",
-        "labor_inspector",
+    if not row.password_hash and (
+        row.is_account_admin
+        or row.role.value in (
+            "tenant_admin",
+            "admin",
+            "manager",
+            "supervisor",
+            "labor_inspector",
+        )
     ):
         row.password_hash = hash_password("changeme")
     session.add(row)
@@ -618,6 +621,9 @@ def update_employee(
     for key, value in updates.items():
         setattr(row, key, value)
     _set_password(row, data.password)
+    # Admin de cuenta por flag necesita poder entrar al panel.
+    if row.is_account_admin and not row.password_hash:
+        row.password_hash = hash_password("changeme")
     row.updated_at = datetime.utcnow()
     session.add(row)
     session.commit()

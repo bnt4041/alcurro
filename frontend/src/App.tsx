@@ -46,6 +46,7 @@ import SignupSuccessPage from "./pages/SignupSuccessPage";
 import SignDocumentPage from "./pages/SignDocumentPage";
 import ReportsPage from "./pages/ReportsPage";
 import SignaturesPage from "./pages/SignaturesPage";
+import CommunicationsPage from "./pages/CommunicationsPage";
 import LegalTokenPage from "./pages/LegalTokenPage";
 import DeveloperPage from "./pages/DeveloperPage";
 import SupportPage from "./pages/SupportPage";
@@ -117,6 +118,7 @@ export default function App() {
                 <Route path="turnos" element={<ShiftsPage />} />
                 <Route path="documentos" element={<DocumentsPage />} />
                 <Route path="firmas" element={<SignaturesPage />} />
+                <Route path="comunicaciones" element={<CommunicationsPage />} />
                 <Route path="legal" element={<LegalPage />} />
                 <Route path="grupos" element={<GroupsPage />} />
                 <Route path="cuenta" element={<AccountPage />} />

@@ -101,10 +101,27 @@ DEFAULT_ACTIONS: list[tuple[str, str, str, str, int]] = [
         "incidencias",
         15,
     ),
+    (
+        "crear_proyecto",
+        "Crear proyecto",
+        "Crea un proyecto/obra de la empresa (solo admin de cuenta)",
+        "proyectos",
+        16,
+    ),
+    (
+        "modificar_proyecto",
+        "Modificar proyecto",
+        "Modifica o desactiva un proyecto/obra (solo admin de cuenta)",
+        "proyectos",
+        17,
+    ),
 ]
 
 # Acciones de soporte: solo para administradores de cuenta
 SUPPORT_ACTIONS: set[str] = {"crear_ticket", "consultar_tickets"}
+
+# Acciones solo para administradores de cuenta (no responsables)
+ADMIN_ONLY_ACTIONS: set[str] = {"crear_proyecto", "modificar_proyecto"}
 
 # Acciones de gestión de equipo: solo responsables y administradores
 MANAGER_ACTIONS: set[str] = {
@@ -128,7 +145,7 @@ DEFAULT_PROFILE_MATRIX: dict[str, set[str]] = {
         "resumen_dia",
         "reportar_incidencia",
     },
-    "manager": {code for code, *_ in DEFAULT_ACTIONS} - SUPPORT_ACTIONS,
+    "manager": {code for code, *_ in DEFAULT_ACTIONS} - SUPPORT_ACTIONS - ADMIN_ONLY_ACTIONS,
     "tenant_admin": {code for code, *_ in DEFAULT_ACTIONS},
     "labor_inspector": {"consultar_saldo_vacaciones"},
 }
@@ -181,7 +198,11 @@ def _ensure_default_conversation_rules(session: Session) -> None:
         "abierta; «pausa»/«a comer»=inicio_parada; «me voy»=salida de jornada. "
         "Usa historial + estado de fichaje y paradas. "
         "Nunca respondas solo con lista de comandos: si no entiendes, pregunta "
-        "en una frase corta y amable."
+        "en una frase corta y amable. "
+        "Solo puedes ayudar con las acciones de tu catálogo (INTENTS). Si el usuario "
+        "pide algo que NO está en tu catálogo (p. ej. crear proyectos sin permiso), "
+        "no le sigas la corriente ni le pidas datos: dile amablemente que esa acción "
+        "no está disponible para su perfil y ofrécele lo que sí puedes hacer."
     )
     exists = session.exec(
         select(AiConversationRule).where(AiConversationRule.title == title)

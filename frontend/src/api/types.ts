@@ -36,6 +36,7 @@ export interface Employee {
   job_title: string | null;
   vacation_days_balance: number;
   is_active: boolean;
+  is_account_admin?: boolean;
   avatar_delivery_id: string | null;
   avatar_url: string | null;
   shift_configuration_id: string | null;
@@ -48,6 +49,44 @@ export interface Employee {
   weekly_hours: number | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface CommunicationRecipient {
+  id: string;
+  employee_id: string | null;
+  is_external: boolean;
+  full_name: string;
+  phone: string | null;
+  email: string | null;
+  id_document: string | null;
+  status: string;
+  sent_at: string | null;
+  read_at: string | null;
+  signed_at: string | null;
+  error: string | null;
+}
+
+export interface CommunicationAttachment {
+  id: string;
+  file_name: string;
+  mimetype: string | null;
+}
+
+export interface Communication {
+  id: string;
+  title: string;
+  body: string;
+  mode: string; // "open" | "signature"
+  status: string; // draft | sending | sent | cancelled
+  created_at: string;
+  sent_at: string | null;
+  cancelled_at: string | null;
+  cancel_reason: string | null;
+  recipient_count: number;
+  sent_count: number;
+  signed_count: number;
+  recipients?: CommunicationRecipient[];
+  attachments?: CommunicationAttachment[];
 }
 
 /** @deprecated Resumen legacy; usar work_schedule_periods */

@@ -25,6 +25,11 @@ from app.models.signature import (  # noqa: F401
     SignatureOtp,
     SignatureSigner,
 )
+from app.models.communication import (  # noqa: F401
+    Communication,
+    CommunicationAttachment,
+    CommunicationRecipient,
+)
 from app.models.models import Employee  # noqa: F401
 from app.models.ai import (  # noqa: F401
     AiAction,

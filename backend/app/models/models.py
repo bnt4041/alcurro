@@ -152,6 +152,10 @@ class Employee(SQLModel, table=True):
     job_title: str | None = Field(default=None, max_length=100)
     vacation_days_balance: float = Field(default=22.0, ge=0)
     is_active: bool = Field(default=True)
+    is_account_admin: bool = Field(
+        default=False,
+        description="Empleado que además es administrador de cuenta (permisos de admin sin cambiar su rol base)",
+    )
     password_hash: str | None = Field(default=None, max_length=255)
     avatar_delivery_id: UUID | None = Field(
         default=None, foreign_key="document_deliveries.id", index=True

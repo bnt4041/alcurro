@@ -6,6 +6,7 @@ from app.routers import (
     breaks,
     clock_ins,
     clock_settings,
+    communications,
     dashboard,
     developer,
     incidents,
@@ -102,6 +103,7 @@ protected.include_router(leave_balances.router)
 protected.include_router(shifts.router)
 protected.include_router(documents.router)
 protected.include_router(signatures.router)
+protected.include_router(communications.router)
 protected.include_router(settings.router)
 protected.include_router(groups.router)
 protected.include_router(organization.router)

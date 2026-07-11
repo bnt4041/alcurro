@@ -39,6 +39,11 @@ export type Perm =
   | "signatures.write"
   | "signatures.create_own"
   | "signatures.update_own"
+  | "communications.read"
+  | "communications.read_own"
+  | "communications.write"
+  | "communications.create_own"
+  | "communications.update_own"
   | "legal.read"
   | "legal.read_own"
   | "legal.write"
@@ -132,6 +137,17 @@ const MODULE_COARSE: Record<string, Record<Coarse, Perm[]>> = {
       "documents.update_own",
     ],
     admin: ["signatures.write", "documents.write"],
+  },
+  communications: {
+    read: ["communications.read", "communications.read_own"],
+    write: [
+      "communications.write",
+      "communications.create_own",
+      "communications.update_own",
+    ],
+    create: ["communications.write", "communications.create_own"],
+    update: ["communications.write", "communications.update_own"],
+    admin: ["communications.write"],
   },
   legal: {
     read: ["legal.read", "legal.read_own"],
@@ -260,6 +276,11 @@ export const PERM_LABELS: Record<Perm, string> = {
   "signatures.write": "Crear y modificar todas",
   "signatures.create_own": "Crear sólo las del usuario",
   "signatures.update_own": "Modificar sólo las del usuario",
+  "communications.read": "Ver todas las comunicaciones",
+  "communications.read_own": "Ver sólo las del usuario",
+  "communications.write": "Crear y gestionar comunicaciones",
+  "communications.create_own": "Crear sólo las del usuario",
+  "communications.update_own": "Modificar sólo las del usuario",
   "legal.read": "Ver textos legales (todos)",
   "legal.read_own": "Ver sólo cumplimiento del usuario",
   "legal.write": "Gestionar textos legales",

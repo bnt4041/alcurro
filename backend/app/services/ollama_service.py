@@ -307,6 +307,7 @@ class OllamaService:
         "fichar_entrada", "fichar_salida",
         "inicio_parada", "fin_parada",
         "solicitar_vacaciones",
+        "crear_proyecto", "modificar_proyecto",
     })
     # Intenciones de solo lectura → stage="execute"  
     _EXECUTE_INTENTS = frozenset({
@@ -342,6 +343,10 @@ class OllamaService:
                 parsed["stage"] = "execute"
             else:
                 parsed["stage"] = "ask"
+        # Un intent "desconocido" jamás puede confirmar/ejecutar: solo conversa.
+        # (evita confirmaciones absurdas tipo «entiendo que quieres desconocido»)
+        if parsed.get("intent", "desconocido") == "desconocido" and parsed.get("stage") != "ask":
+            parsed["stage"] = "ask"
         # Normalizar message
         if parsed.get("message") in ("", "null", None):
             parsed["message"] = ""

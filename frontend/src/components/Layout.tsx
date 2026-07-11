@@ -23,6 +23,7 @@ const nav = [
   { to: "/app/turnos", label: "Turnos", module: "shifts" as const },
   { to: "/app/documentos", label: "Documentos", module: "documents" as const },
   { to: "/app/firmas", label: "Firmas", module: "signatures" as const },
+  { to: "/app/comunicaciones", label: "Comunicaciones", module: "communications" as const },
   { to: "/app/legal", label: "Textos legales", module: "legal" as const },
   { to: "/app/grupos", label: "Grupos", module: "groups" as const },
   { to: "/app/cuenta", label: "Cuenta", module: "tenant" as const, write: true },

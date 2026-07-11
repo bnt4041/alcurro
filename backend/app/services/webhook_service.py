@@ -1,7 +1,10 @@
+import logging
 from pathlib import Path
 from uuid import UUID
 
 from sqlmodel import Session
+
+logger = logging.getLogger(__name__)
 
 from app.models.models import (
     BreakType,
@@ -62,7 +65,6 @@ from app.services.whatsapp_format import (
 )
 from app.services.leave_service import LeaveService
 from app.services.ai_conversation_service import append_message, build_system_prompt, get_history_for_ollama, _to_spain
-from app.services.ai_usage_service import profile_key_for_employee
 from app.services.ollama_service import OllamaService
 from app.services.whatsapp_nlu import (
     build_confirmation_message,
@@ -78,6 +80,7 @@ from app.services.whatsapp_permission_service import (
     denial_message,
     is_whatsapp_action_allowed,
     list_whatsapp_actions_for_employee,
+    profile_key_for_employee_role,
 )
 
 _REPLY_MAX = 2000
@@ -126,9 +129,8 @@ _WORK_SUMMARY_REQUEST = (
 )
 
 _LIVE_LOCATION_REQUEST = (
-    "📍 Esta ubicación coincide *exactamente* con la de otro fichaje ya registrado.\n\n"
-    "Para confirmar dónde estás ahora mismo, por favor comparte tu *ubicación en "
-    "tiempo real*:\n"
+    "📍 Para fichar necesito tu *ubicación en tiempo real* (no vale la ubicación "
+    "compartida normal).\n\n"
     "📎 *Adjuntar* → *Ubicación* → *Compartir ubicación en tiempo real*.\n\n"
     "Será solo un momento para fijar tu posición correctamente. En cuanto la reciba "
     "te aviso y podrás dejar de compartir — no hace falta que la mantengas. 🙂"
@@ -457,7 +459,7 @@ class WebhookService:
         if is_cancel_or_new_intent(text):
             clear_pending(self._session, employee.id)
             self._session.flush()
-            self._ollama.profile_key = profile_key_for_employee(employee.role)
+            self._ollama.profile_key = profile_key_for_employee_role(employee)
             intent_data = await self._ollama.extract_intent(
                 text,
                 employee=employee,
@@ -632,39 +634,40 @@ class WebhookService:
         if not employee:
             return {"ok": False, "error": "Empleado no encontrado"}
 
-        # ── Anti-reenvío de ubicación ────────────────────────────────────────
-        # Una ubicación ESTÁTICA que coincide al milímetro con un fichaje ya
-        # registrado (de este u otro empleado) pudo haberse reenviado. Pedimos
-        # ubicación EN TIEMPO REAL, que WhatsApp no permite reenviar. Solo se
-        # exige una vez: la marca `awaiting_live_location` se limpia al recibirla.
+        # ── Ubicación en tiempo real obligatoria ─────────────────────────────
+        # Para fichar SIEMPRE exigimos ubicación en tiempo real (WhatsApp no
+        # permite reenviarla, evita compartir una estática/reenviada). Si llega
+        # una estática, pedimos la de tiempo real y esperamos a recibirla.
         is_live = bool(getattr(loc, "is_live", False))
+        # Diagnóstico: verificar que las ubicaciones EN TIEMPO REAL se detectan
+        # como live (si una live llega como estática, el empleado no podría fichar).
+        logger.info(
+            "WA ubicación fichaje: is_live=%s type=%r coords=%.5f,%.5f phone=%s",
+            is_live, message.type, lat, lng, phone,
+        )
         _pending_live = get_pending(self._session, employee_id)
         awaiting_live = bool(
             _pending_live
             and (_pending_live.pending_meta or {}).get("awaiting_live_location")
         )
+        if not is_live:
+            # Estática (primera vez o reintento): insistir en tiempo real.
+            if not awaiting_live:
+                self._mark_awaiting_live(employee_id, _pending_live)
+                self._session.commit()
+            msg = _LIVE_LOCATION_REMINDER if awaiting_live else _LIVE_LOCATION_REQUEST
+            try:
+                await self._gowa.send_text(phone, msg)
+            except Exception:
+                pass
+            return {"ok": True, "action": "await_live_location"}
         if awaiting_live:
-            if not is_live:
-                # Insiste: ya se le pidió tiempo real y vuelve a mandar estática.
-                try:
-                    await self._gowa.send_text(phone, _LIVE_LOCATION_REMINDER)
-                except Exception:
-                    pass
-                return {"ok": True, "action": "await_live_location"}
             # Llegó la ubicación en tiempo real → continúa el fichaje con ella.
             self._clear_awaiting_live(employee_id, _pending_live)
             try:
                 await self._gowa.send_text(phone, _LIVE_LOCATION_OK)
             except Exception:
                 pass
-        elif not is_live and self._clock.location_exists(lat, lng):
-            self._mark_awaiting_live(employee_id, _pending_live)
-            self._session.commit()
-            try:
-                await self._gowa.send_text(phone, _LIVE_LOCATION_REQUEST)
-            except Exception:
-                pass
-            return {"ok": True, "action": "await_live_location"}
         # ─────────────────────────────────────────────────────────────────────
 
         # Reverse geocoding (best-effort, non-blocking)
@@ -997,7 +1000,7 @@ class WebhookService:
                 # Si fue cancelación explícita (no timeout), procesar el nuevo texto
                 if cancelled and not expired:
                     # Procesar el texto como nueva intención
-                    self._ollama.profile_key = profile_key_for_employee(employee.role)
+                    self._ollama.profile_key = profile_key_for_employee_role(employee)
                     intent_data = await self._ollama.extract_intent(
                         text,
                         employee=employee,
@@ -1129,7 +1132,7 @@ class WebhookService:
             )
 
         # 5. Ollama como orquestador: decide stage (ask/confirm/execute)
-        self._ollama.profile_key = profile_key_for_employee(employee.role)
+        self._ollama.profile_key = profile_key_for_employee_role(employee)
         intent_data = await self._ollama.extract_intent(
             text,
             employee=employee,
@@ -1391,6 +1394,9 @@ class WebhookService:
         """Orquestador conversacional: sigue la decisión de Ollama (ask/confirm/execute)."""
         stage = intent_data.stage
         intent_code = intent_data.intent
+        # Un intent desconocido nunca confirma ni ejecuta: solo conversa (ask).
+        if intent_code == "desconocido" and stage != "ask":
+            stage = "ask"
         ollama_message = (intent_data.message or "").strip()
         # Descartar el mensaje si la IA repite textualmente el input del usuario
         if ollama_message and ollama_message.lower() == raw_text.strip().lower():
@@ -1458,14 +1464,23 @@ class WebhookService:
                 _record_type = "incidencia"
             elif intent_code == "solicitar_permiso":
                 _record_type = "permiso"
-            # Para reportar_incidencia/solicitar_permiso: guardar entities de la IA
+            elif intent_code in ("crear_proyecto", "modificar_proyecto"):
+                _record_type = "proyecto"
+            # Guardar entities de la IA para reconstruirlas al confirmar
             _meta = None
-            if intent_code in ("reportar_incidencia", "solicitar_permiso"):
+            if intent_code in (
+                "reportar_incidencia",
+                "solicitar_permiso",
+                "crear_proyecto",
+                "modificar_proyecto",
+            ):
                 _meta = dict(intent_data.entities) if intent_data.entities else {}
             if intent_code == "reportar_incidencia":
                 if not _meta.get("title") and not _meta.get("titulo"):
                     _meta["_ai_summary"] = ollama_message
                     _meta["_original_text"] = raw_text
+            if intent_code in ("crear_proyecto", "modificar_proyecto"):
+                _meta.setdefault("_original_text", raw_text)
             set_pending(
                 self._session,
                 employee_id=employee.id,
@@ -1610,7 +1625,7 @@ class WebhookService:
         )
 
         # Siempre pasar por el orquestador; el historial le da el contexto de la confirmación pendiente
-        self._ollama.profile_key = profile_key_for_employee(employee.role)
+        self._ollama.profile_key = profile_key_for_employee_role(employee)
         intent_data = await self._ollama.extract_intent(
             text,
             employee=employee,
@@ -1651,6 +1666,22 @@ class WebhookService:
                 entities=merged,
             )
 
+        # Para proyectos confirmados: restaurar todas las entities originales
+        if (
+            intent_data.stage == "execute"
+            and intent_data.intent in ("crear_proyecto", "modificar_proyecto")
+            and pending.pending_meta
+        ):
+            merged = dict(pending.pending_meta)
+            merged.update({k: v for k, v in (intent_data.entities or {}).items() if v})
+            intent_data = OllamaIntentResponse(
+                stage=intent_data.stage,
+                intent=intent_data.intent,
+                confidence=intent_data.confidence,
+                message=intent_data.message,
+                entities=merged,
+            )
+
         # Si el orquestador no va a ejecutar, limpiar el pending para evitar loops
         if intent_data.stage != "execute":
             clear_pending(self._session, employee.id)
@@ -1670,7 +1701,7 @@ class WebhookService:
         if is_cancel_or_new_intent(text):
             clear_pending(self._session, employee.id)
             self._session.flush()
-            self._ollama.profile_key = profile_key_for_employee(employee.role)
+            self._ollama.profile_key = profile_key_for_employee_role(employee)
             intent_data = await self._ollama.extract_intent(
                 text,
                 employee=employee,
@@ -2094,6 +2125,12 @@ class WebhookService:
             case "incidencias_sin_gestionar":
                 return self._list_team_incidents(employee, unmanaged_only=True)
 
+            case "crear_proyecto":
+                return self._execute_crear_proyecto(employee, intent)
+
+            case "modificar_proyecto":
+                return self._execute_modificar_proyecto(employee, intent)
+
             case "confirmar_documento":
                 return self._leave.acknowledge_document(employee.id, raw_text)
 
@@ -2452,6 +2489,228 @@ class WebhookService:
         if len(rows) > 20:
             lines.append(f"\n… y {len(rows) - 20} más. Gestiónalas desde el panel.")
         return "\n".join(lines)
+
+    # ── Gestión de proyectos por WhatsApp (admin de cuenta) ──────────────────
+    @staticmethod
+    def _parse_hours(value) -> float | None:
+        if value is None:
+            return None
+        s = str(value).strip().lower()
+        if s in ("", "null", "none", "no", "sin", "-"):
+            return None
+        m = _re.search(r"-?\d+(?:[.,]\d+)?", s)
+        if not m:
+            return None
+        try:
+            v = float(m.group().replace(",", "."))
+        except ValueError:
+            return None
+        return v if 0 <= v <= 100000 else None
+
+    @staticmethod
+    def _parse_active(entities: dict) -> bool | None:
+        """Determina si activar/desactivar a partir de entidades o texto original."""
+        for key in ("activo", "active", "estado"):
+            if key in entities and entities[key] not in (None, ""):
+                val = str(entities[key]).strip().lower()
+                if val in ("true", "si", "sí", "1", "activar", "activo", "yes", "alta"):
+                    return True
+                if val in ("false", "no", "0", "desactivar", "inactivo", "baja"):
+                    return False
+        if str(entities.get("desactivar") or "").strip().lower() in ("true", "si", "sí", "1", "yes", "desactivar"):
+            return False
+        if str(entities.get("activar") or "").strip().lower() in ("true", "si", "sí", "1", "yes", "activar"):
+            return True
+        ot = str(entities.get("_original_text") or "").lower()
+        if _re.search(r"desactiv|archiv|deshabilit|da\s+de\s+baja|dar\s+de\s+baja", ot):
+            return False
+        if _re.search(r"reactiv|\bactiv", ot):
+            return True
+        return None
+
+    def _resolve_company_project(self, company_id: UUID, ident: str):
+        from difflib import SequenceMatcher
+
+        from sqlmodel import select
+
+        from app.models.project import Project
+        from app.services.project_service import _normalize
+
+        raw = (ident or "").strip()
+        if not raw:
+            return None
+        projects = list(
+            self._session.exec(
+                select(Project)
+                .where(Project.company_id == company_id)
+                .order_by(Project.name)  # type: ignore[attr-defined]
+            ).all()
+        )
+        if not projects:
+            return None
+        lower = raw.lower()
+        for p in projects:
+            if lower == p.code.lower() or lower == p.name.lower():
+                return p
+        for p in projects:
+            if lower in p.name.lower() or lower in p.code.lower():
+                return p
+        nq = _normalize(raw)
+        best = None
+        best_s = 0.0
+        for p in projects:
+            s = max(
+                SequenceMatcher(None, nq, _normalize(p.name)).ratio(),
+                SequenceMatcher(None, nq, _normalize(p.code)).ratio(),
+            )
+            if s > best_s:
+                best_s, best = s, p
+        return best if best_s >= 0.72 else None
+
+    def _project_picker_text(self, company_id: UUID, ident: str) -> str:
+        from sqlmodel import select
+
+        from app.models.project import Project
+
+        projects = list(
+            self._session.exec(
+                select(Project)
+                .where(
+                    Project.company_id == company_id,
+                    Project.is_active == True,  # noqa: E712
+                )
+                .order_by(Project.name)  # type: ignore[attr-defined]
+            ).all()
+        )
+        if not projects:
+            return (
+                "No hay proyectos en tu empresa todavía. "
+                "Puedes crear uno diciendo «crea un proyecto …»."
+            )
+        head = (
+            f"No encuentro el proyecto «{ident}»."
+            if ident
+            else "¿Qué proyecto quieres modificar?"
+        )
+        lines = [head, "", "*Proyectos:*"]
+        for p in projects[:25]:
+            lines.append(f"• {p.name} ({p.code})")
+        lines.append("\nDime el nombre o código exacto y qué quieres cambiar.")
+        return "\n".join(lines)
+
+    def _execute_crear_proyecto(self, admin: Employee, intent: OllamaIntentResponse) -> str:
+        from datetime import datetime
+
+        from sqlmodel import select
+
+        from app.models.project import Project
+        from app.services.code_generator import next_project_code
+        from app.services.project_service import _normalize
+
+        e = intent.entities or {}
+        name = str(e.get("nombre") or e.get("name") or e.get("titulo") or "").strip()
+        if not name:
+            return (
+                "No he entendido el nombre del proyecto. "
+                "Dime cómo se llama (y si quieres, dirección y horas) y lo creo."
+            )
+        company_id = admin.company_id
+        for p in self._session.exec(
+            select(Project).where(Project.company_id == company_id)
+        ).all():
+            if p.is_active and _normalize(p.name) == _normalize(name):
+                return f"Ya existe un proyecto activo llamado *{p.name}* ({p.code})."
+
+        addr_raw = e.get("direccion") or e.get("address") or ""
+        address = (
+            str(addr_raw).strip()[:500]
+            if isinstance(addr_raw, str) and addr_raw.strip()
+            else None
+        )
+        hours = self._parse_hours(
+            e.get("horas_previstas") or e.get("horas") or e.get("planned_hours")
+        )
+        code = next_project_code(self._session, company_id)
+        row = Project(
+            company_id=company_id,
+            name=name[:200],
+            code=code,
+            address=address,
+            planned_hours=hours,
+        )
+        row.updated_at = datetime.utcnow()
+        self._session.add(row)
+        self._session.commit()
+
+        extra = []
+        if address:
+            extra.append(f"📍 {address}")
+        if hours is not None:
+            extra.append(f"⏱️ {hours:g} h previstas")
+        tail = ("\n" + " · ".join(extra)) if extra else ""
+        return f"✅ Proyecto creado: *{name}* (código {code}){tail}"
+
+    def _execute_modificar_proyecto(
+        self, admin: Employee, intent: OllamaIntentResponse
+    ) -> str:
+        from datetime import datetime
+
+        e = intent.entities or {}
+        ident = str(
+            e.get("proyecto")
+            or e.get("project")
+            or e.get("nombre_actual")
+            or e.get("codigo")
+            or ""
+        ).strip()
+        if not ident:
+            ident = str(e.get("nombre") or "").strip()
+        proj = self._resolve_company_project(admin.company_id, ident) if ident else None
+        if not proj:
+            return self._project_picker_text(admin.company_id, ident)
+
+        changes: list[str] = []
+        new_name = str(e.get("nuevo_nombre") or "").strip()
+        if not new_name:
+            cand = str(e.get("nombre") or e.get("name") or "").strip()
+            if (
+                cand
+                and cand.lower() != proj.name.lower()
+                and cand.lower() != ident.lower()
+            ):
+                new_name = cand
+        if new_name:
+            proj.name = new_name[:200]
+            changes.append(f"nombre → {new_name}")
+
+        addr_raw = e.get("direccion") or e.get("nueva_direccion") or e.get("address") or ""
+        if isinstance(addr_raw, str) and addr_raw.strip():
+            proj.address = addr_raw.strip()[:500]
+            changes.append("dirección actualizada")
+
+        hours = self._parse_hours(
+            e.get("horas_previstas") or e.get("horas") or e.get("planned_hours")
+        )
+        if hours is not None:
+            proj.planned_hours = hours
+            changes.append(f"horas previstas → {hours:g}")
+
+        active = self._parse_active(e)
+        if active is not None:
+            proj.is_active = active
+            proj.active_for_clock = active
+            changes.append("activado" if active else "desactivado")
+
+        if not changes:
+            return (
+                f"He encontrado el proyecto *{proj.name}* pero no he detectado qué "
+                "cambiar. Dime el nuevo nombre, dirección, horas o si activar/desactivar."
+            )
+
+        proj.updated_at = datetime.utcnow()
+        self._session.add(proj)
+        self._session.commit()
+        return f"✅ Proyecto *{proj.name}* actualizado:\n• " + "\n• ".join(changes)
 
     async def _safe_send(self, phone: str, text: str) -> None:
         try:

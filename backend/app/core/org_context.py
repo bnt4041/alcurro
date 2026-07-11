@@ -63,7 +63,10 @@ class OrgContext:
         Admin/tenant_admin always get the full tenant scope regardless of the
         X-Company-Id header, so they see employees across all companies.
         """
-        if str(self.user.role) in _ALL_COMPANY_ROLES:
+        if (
+            getattr(self.user, "is_account_admin", False)
+            or str(self.user.role) in _ALL_COMPANY_ROLES
+        ):
             return None
         return self.company.id
 

@@ -6,7 +6,7 @@ from uuid import UUID
 
 from sqlmodel import Session
 
-from app.core.permissions import get_employee_permissions, has_perm
+from app.core.permissions import effective_role, get_employee_permissions, has_perm
 from app.models.models import Employee
 from app.models.clock_settings import ClockSettings
 from app.services.ai_config_service import (
@@ -36,6 +36,9 @@ ACTION_RBAC_ANY: dict[str, tuple[str, ...]] = {
     "aprobar_vacaciones": ("leave.approve", "leave.write"),
     "incidencias_abiertas": ("clock_ins.read", "clock_ins.write"),
     "incidencias_sin_gestionar": ("clock_ins.read", "clock_ins.write"),
+    # Gestión de proyectos (admin de cuenta)
+    "crear_proyecto": ("companies.write",),
+    "modificar_proyecto": ("companies.write",),
 }
 
 ACTION_LABELS: dict[str, str] = {
@@ -55,6 +58,8 @@ ACTION_LABELS: dict[str, str] = {
     "aprobar_vacaciones": "Aprobar / rechazar vacaciones",
     "incidencias_abiertas": "Ver incidencias abiertas",
     "incidencias_sin_gestionar": "Ver incidencias sin gestionar",
+    "crear_proyecto": "Crear proyecto",
+    "modificar_proyecto": "Modificar proyecto",
     "desconocido": "Sin acción (ayuda)",
 }
 
@@ -78,7 +83,7 @@ def is_whatsapp_action_allowed(
     """
     if action_code in ("desconocido", ""):
         return True
-    if not is_action_allowed_for_role(session, employee.role, action_code):
+    if not is_action_allowed_for_role(session, effective_role(employee), action_code):
         return False
     perms = get_employee_permissions(session, employee, tenant_id)
     if not perms:
@@ -93,7 +98,7 @@ def list_whatsapp_actions_for_employee(
     tenant_id: UUID,
 ) -> list[str]:
     """Códigos de acción que el empleado puede ejecutar por WhatsApp."""
-    codes = list_allowed_action_codes_for_role(session, employee.role)
+    codes = list_allowed_action_codes_for_role(session, effective_role(employee))
     return [c for c in codes if is_whatsapp_action_allowed(session, employee, tenant_id, c)]
 
 
@@ -141,4 +146,4 @@ def denial_message(session: Session, employee: Employee, tenant_id: UUID) -> str
 
 
 def profile_key_for_employee_role(employee: Employee) -> str:
-    return _role_to_profile(employee.role)
+    return _role_to_profile(effective_role(employee))

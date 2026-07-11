@@ -53,6 +53,11 @@ class Perm(StrEnum):
     SIGNATURES_WRITE = "signatures.write"
     SIGNATURES_CREATE_OWN = "signatures.create_own"
     SIGNATURES_UPDATE_OWN = "signatures.update_own"
+    COMMUNICATIONS_READ = "communications.read"
+    COMMUNICATIONS_READ_OWN = "communications.read_own"
+    COMMUNICATIONS_WRITE = "communications.write"
+    COMMUNICATIONS_CREATE_OWN = "communications.create_own"
+    COMMUNICATIONS_UPDATE_OWN = "communications.update_own"
     LEGAL_READ = "legal.read"
     LEGAL_READ_OWN = "legal.read_own"
     LEGAL_WRITE = "legal.write"
@@ -107,6 +112,7 @@ OWN_SCOPE_MODULES: frozenset[str] = frozenset(
         "shifts",
         "documents",
         "signatures",
+        "communications",
         "legal",
     }
 )
@@ -151,6 +157,11 @@ PERM_LABELS: dict[str, str] = {
     Perm.SIGNATURES_WRITE: "Crear y modificar todas",
     Perm.SIGNATURES_CREATE_OWN: "Crear sólo las del usuario",
     Perm.SIGNATURES_UPDATE_OWN: "Modificar sólo las del usuario",
+    Perm.COMMUNICATIONS_READ: "Ver todas las comunicaciones",
+    Perm.COMMUNICATIONS_READ_OWN: "Ver sólo las del usuario",
+    Perm.COMMUNICATIONS_WRITE: "Crear y gestionar comunicaciones",
+    Perm.COMMUNICATIONS_CREATE_OWN: "Crear sólo las del usuario",
+    Perm.COMMUNICATIONS_UPDATE_OWN: "Modificar sólo las del usuario",
     Perm.LEGAL_READ: "Ver textos legales (todos)",
     Perm.LEGAL_READ_OWN: "Ver sólo cumplimiento del usuario",
     Perm.LEGAL_WRITE: "Gestionar textos legales",
@@ -325,6 +336,11 @@ MODULE_PERMS: dict[str, dict[Permission, frozenset[str]]] = {
         Permission.WRITE: frozenset({Perm.SIGNATURES_WRITE, Perm.DOCUMENTS_WRITE}),
         Permission.ADMIN: frozenset({Perm.SIGNATURES_WRITE, Perm.DOCUMENTS_WRITE}),
     },
+    "communications": {
+        Permission.READ: frozenset({Perm.COMMUNICATIONS_READ}),
+        Permission.WRITE: frozenset({Perm.COMMUNICATIONS_WRITE}),
+        Permission.ADMIN: frozenset({Perm.COMMUNICATIONS_WRITE}),
+    },
     "legal": {
         Permission.READ: frozenset({Perm.LEGAL_READ}),
         Permission.WRITE: frozenset({Perm.LEGAL_WRITE}),
@@ -386,6 +402,8 @@ MANAGER_PERMS: frozenset[str] = frozenset(
         Perm.DOCUMENTS_BULK,
         Perm.SIGNATURES_READ,
         Perm.SIGNATURES_WRITE,
+        Perm.COMMUNICATIONS_READ,
+        Perm.COMMUNICATIONS_WRITE,
         Perm.TENANT_READ,
         Perm.COMPANIES_READ,
         Perm.WORK_CENTERS_READ,
@@ -418,9 +436,23 @@ def normalize_role(role: Role) -> Role:
     return role
 
 
+def effective_role(employee: Employee) -> Role:
+    """Rol efectivo a efectos de permisos: admin de cuenta si lleva el flag.
+
+    Permite que un empleado sea «empleado + administrador de cuenta» sin
+    cambiar su rol base (sigue siendo EMPLOYEE en listados/informes).
+    """
+    if getattr(employee, "is_account_admin", False):
+        return Role.TENANT_ADMIN
+    return normalize_role(employee.role)
+
+
 def get_employee_permissions(
     session: Session, employee: Employee, tenant_id: UUID
 ) -> frozenset[str]:
+    # Admin de cuenta por flag: permisos completos, independientemente de grupos/rol.
+    if getattr(employee, "is_account_admin", False):
+        return TENANT_ADMIN_PERMS
     group_ids = session.exec(
         select(EmployeeGroup.group_id).where(EmployeeGroup.employee_id == employee.id)
     ).all()

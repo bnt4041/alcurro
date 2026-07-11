@@ -107,6 +107,7 @@ const empty = (defaults?: {
   role: "employee",
   vacation_days_balance: 22,
   is_active: true,
+  is_account_admin: false,
   supervisor_id: null,
   job_title: null,
   password: "",
@@ -451,6 +452,7 @@ export default function EmployeesPage() {
         role: form.role,
         vacation_days_balance: form.vacation_days_balance,
         is_active: form.is_active,
+        is_account_admin: form.is_account_admin ?? false,
         supervisor_id: form.supervisor_id,
         job_title: form.job_title ?? null,
         department_id: form.department_id,
@@ -835,6 +837,22 @@ export default function EmployeesPage() {
               ))}
             </select>
           </label>
+          {form.role !== "tenant_admin" && form.role !== "admin" && (
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={form.is_account_admin ?? false}
+                onChange={(ev) =>
+                  setForm({ ...form, is_account_admin: ev.target.checked })
+                }
+              />
+              También administrador de cuenta
+              <span className="field-hint">
+                Mantiene su rol, pero añade permisos de administrador (crear
+                proyectos, gestión de la cuenta) en WhatsApp y en el panel.
+              </span>
+            </label>
+          )}
           <label>
             Puesto de trabajo
             <input
@@ -1176,6 +1194,22 @@ export default function EmployeesPage() {
               ))}
             </select>
           </label>
+          {form.role !== "tenant_admin" && form.role !== "admin" && (
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={form.is_account_admin ?? false}
+                onChange={(ev) =>
+                  setForm({ ...form, is_account_admin: ev.target.checked })
+                }
+              />
+              También administrador de cuenta
+              <span className="field-hint">
+                Mantiene su rol, pero añade permisos de administrador (crear
+                proyectos, gestión de la cuenta) en WhatsApp y en el panel.
+              </span>
+            </label>
+          )}
           <label className="form-grid-full">
             Empresa
             <select

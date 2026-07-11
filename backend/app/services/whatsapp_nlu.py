@@ -90,6 +90,27 @@ _INTENT_PATTERNS: list[tuple[re.Pattern, str, str, float, str | None]] = [
         "incidencias_abiertas", "execute", 0.85, None,
     ),
 
+    # --- Proyectos (admin de cuenta) — la IA extrae datos; aquí solo guiamos ---
+    (
+        re.compile(
+            r"\b("
+            r"(crea(r)?|nuevo|nueva|añad(e|ir)|agreg(a|ar)|dar?\s+de\s+alta)\s+(un\s+|una\s+)?(proyecto|obra)"
+            r")\b", re.IGNORECASE
+        ),
+        "crear_proyecto", "ask", 0.8,
+        "Dime el *nombre* del proyecto (y si quieres, dirección y horas previstas) en un mensaje y lo creo.",
+    ),
+    (
+        re.compile(
+            r"\b("
+            r"(modific|cambi|edit|actualiz|renombr|desactiv|activ|archiv)\w*\s+"
+            r"(el\s+|la\s+|un\s+|una\s+|ese\s+|esa\s+)?(proyecto|obra)"
+            r")\b", re.IGNORECASE
+        ),
+        "modificar_proyecto", "ask", 0.8,
+        "Dime *qué proyecto* quieres modificar y *qué cambias* (nombre, dirección, horas o activar/desactivar).",
+    ),
+
     # --- Fichajes (requieren confirmación) ---
     (
         re.compile(
@@ -322,6 +343,8 @@ def build_confirmation_message(intent_code: str, employee_name: str) -> str:
         "consultar_saldo_vacaciones": "consultar tu saldo de vacaciones",
         "confirmar_documento": "confirmar un documento",
         "resumen_dia": "ver el resumen del día",
+        "crear_proyecto": "crear el proyecto",
+        "modificar_proyecto": "modificar el proyecto",
     }
     action_label = labels.get(intent_code, intent_code.replace("_", " "))
     return (

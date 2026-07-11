@@ -56,7 +56,7 @@ def write_scope_employee_ids(
     tenant_id: UUID,
     module: str,
     *,
-    company_id: UUID,
+    company_id: UUID | None,
     work_center_id: UUID | None = None,
     department_id: UUID | None = None,
 ) -> list[UUID]:
@@ -134,7 +134,7 @@ def assert_employee_target(
         user,
         ctx.tenant.id,
         module,
-        company_id=ctx.company.id,
+        company_id=ctx.scope_company_id(),
         work_center_id=ctx.work_center.id if ctx.work_center else None,
         department_id=ctx.department.id if ctx.department else None,
     )
