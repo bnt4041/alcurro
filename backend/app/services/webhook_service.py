@@ -458,7 +458,9 @@ class WebhookService:
         """Recibe el resumen de jornada y ejecuta el cierre del fichaje."""
         if is_cancel_or_new_intent(text):
             clear_pending(self._session, employee.id)
-            self._session.flush()
+            # Commit antes del await de red: mantener locks de escritura durante la espera
+            # congela el event loop si otra petición toca las mismas filas.
+            self._session.commit()
             self._ollama.profile_key = profile_key_for_employee_role(employee)
             intent_data = await self._ollama.extract_intent(
                 text,
@@ -473,7 +475,9 @@ class WebhookService:
                 role="user",
                 content=text,
             )
-            self._session.flush()
+            # Commit antes del await de red: mantener locks de escritura durante la espera
+            # congela el event loop si otra petición toca las mismas filas.
+            self._session.commit()
             return await self._handle_stage(employee, phone, intent_data, text, message_id)
 
         work_summary = None if _RE_SKIP_SUMMARY.match(text) else text.strip()
@@ -1014,7 +1018,9 @@ class WebhookService:
                         role="user",
                         content=text,
                     )
-                    self._session.flush()
+                    # Commit antes del await de red: mantener locks de escritura durante la espera
+                    # congela el event loop si otra petición toca las mismas filas.
+                    self._session.commit()
                     return await self._handle_stage(employee, phone, intent_data, text, message_id)
 
                 return {"ok": True, "action": "pending_cancelled", "reason": reason}
@@ -1147,7 +1153,9 @@ class WebhookService:
             role="user",
             content=text,
         )
-        self._session.flush()
+        # Commit antes del await de red: mantener locks de escritura durante la espera
+        # congela el event loop si otra petición toca las mismas filas.
+        self._session.commit()
 
         return await self._handle_stage(employee, phone, intent_data, text, message_id)
 
@@ -1615,6 +1623,9 @@ class WebhookService:
     ) -> dict:
         """Procesa la respuesta a una confirmación pendiente — siempre pasa por el orquestador."""
         intent_code = pending.pending_intent or "fichar_entrada"
+        # Snapshot antes del commit: al confirmar, los objetos ORM se expiran y
+        # `pending` podría haber sido borrado por otra petición concurrente.
+        pending_meta = dict(pending.pending_meta or {})
 
         append_message(
             self._session,
@@ -1623,6 +1634,9 @@ class WebhookService:
             role="user",
             content=text,
         )
+        # Commit antes del await de red: mantener locks de escritura durante la espera
+        # congela el event loop si otra petición toca las mismas filas.
+        self._session.commit()
 
         # Siempre pasar por el orquestador; el historial le da el contexto de la confirmación pendiente
         self._ollama.profile_key = profile_key_for_employee_role(employee)
@@ -1644,7 +1658,7 @@ class WebhookService:
                 intent=intent_code,
                 confidence=1.0,
                 message="",
-                entities=pending.pending_meta or {},
+                entities=pending_meta,
             )
 
         # Para incidencias confirmadas: restaurar entities del mensaje original
@@ -1652,12 +1666,12 @@ class WebhookService:
         if (
             intent_data.stage == "execute"
             and intent_data.intent == "reportar_incidencia"
-            and pending.pending_meta
+            and pending_meta
         ):
             merged = dict(intent_data.entities or {})
             for _k in ("title", "titulo", "description", "descripcion", "motivo", "_ai_summary", "_original_text"):
-                if pending.pending_meta.get(_k) and not merged.get(_k):
-                    merged[_k] = pending.pending_meta[_k]
+                if pending_meta.get(_k) and not merged.get(_k):
+                    merged[_k] = pending_meta[_k]
             intent_data = OllamaIntentResponse(
                 stage=intent_data.stage,
                 intent=intent_data.intent,
@@ -1670,9 +1684,9 @@ class WebhookService:
         if (
             intent_data.stage == "execute"
             and intent_data.intent in ("crear_proyecto", "modificar_proyecto")
-            and pending.pending_meta
+            and pending_meta
         ):
-            merged = dict(pending.pending_meta)
+            merged = dict(pending_meta)
             merged.update({k: v for k, v in (intent_data.entities or {}).items() if v})
             intent_data = OllamaIntentResponse(
                 stage=intent_data.stage,
@@ -1715,7 +1729,9 @@ class WebhookService:
                 role="user",
                 content=text,
             )
-            self._session.flush()
+            # Commit antes del await de red: mantener locks de escritura durante la espera
+            # congela el event loop si otra petición toca las mismas filas.
+            self._session.commit()
             return await self._handle_stage(employee, phone, intent_data, text, message_id)
 
         # pending.record_type es "entrada" o "salida" (string en ClockPendingFichaje)

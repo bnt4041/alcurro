@@ -49,8 +49,8 @@ def _style(name: str, **kwargs: object) -> ParagraphStyle:
 
 _TITLE = _style("JrnTitle", fontSize=18, textColor=_ACCENT, leading=22, fontName="Helvetica-Bold", alignment=1)
 _SUBTITLE = _style("JrnSub", fontSize=10, textColor=_MID_GRAY, leading=14, alignment=1)
-_LABEL = _style("JrnLabel", fontSize=9, textColor=_DARK, leading=14, fontName="Helvetica-Bold")
-_VALUE = _style("JrnValue", fontSize=9, textColor=_DARK, leading=14)
+_LABEL = _style("JrnLabel", fontSize=9, textColor=_DARK, leading=11, fontName="Helvetica-Bold")
+_VALUE = _style("JrnValue", fontSize=9, textColor=_DARK, leading=11)
 _CELL = _style("JrnCell", fontSize=9, textColor=_DARK, leading=12)
 _SIGN = _style("JrnSign", fontSize=8, textColor=_MID_GRAY, leading=11, alignment=1)
 
@@ -113,31 +113,25 @@ def _build_block(
     # ── Datos del trabajador / empresa ───────────────────────────────────────
     info_data = [
         [_info_block("Trabajador:", meta.full_name, accent),
-         _info_block("Centro/Dept:", meta.center_dept, accent)],
+         _info_block("DNI/NIE:", meta.id_document or "—", accent)],
         [_info_block("Empresa:", meta.company_name, accent),
          _info_block("CIF:", meta.company_cif or "—", accent)],
-        [_info_block("Periodo:", period_label, accent),
-         _info_block("", "", accent)],
+        [_info_block("Periodo:", period_label, accent), ""],
     ]
-    if meta.id_document:
-        info_data.append(
-            [_info_block("DNI/NIE:", meta.id_document, accent),
-             _info_block("", "", accent)]
-        )
     info_table = Table(info_data, colWidths=[CONTENT_W / 2, CONTENT_W / 2])
     info_table.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, -1), _LIGHT_GRAY),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 12),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 12),
-        ("TOPPADDING", (0, 0), (-1, -1), 8),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+        ("LEFTPADDING", (0, 0), (-1, -1), 8),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
     ]))
     story.append(info_table)
     story.append(Spacer(1, 0.5 * cm))
 
     # ── Tabla de jornadas ────────────────────────────────────────────────────
-    header = ["Fecha", "Hora Entrada", "Hora Salida", "Total Horas", "Firma Trabajador"]
+    header = ["Fecha", "Hora Entrada", "Hora Salida", "Total Horas"]
     table_rows: list[list[object]] = [header]
     total_minutes = 0
 
@@ -151,25 +145,22 @@ def _build_block(
                 Paragraph(entry.entrada_at, _CELL),
                 Paragraph(entry.salida_at or "—", _CELL),
                 Paragraph(_hours(net) if entry.salida_at else "—", _CELL),
-                Paragraph("", _CELL),
             ])
 
     if len(table_rows) == 1:
         table_rows.append([
             Paragraph("Sin fichajes en el periodo", _style("Empty", fontSize=9, textColor=_MID_GRAY, alignment=1)),
-            "", "", "", "",
+            "", "", "",
         ])
 
     table_rows.append([
         Paragraph("TOTAL HORAS MES:", _style("TotLbl", fontSize=9, fontName="Helvetica-Bold", textColor=_DARK, alignment=2)),
         "", "",
         Paragraph(_hours(total_minutes), _style("TotVal", fontSize=9, fontName="Helvetica-Bold", textColor=_DARK)),
-        "",
     ])
 
     col_w = [
-        CONTENT_W * 0.18, CONTENT_W * 0.18, CONTENT_W * 0.18,
-        CONTENT_W * 0.16, CONTENT_W * 0.30,
+        CONTENT_W * 0.25, CONTENT_W * 0.25, CONTENT_W * 0.25, CONTENT_W * 0.25,
     ]
     n_rows = len(table_rows)
     is_empty = len(day_rows) == 0 or all(not d.clock_entries for d in day_rows)

@@ -62,7 +62,17 @@ from app.models.commercial import CommercialMessage  # noqa: F401
 from app.models.ticket import Ticket, TicketMessage  # noqa: F401
 
 settings = get_settings()
-engine = create_engine(settings.database_url, echo=False)
+# Red de seguridad: una espera por lock jamás debe poder congelar el servidor.
+# lock_timeout aborta la sentencia a los 5s en vez de esperar indefinidamente, e
+# idle_in_transaction_session_timeout corta transacciones abandonadas que
+# mantendrían filas bloqueadas para el resto de peticiones.
+engine = create_engine(
+    settings.database_url,
+    echo=False,
+    connect_args={
+        "options": "-c lock_timeout=5000 -c idle_in_transaction_session_timeout=120000",
+    },
+)
 
 
 def create_db_and_tables() -> None:
