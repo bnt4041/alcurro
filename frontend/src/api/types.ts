@@ -39,6 +39,7 @@ export interface Employee {
   is_account_admin?: boolean;
   avatar_delivery_id: string | null;
   avatar_url: string | null;
+  has_kiosk_pin?: boolean;
   shift_configuration_id: string | null;
   work_start_time: string | null;
   work_end_time: string | null;

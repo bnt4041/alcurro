@@ -45,6 +45,11 @@ def _set_password(row: Employee, password: str | None) -> None:
         row.password_hash = hash_password(password)
 
 
+def _set_kiosk_pin(row: Employee, pin: str | None) -> None:
+    if pin:
+        row.kiosk_pin_hash = hash_password(pin)
+
+
 def _country_iso(ctx: OrgContext) -> str:
     return (ctx.tenant.billing_country if ctx.tenant else None) or "ES"
 
@@ -432,7 +437,7 @@ def create_employee(
             detail="Ya existe un empleado con este teléfono en la empresa",
         )
 
-    payload = data.model_dump(exclude={"password", "employee_code"})
+    payload = data.model_dump(exclude={"password", "kiosk_pin", "employee_code"})
     try:
         payload = normalize_employee_schedule(payload)
     except ValueError as exc:
@@ -454,6 +459,7 @@ def create_employee(
     payload["department_id"] = dept_id
     row = Employee.model_validate(payload)
     _set_password(row, data.password)
+    _set_kiosk_pin(row, data.kiosk_pin)
     if over_limit:
         row.is_active = False
     if not row.password_hash and (
@@ -539,7 +545,7 @@ def update_employee(
     if row.id not in _scope_ids(ctx, session, user):
         raise HTTPException(status_code=404, detail="Empleado no encontrado")
     assert_employee_target(session, user, ctx, "employees", row.id, "update")
-    updates = data.model_dump(exclude_unset=True, exclude={"password"})
+    updates = data.model_dump(exclude_unset=True, exclude={"password", "kiosk_pin"})
     country_iso = _country_iso(ctx)
     target_company_id = row.company_id
     if "department_id" in updates and updates["department_id"]:
@@ -621,6 +627,7 @@ def update_employee(
     for key, value in updates.items():
         setattr(row, key, value)
     _set_password(row, data.password)
+    _set_kiosk_pin(row, data.kiosk_pin)
     # Admin de cuenta por flag necesita poder entrar al panel.
     if row.is_account_admin and not row.password_hash:
         row.password_hash = hash_password("changeme")

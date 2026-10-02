@@ -11,6 +11,7 @@ from app.routers import (
     developer,
     incidents,
     incidents_public,
+    kiosk_public,
     documents,
     employees,
     groups,
@@ -48,6 +49,7 @@ api_router = APIRouter(prefix="/api")
 api_router.include_router(auth.router)
 api_router.include_router(public.router)
 api_router.include_router(incidents_public.router)
+api_router.include_router(kiosk_public.router)
 api_router.include_router(signatures_public.router)
 api_router.include_router(paddle_webhook.router)
 api_router.include_router(platform.router)

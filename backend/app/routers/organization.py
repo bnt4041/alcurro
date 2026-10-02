@@ -15,9 +15,11 @@ from app.schemas.organization import (
     OrgTreeCompany,
     OrgTreeWorkCenter,
     WorkCenterCreate,
+    WorkCenterKioskRead,
     WorkCenterRead,
 )
 from app.services.code_generator import next_department_code, next_work_center_code
+from app.services.kiosk_service import new_kiosk_token
 
 router = APIRouter(prefix="/org", tags=["organization"])
 
@@ -55,6 +57,7 @@ def org_tree(
                     id=wc.id,
                     name=wc.name,
                     code=wc.code,
+                    kiosk_token=wc.kiosk_token,
                     departments=[DepartmentRead.model_validate(d) for d in depts],
                 )
             )
@@ -105,6 +108,43 @@ def create_work_center(
     session.commit()
     session.refresh(row)
     return row
+
+
+def _tenant_work_center(session: Session, ctx: OrgContext, work_center_id: UUID) -> WorkCenter:
+    wc = session.get(WorkCenter, work_center_id)
+    company = session.get(Company, wc.company_id) if wc else None
+    if not wc or not company or company.tenant_id != ctx.tenant.id:
+        raise HTTPException(status_code=404, detail="Centro no encontrado")
+    return wc
+
+
+@router.post("/work-centers/{work_center_id}/kiosk", response_model=WorkCenterKioskRead)
+def enable_work_center_kiosk(
+    work_center_id: UUID,
+    ctx: OrgContext = Depends(get_org_context),
+    session: Session = Depends(get_session),
+    _: object = Depends(require_permission(Permission.WRITE, "work_centers")),
+) -> WorkCenterKioskRead:
+    """Activa el kiosko del centro o regenera su enlace (el anterior deja de funcionar)."""
+    wc = _tenant_work_center(session, ctx, work_center_id)
+    wc.kiosk_token = new_kiosk_token()
+    session.add(wc)
+    session.commit()
+    return WorkCenterKioskRead(work_center_id=wc.id, kiosk_token=wc.kiosk_token)
+
+
+@router.delete("/work-centers/{work_center_id}/kiosk", response_model=WorkCenterKioskRead)
+def disable_work_center_kiosk(
+    work_center_id: UUID,
+    ctx: OrgContext = Depends(get_org_context),
+    session: Session = Depends(get_session),
+    _: object = Depends(require_permission(Permission.WRITE, "work_centers")),
+) -> WorkCenterKioskRead:
+    wc = _tenant_work_center(session, ctx, work_center_id)
+    wc.kiosk_token = None
+    session.add(wc)
+    session.commit()
+    return WorkCenterKioskRead(work_center_id=wc.id, kiosk_token=None)
 
 
 @router.get("/departments", response_model=list[DepartmentRead])

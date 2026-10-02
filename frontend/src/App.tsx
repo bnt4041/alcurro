@@ -28,6 +28,7 @@ import OrganizationPage from "./pages/OrganizationPage";
 import ProjectsPage from "./pages/ProjectsPage";
 import IncidentsPage from "./pages/IncidentsPage";
 import JustifyIncidentPage from "./pages/JustifyIncidentPage";
+import KioskPage from "./pages/KioskPage";
 import PlatformDiscountsPage from "./pages/PlatformDiscountsPage";
 import PlatformPage from "./pages/PlatformPage";
 import PlatformUsersPage from "./pages/PlatformUsersPage";
@@ -75,6 +76,7 @@ export default function App() {
               path="/justificar-incidencia/:token"
               element={<JustifyIncidentPage />}
             />
+            <Route path="/kiosko/:token" element={<KioskPage />} />
 
             <Route path="/acceso" element={<LoginPage />} />
             <Route path="/login" element={<Navigate to="/acceso" replace />} />

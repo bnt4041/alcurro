@@ -88,6 +88,7 @@ type EmployeeForm = Omit<
   "company_id" | "department_id" | "work_center_id" | "shift_configuration_id" | "supervisor_id"
 > & {
   password?: string;
+  kiosk_pin?: string;
   company_id?: string | null;
   department_id?: string | null;
   work_center_id?: string | null;
@@ -111,6 +112,7 @@ const empty = (defaults?: {
   supervisor_id: null,
   job_title: null,
   password: "",
+  kiosk_pin: "",
   company_id: defaults?.company_id ?? null,
   department_id: defaults?.department_id ?? null,
   work_center_id: defaults?.work_center_id ?? null,
@@ -391,6 +393,7 @@ export default function EmployeesPage() {
     setForm({
       ...row,
       password: "",
+      kiosk_pin: "",
       company_id: row.company_id,
       work_center_id: wcId,
     });
@@ -462,6 +465,7 @@ export default function EmployeesPage() {
         work_schedule_periods: form.rotating_shift ? [] : schedulePeriods,
       };
       if (form.password) body.password = form.password;
+      if (form.kiosk_pin) body.kiosk_pin = form.kiosk_pin;
       if (!editing) {
         delete body.employee_code;
       } else {
@@ -1094,6 +1098,20 @@ export default function EmployeesPage() {
             />
           </label>
           <label>
+            PIN kiosko {editing?.has_kiosk_pin && <span className="badge badge-ok">configurado</span>}
+            <input
+              type="password"
+              inputMode="numeric"
+              autoComplete="new-password"
+              pattern="\d{4,6}"
+              maxLength={6}
+              title="Entre 4 y 6 dígitos"
+              placeholder={editing?.has_kiosk_pin ? "Dejar vacío = sin cambio" : "4-6 dígitos (opcional)"}
+              value={form.kiosk_pin ?? ""}
+              onChange={(ev) => setForm({ ...form, kiosk_pin: ev.target.value.replace(/\D/g, "") })}
+            />
+          </label>
+          <label>
             Días vacaciones
             <input
               type="number"
@@ -1423,6 +1441,20 @@ export default function EmployeesPage() {
               placeholder={editing ? "Dejar vacío = sin cambio" : "Opcional"}
               value={form.password ?? ""}
               onChange={(ev) => setForm({ ...form, password: ev.target.value })}
+            />
+          </label>
+          <label>
+            PIN kiosko {editing?.has_kiosk_pin && <span className="badge badge-ok">configurado</span>}
+            <input
+              type="password"
+              inputMode="numeric"
+              autoComplete="new-password"
+              pattern="\d{4,6}"
+              maxLength={6}
+              title="Entre 4 y 6 dígitos"
+              placeholder={editing?.has_kiosk_pin ? "Dejar vacío = sin cambio" : "4-6 dígitos (opcional)"}
+              value={form.kiosk_pin ?? ""}
+              onChange={(ev) => setForm({ ...form, kiosk_pin: ev.target.value.replace(/\D/g, "") })}
             />
           </label>
           <label>

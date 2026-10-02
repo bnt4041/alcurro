@@ -85,6 +85,7 @@ class ClockService:
         notes: str | None = None,
         project_id: UUID | None = None,
         *,
+        source: str = "whatsapp",
         commit: bool = True,
     ) -> ClockIn:
         record = ClockIn(
@@ -96,7 +97,7 @@ class ClockService:
             whatsapp_message_id=whatsapp_message_id,
             notes=notes,
             project_id=project_id,
-            source="whatsapp",
+            source=source,
         )
         self._session.add(record)
         if commit:

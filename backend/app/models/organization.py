@@ -21,6 +21,8 @@ class WorkCenter(SQLModel, table=True):
     address: str | None = Field(default=None, max_length=300)
     city: str | None = Field(default=None, max_length=100)
     is_active: bool = Field(default=True)
+    # Modo kiosko: enlace público único para fichar en el centro (None = desactivado)
+    kiosk_token: str | None = Field(default=None, max_length=64, unique=True, index=True)
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
     departments: list["Department"] = Relationship(back_populates="work_center")

@@ -2,7 +2,7 @@ from datetime import date, datetime, time
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.models.models import (
     LeaveStatus,
@@ -10,6 +10,18 @@ from app.models.models import (
     ShiftPatternType,
     BreakType,
 )
+
+
+def _validate_kiosk_pin(v: str | None) -> str | None:
+    """PIN de kiosko: 4-6 dígitos. Vacío = sin cambio."""
+    if v is None:
+        return None
+    v = v.strip()
+    if not v:
+        return None
+    if not v.isdigit() or not 4 <= len(v) <= 6:
+        raise ValueError("El PIN de kiosko debe tener entre 4 y 6 dígitos")
+    return v
 
 
 class EmployeeCreate(BaseModel):
@@ -26,6 +38,7 @@ class EmployeeCreate(BaseModel):
     is_active: bool = True
     is_account_admin: bool = False
     password: str | None = None
+    kiosk_pin: str | None = None
     shift_configuration_id: UUID | None = None
     work_start_time: time | None = None
     work_end_time: time | None = None
@@ -34,6 +47,8 @@ class EmployeeCreate(BaseModel):
     work_schedule_periods: list[dict[str, Any]] | None = None
     rotating_shift: bool = False
     weekly_hours: float | None = Field(default=None, ge=0, le=168)
+
+    _check_kiosk_pin = field_validator("kiosk_pin")(_validate_kiosk_pin)
 
 
 class EmployeeBulkScheduleUpdate(BaseModel):
@@ -89,6 +104,7 @@ class EmployeeUpdate(BaseModel):
     is_active: bool | None = None
     is_account_admin: bool | None = None
     password: str | None = None
+    kiosk_pin: str | None = None
     shift_configuration_id: UUID | None = None
     work_start_time: time | None = None
     work_end_time: time | None = None
@@ -97,6 +113,8 @@ class EmployeeUpdate(BaseModel):
     work_schedule_periods: list[dict[str, Any]] | None = None
     rotating_shift: bool | None = None
     weekly_hours: float | None = Field(default=None, ge=0, le=168)
+
+    _check_kiosk_pin = field_validator("kiosk_pin")(_validate_kiosk_pin)
 
 
 class EmployeeRead(BaseModel):
@@ -117,6 +135,7 @@ class EmployeeRead(BaseModel):
     is_account_admin: bool = False
     avatar_delivery_id: UUID | None = None
     avatar_url: str | None = None
+    has_kiosk_pin: bool = False
     shift_configuration_id: UUID | None = None
 
     @model_validator(mode="after")

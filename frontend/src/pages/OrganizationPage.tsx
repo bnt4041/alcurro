@@ -17,9 +17,11 @@ interface WorkCenter {
   id: string;
   name: string;
   code: string;
-  is_active: boolean;
+  kiosk_token: string | null;
   departments: Department[];
 }
+
+const kioskUrl = (token: string) => `${window.location.origin}/kiosko/${token}`;
 
 interface OrgTreeCompany {
   id: string;
@@ -42,6 +44,11 @@ export default function OrganizationPage() {
   const [deptModalOpen, setDeptModalOpen] = useState(false);
   const [deptForm, setDeptForm] = useState({ name: "", work_center_id: "" });
   const [deptSaving, setDeptSaving] = useState(false);
+
+  // Modo kiosko
+  const [kioskWc, setKioskWc] = useState<WorkCenter | null>(null);
+  const [kioskBusy, setKioskBusy] = useState(false);
+  const [kioskConfirm, setKioskConfirm] = useState<"regenerate" | "disable" | null>(null);
 
   const canWc = user && canModule(user.permissions, "write", "work_centers");
   const canDept = user && canModule(user.permissions, "write", "departments");
@@ -99,6 +106,38 @@ export default function OrganizationPage() {
       setDeptSaving(false);
     }
   };
+
+  const kioskAction = async (kind: "enable" | "regenerate" | "disable") => {
+    if (!kioskWc) return;
+    setKioskBusy(true);
+    try {
+      const path = `/org/work-centers/${kioskWc.id}/kiosk`;
+      let token: string | null = null;
+      if (kind === "disable") await api.delete(path);
+      else token = (await api.post<{ kiosk_token: string | null }>(path, {})).kiosk_token;
+      setKioskWc({ ...kioskWc, kiosk_token: token });
+      setKioskConfirm(null);
+      notify(
+        kind === "disable"
+          ? "Kiosko desactivado"
+          : kind === "regenerate"
+            ? "Enlace regenerado; el anterior ya no funciona"
+            : "Kiosko activado",
+        "success",
+      );
+      load();
+    } catch (err) {
+      notify(String(err).replace(/^Error:\s*/i, ""), "error");
+    } finally {
+      setKioskBusy(false);
+    }
+  };
+
+  const copyKioskUrl = (token: string) =>
+    navigator.clipboard
+      .writeText(kioskUrl(token))
+      .then(() => notify("Enlace copiado", "success"))
+      .catch(() => notify("No se pudo copiar el enlace", "error"));
 
   return (
     <>
@@ -169,9 +208,24 @@ export default function OrganizationPage() {
             )}
             {company.work_centers.map((wc) => (
               <div key={wc.id} className="org-tree__wc">
-                <strong>
-                  {wc.name} <code>{wc.code}</code>
-                </strong>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
+                  <strong>
+                    {wc.name} <code>{wc.code}</code>
+                  </strong>
+                  {wc.kiosk_token && <span className="badge badge-ok">Kiosko activo</span>}
+                  {canWc && (
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      onClick={() => {
+                        setKioskConfirm(null);
+                        setKioskWc(wc);
+                      }}
+                    >
+                      Kiosko
+                    </button>
+                  )}
+                </div>
                 {wc.departments.length === 0 ? (
                   <p className="muted small" style={{ marginLeft: "1rem" }}>Sin departamentos</p>
                 ) : (
@@ -225,6 +279,86 @@ export default function OrganizationPage() {
             </button>
           </div>
         </form>
+      </Modal>
+
+      {/* Modal: modo kiosko del centro */}
+      <Modal
+        title={`Modo kiosko${kioskWc ? ` — ${kioskWc.name}` : ""}`}
+        open={!!kioskWc}
+        onClose={() => setKioskWc(null)}
+      >
+        {kioskWc && (
+          <div>
+            <p className="muted small">
+              Enlace único para fichar en este centro desde una tablet u ordenador. Cada empleado
+              se identifica con su código numérico y su PIN de kiosko (se configura en la ficha
+              del empleado). Si tiene la jornada abierta se registra la salida; si no, la entrada.
+              Una jornada abierta hace más de 12 h no se cierra: se abre una nueva y se genera una
+              incidencia.
+            </p>
+            {kioskWc.kiosk_token ? (
+              <>
+                <label style={{ marginTop: "1rem", display: "block" }}>
+                  Enlace del kiosko
+                  <div style={{ display: "flex", gap: "0.5rem" }}>
+                    <input readOnly value={kioskUrl(kioskWc.kiosk_token)} onFocus={(e) => e.target.select()} />
+                    <button type="button" className="btn" onClick={() => copyKioskUrl(kioskWc.kiosk_token!)}>
+                      Copiar
+                    </button>
+                    <a className="btn" href={kioskUrl(kioskWc.kiosk_token)} target="_blank" rel="noreferrer">
+                      Abrir
+                    </a>
+                  </div>
+                </label>
+                {kioskConfirm ? (
+                  <div className="card" style={{ marginTop: "1rem", padding: "0.75rem" }}>
+                    <p style={{ margin: 0 }}>
+                      {kioskConfirm === "regenerate"
+                        ? "Se creará un enlace nuevo y el actual dejará de funcionar en todos los dispositivos. ¿Continuar?"
+                        : "El enlace dejará de funcionar y no se podrá fichar desde el kiosko de este centro. ¿Continuar?"}
+                    </p>
+                    <div className="form-actions" style={{ marginTop: "0.75rem" }}>
+                      <button type="button" className="btn" onClick={() => setKioskConfirm(null)} disabled={kioskBusy}>
+                        Cancelar
+                      </button>
+                      <button
+                        type="button"
+                        className={`btn ${kioskConfirm === "disable" ? "btn-danger" : "btn-primary"}`}
+                        onClick={() => kioskAction(kioskConfirm)}
+                        disabled={kioskBusy}
+                      >
+                        {kioskConfirm === "regenerate" ? "Regenerar enlace" : "Desactivar kiosko"}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="form-actions" style={{ marginTop: "1.5rem" }}>
+                    <button type="button" className="btn" onClick={() => setKioskConfirm("disable")}>
+                      Desactivar
+                    </button>
+                    <button type="button" className="btn" onClick={() => setKioskConfirm("regenerate")}>
+                      Regenerar enlace
+                    </button>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="form-actions" style={{ marginTop: "1.5rem" }}>
+                <button type="button" className="btn" onClick={() => setKioskWc(null)}>
+                  Cerrar
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => kioskAction("enable")}
+                  disabled={kioskBusy}
+                >
+                  {kioskBusy ? "Activando…" : "Activar kiosko"}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </Modal>
 
       {/* Modal: nuevo departamento */}

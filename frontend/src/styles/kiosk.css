@@ -1,0 +1,309 @@
+/* Modo kiosko — pantalla pública de fichaje por centro de trabajo */
+
+.kiosk {
+  --kiosk-primary: var(--primary, #25d366);
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  padding: max(1rem, env(safe-area-inset-top)) 1rem max(1rem, env(safe-area-inset-bottom));
+  box-sizing: border-box;
+  background: linear-gradient(160deg, #f0f4f8 0%, #e8eef5 100%);
+  color: var(--text, #12263a);
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.kiosk--center {
+  justify-content: center;
+}
+
+.kiosk-muted {
+  color: var(--muted, #5c7080);
+}
+
+.kiosk-header {
+  width: 100%;
+  max-width: 720px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.kiosk-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.kiosk-brand img {
+  max-height: 48px;
+  max-width: 140px;
+  object-fit: contain;
+}
+
+.kiosk-brand div,
+.kiosk-clock {
+  display: flex;
+  flex-direction: column;
+}
+
+.kiosk-brand strong {
+  font-size: 1.15rem;
+}
+
+.kiosk-clock {
+  align-items: flex-end;
+  text-align: right;
+}
+
+.kiosk-clock__time {
+  font-size: 2rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.kiosk-clock .kiosk-muted {
+  text-transform: capitalize;
+}
+
+.kiosk-geo {
+  font-size: 0.9rem;
+  padding: 0.4rem 0.9rem;
+  border-radius: 999px;
+  background: #fff;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  justify-content: center;
+  text-align: center;
+}
+
+.kiosk-geo--ok {
+  color: #15803d;
+}
+
+.kiosk-geo--pending {
+  color: var(--muted, #5c7080);
+}
+
+.kiosk-geo--denied,
+.kiosk-geo--unavailable {
+  color: #b91c1c;
+  background: #fef2f2;
+  border-radius: 12px;
+}
+
+.kiosk-geo button {
+  border: 1px solid currentColor;
+  background: transparent;
+  color: inherit;
+  border-radius: 999px;
+  padding: 0.15rem 0.7rem;
+  cursor: pointer;
+  font: inherit;
+}
+
+.kiosk-panel {
+  width: 100%;
+  max-width: 420px;
+  background: #fff;
+  border-radius: 20px;
+  box-shadow: 0 8px 32px rgba(18, 38, 58, 0.08);
+  padding: 1.5rem;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1 0 auto;
+  max-height: 640px;
+  justify-content: center;
+}
+
+.kiosk-prompt {
+  font-size: 1.15rem;
+  font-weight: 600;
+  margin: 0 0 0.75rem;
+  text-align: center;
+}
+
+.kiosk-display {
+  min-height: 3.5rem;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  font-size: 2.4rem;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  font-variant-numeric: tabular-nums;
+  border-bottom: 2px solid var(--border, #e8eef4);
+  margin-bottom: 0.5rem;
+}
+
+.kiosk-sub {
+  margin: 0 0 0.5rem;
+  font-size: 0.9rem;
+}
+
+.kiosk-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid var(--muted, #5c7080);
+  box-sizing: border-box;
+}
+
+.kiosk-dot--on {
+  background: var(--text, #12263a);
+  border-color: var(--text, #12263a);
+}
+
+.kiosk-keypad {
+  margin-top: 1rem;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.75rem;
+  width: 100%;
+}
+
+.kiosk-keypad button {
+  aspect-ratio: 1.4;
+  font-size: 1.9rem;
+  font-weight: 600;
+  border-radius: 16px;
+  border: 1px solid var(--border, #e8eef4);
+  background: #f8fafc;
+  color: var(--text, #12263a);
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: background 0.1s, transform 0.05s;
+}
+
+.kiosk-keypad button:active:not(:disabled) {
+  transform: scale(0.96);
+  background: #eef2f6;
+}
+
+.kiosk-keypad .kiosk-key--alt {
+  background: transparent;
+}
+
+.kiosk-keypad .kiosk-key--ok {
+  background: var(--kiosk-primary);
+  border-color: var(--kiosk-primary);
+  color: #fff;
+}
+
+.kiosk-keypad .kiosk-key--ok:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.kiosk-result {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 0.25rem;
+}
+
+.kiosk-result h1 {
+  margin: 0.5rem 0 0;
+  font-size: 1.6rem;
+}
+
+.kiosk-result__icon {
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 3rem;
+  font-weight: 700;
+  color: #fff;
+  background: var(--muted, #5c7080);
+}
+
+.kiosk-result--entrada .kiosk-result__icon {
+  background: #16a34a;
+}
+
+.kiosk-result--salida .kiosk-result__icon {
+  background: #2563eb;
+}
+
+.kiosk-result--error .kiosk-result__icon {
+  background: #dc2626;
+}
+
+.kiosk-result__name {
+  font-size: 1.3rem;
+  font-weight: 600;
+  margin: 0.25rem 0 0;
+}
+
+.kiosk-result__time {
+  font-size: 2.6rem;
+  font-weight: 700;
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.kiosk-warning {
+  background: #fffbeb;
+  color: #92400e;
+  border: 1px solid #fde68a;
+  border-radius: 12px;
+  padding: 0.75rem;
+  font-size: 0.95rem;
+  margin: 0.75rem 0 0;
+}
+
+.kiosk-btn {
+  margin-top: 1.25rem;
+  padding: 0.8rem 2.5rem;
+  font-size: 1.1rem;
+  font-weight: 600;
+  border-radius: 12px;
+  border: none;
+  background: var(--kiosk-primary);
+  color: #fff;
+  cursor: pointer;
+}
+
+.kiosk-spinner {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: 5px solid var(--border, #e8eef4);
+  border-top-color: var(--kiosk-primary);
+  animation: kiosk-spin 0.8s linear infinite;
+  margin-bottom: 0.75rem;
+}
+
+@keyframes kiosk-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.kiosk-footer {
+  font-size: 0.8rem;
+}
+
+@media (max-height: 700px) {
+  .kiosk-keypad button {
+    aspect-ratio: 1.8;
+    font-size: 1.5rem;
+  }
+}

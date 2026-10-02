@@ -157,6 +157,9 @@ class Employee(SQLModel, table=True):
         description="Empleado que además es administrador de cuenta (permisos de admin sin cambiar su rol base)",
     )
     password_hash: str | None = Field(default=None, max_length=255)
+    kiosk_pin_hash: str | None = Field(
+        default=None, max_length=255, description="PIN numérico para fichar en modo kiosko"
+    )
     avatar_delivery_id: UUID | None = Field(
         default=None, foreign_key="document_deliveries.id", index=True
     )
@@ -208,6 +211,10 @@ class Employee(SQLModel, table=True):
     shift_assignments: list["ShiftAssignment"] = Relationship(
         back_populates="employee"
     )
+
+    @property
+    def has_kiosk_pin(self) -> bool:
+        return bool(self.kiosk_pin_hash)
 
 
 class ClockIn(SQLModel, table=True):

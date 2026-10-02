@@ -52,6 +52,7 @@ class OrgTreeWorkCenter(BaseModel):
     id: UUID
     name: str
     code: str
+    kiosk_token: str | None = None
     departments: list[DepartmentRead]
 
 
@@ -69,3 +70,8 @@ class GroupTemplateRead(BaseModel):
 class GroupTemplateUpdate(BaseModel):
     permissions: list[str] | None = None
     description: str | None = None
+
+
+class WorkCenterKioskRead(BaseModel):
+    work_center_id: UUID
+    kiosk_token: str | None
