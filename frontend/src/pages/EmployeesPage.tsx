@@ -96,6 +96,12 @@ type EmployeeForm = Omit<
   supervisor_id?: string | null;
 };
 
+/** Número que el empleado teclea en el kiosko (parte numérica del código: EMP-007 → 7). */
+const kioskNumber = (code: string | null | undefined): string => {
+  const digits = (code ?? "").replace(/\D/g, "");
+  return digits ? String(parseInt(digits, 10)) : "";
+};
+
 const empty = (defaults?: {
   company_id?: string | null;
   department_id?: string | null;
@@ -121,6 +127,43 @@ const empty = (defaults?: {
   weekly_hours: null,
   work_schedule_periods: defaultSchedulePeriods(),
 });
+
+function KioskCodeHint({ employee, rows }: { employee: Employee | null; rows: Employee[] }) {
+  if (!employee) {
+    return (
+      <p className="muted small" style={{ margin: 0 }}>
+        El número para el kiosko se asigna al guardar y aparecerá aquí.
+      </p>
+    );
+  }
+  const n = kioskNumber(employee.employee_code);
+  if (!n) {
+    return (
+      <p className="muted small" style={{ margin: 0 }}>
+        Su código ({employee.employee_code}) no contiene números: no podrá fichar en el kiosko.
+      </p>
+    );
+  }
+  const clashes = rows.filter(
+    (r) =>
+      r.id !== employee.id &&
+      r.is_active &&
+      r.company_id === employee.company_id &&
+      kioskNumber(r.employee_code) === n,
+  );
+  return (
+    <p className="small" style={{ margin: 0 }}>
+      Número a teclear en el kiosko: <strong style={{ fontSize: "1.1em" }}>{n}</strong>{" "}
+      <span className="muted">(código {employee.employee_code})</span>
+      {clashes.length > 0 && (
+        <span style={{ color: "var(--danger)", display: "block" }}>
+          Mismo número que {clashes.map((c) => c.full_name).join(", ")}. El kiosko distingue por PIN:
+          asigna PINs distintos o, si coinciden, se fichará al primero que se encuentre.
+        </span>
+      )}
+    </p>
+  );
+}
 
 export default function EmployeesPage() {
   const { user } = useAuth();
@@ -201,6 +244,19 @@ export default function EmployeesPage() {
         headerFilter: "input",
         width: 100,
         formatter: (c) => `<code>${c.getValue()}</code>`,
+      },
+      {
+        title: "Kiosko",
+        field: "has_kiosk_pin",
+        width: 150,
+        formatter: (c) => {
+          const row = c.getRow().getData() as Employee;
+          const n = kioskNumber(row.employee_code);
+          const pin = row.has_kiosk_pin
+            ? `<span class="badge badge-ok">PIN</span>`
+            : `<span class="muted small">sin PIN</span>`;
+          return n ? `nº <strong>${n}</strong> ${pin}` : pin;
+        },
       },
       {
         title: "DNI/NIE",
@@ -1111,6 +1167,7 @@ export default function EmployeesPage() {
               onChange={(ev) => setForm({ ...form, kiosk_pin: ev.target.value.replace(/\D/g, "") })}
             />
           </label>
+          <KioskCodeHint employee={editing} rows={rows} />
           <label>
             Días vacaciones
             <input
@@ -1457,6 +1514,7 @@ export default function EmployeesPage() {
               onChange={(ev) => setForm({ ...form, kiosk_pin: ev.target.value.replace(/\D/g, "") })}
             />
           </label>
+          <KioskCodeHint employee={editing} rows={rows} />
           <label>
             Días vacaciones
             <input
