@@ -157,9 +157,7 @@ def list_departments(
     wc_id = work_center_id or (ctx.work_center.id if ctx.work_center else None)
     if not wc_id:
         raise HTTPException(status_code=400, detail="Indica centro de trabajo")
-    wc = session.get(WorkCenter, wc_id)
-    if not wc or wc.company_id != ctx.company.id:
-        raise HTTPException(status_code=404, detail="Centro no encontrado")
+    _tenant_work_center(session, ctx, wc_id)
     return list(
         session.exec(
             select(Department)
@@ -179,9 +177,7 @@ def create_department(
     wc_id = data.work_center_id or (ctx.work_center.id if ctx.work_center else None)
     if not wc_id:
         raise HTTPException(status_code=400, detail="Indica centro de trabajo")
-    wc = session.get(WorkCenter, wc_id)
-    if not wc or wc.company_id != ctx.company.id:
-        raise HTTPException(status_code=404, detail="Centro no encontrado")
+    wc = _tenant_work_center(session, ctx, wc_id)
     code = (data.code or "").strip() or next_department_code(session, wc_id)
     if session.exec(
         select(Department).where(
